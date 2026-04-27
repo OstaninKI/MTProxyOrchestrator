@@ -20,8 +20,14 @@ func TestGenerateMTProtoSecret_Length(t *testing.T) {
 }
 
 func TestGenerateMTProtoSecret_Uniqueness(t *testing.T) {
-	a, _ := secrets.GenerateMTProtoSecret()
-	b, _ := secrets.GenerateMTProtoSecret()
+	a, err := secrets.GenerateMTProtoSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := secrets.GenerateMTProtoSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if a.Hex() == b.Hex() {
 		t.Error("two consecutive secrets are identical")
 	}
@@ -39,7 +45,10 @@ func TestGenerateAdminLogin_Length(t *testing.T) {
 
 func TestGenerateAdminLogin_Alphabet(t *testing.T) {
 	for range 20 {
-		login, _ := secrets.GenerateAdminLogin()
+		login, err := secrets.GenerateAdminLogin()
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, r := range login {
 			if !unicode.IsLower(r) && !unicode.IsDigit(r) {
 				t.Errorf("login %q contains invalid character %q", login, r)
@@ -62,7 +71,10 @@ func TestGenerateAdminPassword_MinLength(t *testing.T) {
 
 func TestGenerateAdminPassword_ContainsLetterAndDigit(t *testing.T) {
 	for range 50 {
-		pass, _ := secrets.GenerateAdminPassword()
+		pass, err := secrets.GenerateAdminPassword()
+		if err != nil {
+			t.Fatal(err)
+		}
 		hasLetter := strings.IndexFunc(pass, unicode.IsLetter) >= 0
 		hasDigit := strings.IndexFunc(pass, unicode.IsDigit) >= 0
 		if !hasLetter || !hasDigit {
