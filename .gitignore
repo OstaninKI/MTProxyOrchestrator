@@ -1,0 +1,42 @@
+# Local documentation and planning notes
+docs/
+
+# Secrets and generated runtime state
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*.csr
+*.sqlite
+*.sqlite3
+*.db
+secrets/
+tmp/
+dist/
+build/
+
+# Go build and test artifacts
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+bin/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local infrastructure artifacts
+*.log
+*.pid
+*.bak
+*.backup
+*.tar
+*.tar.gz
+*.zip
