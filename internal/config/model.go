@@ -17,7 +17,9 @@ type Config struct {
 	BridgeStrategy string
 	LogLevel       string
 	TCPKeepalive   time.Duration
-	PanelPath      string
+	// PanelPath is set at install time to a random value (e.g. "/p-a8f3k2x9/").
+	// It has no static default because it must be unique per installation.
+	PanelPath string
 
 	// TelegramBotToken is reserved for v2 and rendered as a commented section.
 	TelegramBotToken string
