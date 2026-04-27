@@ -1,5 +1,7 @@
 # Local documentation and planning notes
 docs/
+AGENTS.md
+CLAUDE.md
 
 # Secrets and generated runtime state
 .env
@@ -11,7 +13,7 @@ docs/
 *.sqlite
 *.sqlite3
 *.db
-secrets/
+/secrets/
 tmp/
 dist/
 build/
