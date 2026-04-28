@@ -14,6 +14,8 @@ type Prompter interface {
 // HuhPrompter is the production Prompter backed by charmbracelet/huh.
 type HuhPrompter struct{}
 
+func NewHuhPrompter() *HuhPrompter { return &HuhPrompter{} }
+
 func (HuhPrompter) AskString(label, defaultVal string) (string, error) {
 	var result string
 	err := huh.NewInput().
