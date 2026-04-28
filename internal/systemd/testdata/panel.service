@@ -1,0 +1,19 @@
+[Unit]
+Description=tgproxy admin panel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tgproxy-panel --config /etc/tgproxy/config.toml
+StandardOutput=append:/var/log/tgproxy/panel.log
+StandardError=append:/var/log/tgproxy/panel.log
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
