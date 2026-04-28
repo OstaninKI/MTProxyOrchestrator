@@ -40,12 +40,25 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!DOCTYPE htm
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Dashboard</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}a{color:#2563eb}</style>
+<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}a{color:#2563eb}
+table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb}
+.ok{color:#16a34a}.down{color:#dc2626}</style>
 </head>
 <body>
 <h1>Dashboard</h1>
-<p>Welcome to tgproxy admin panel.</p>
-<a href="logout">Logout</a>
+<table>
+<thead><tr><th>Service</th><th>Status</th><th>Message</th></tr></thead>
+<tbody>
+{{range .Services}}
+<tr>
+  <td>{{.Name}}</td>
+  <td>{{if .Active}}<span class="ok">running</span>{{else}}<span class="down">down</span>{{end}}</td>
+  <td>{{.Message}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+<p style="margin-top:2rem"><a href="logout">Logout</a></p>
 </body>
 </html>
 `))
@@ -58,6 +71,6 @@ func loginPage(w io.Writer, csrfToken, errMsg string) {
 	})
 }
 
-func dashboardPage(w io.Writer) {
-	dashboardTmpl.Execute(w, nil) //nolint:errcheck
+func dashboardPage(w io.Writer, data DashboardData) {
+	dashboardTmpl.Execute(w, data) //nolint:errcheck
 }
