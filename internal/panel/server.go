@@ -14,7 +14,8 @@ type Server struct {
 	DB          *db.DB
 	PanelPath   string // e.g. "/p-a8f3k2x9/"
 	RateLimiter *RateLimiter
-	Secure      bool // set false in tests; true in production (HTTPS)
+	Secure      bool          // set false in tests; true in production (HTTPS)
+	BridgeCfg   *BridgeConfig // nil → use DefaultPaths and default ports
 }
 
 // Handler returns the root http.Handler. All requests outside PanelPath return 404.
@@ -51,6 +52,9 @@ func (s *Server) panelRouter() http.Handler {
 		r.Post("/users/{id}/toggle", s.handleUserToggle)
 		r.Post("/users/{id}/rotate", s.handleUserRotate)
 		r.Post("/users/{id}/delete", s.handleUserDelete)
+		r.Get("/bridge", s.handleBridgePage)
+		r.Post("/bridge/enable", s.handleBridgeEnable)
+		r.Post("/bridge/disable", s.handleBridgeDisable)
 	})
 
 	return r

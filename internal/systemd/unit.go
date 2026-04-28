@@ -79,3 +79,39 @@ PrivateTmp=yes
 [Install]
 WantedBy=multi-user.target
 `))
+
+// SingboxUnitConfig holds fields for sing-box.service.
+type SingboxUnitConfig struct {
+	BinaryPath string // /usr/local/bin/sing-box
+	ConfigPath string // /etc/tgproxy/sing-box.json
+	LogPath    string // /var/log/tgproxy/sing-box.log
+}
+
+func (c SingboxUnitConfig) Render() []byte {
+	var buf bytes.Buffer
+	if err := singboxUnitTmpl.Execute(&buf, c); err != nil {
+		panic(fmt.Sprintf("sing-box unit render: %v", err))
+	}
+	return buf.Bytes()
+}
+
+var singboxUnitTmpl = template.Must(template.New("sing-box.service").Parse(`[Unit]
+Description=sing-box outbound router
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{.BinaryPath}} run --config {{.ConfigPath}}
+StandardOutput=append:{{.LogPath}}
+StandardError=append:{{.LogPath}}
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+`))
