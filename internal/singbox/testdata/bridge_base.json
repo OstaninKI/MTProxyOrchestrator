@@ -1,0 +1,43 @@
+{
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 2080,
+      "tag": "socks-in",
+      "type": "socks"
+    }
+  ],
+  "outbounds": [
+    {
+      "flow": "xtls-rprx-vision",
+      "server": "198.51.100.1",
+      "server_port": 443,
+      "tag": "node-1",
+      "tls": {
+        "enabled": true,
+        "reality": {
+          "enabled": true,
+          "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "short_id": "aabbccdd"
+        },
+        "server_name": "www.example.com"
+      },
+      "type": "vless",
+      "uuid": "12345678-1234-1234-1234-123456789012"
+    },
+    {
+      "outbounds": [
+        "node-1"
+      ],
+      "tag": "proxy",
+      "type": "urltest"
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "final": "proxy"
+  }
+}
