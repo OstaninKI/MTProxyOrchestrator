@@ -46,6 +46,11 @@ func (s *Server) panelRouter() http.Handler {
 		r.Use(s.requireAuth)
 		r.Get("/", s.handleDashboard)
 		r.Get("/dashboard", s.handleDashboard)
+		r.Get("/users", s.handleUserList)
+		r.Post("/users/create", s.handleUserCreate)
+		r.Post("/users/{id}/toggle", s.handleUserToggle)
+		r.Post("/users/{id}/rotate", s.handleUserRotate)
+		r.Post("/users/{id}/delete", s.handleUserDelete)
 	})
 
 	return r

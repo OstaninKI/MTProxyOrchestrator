@@ -5,19 +5,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
 )
 
 func newTestServer(t *testing.T, panelPath string) *panel.Server {
 	t.Helper()
-	d, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.Close() })
 	return &panel.Server{
-		DB:          d,
+		DB:          newTestDB(t),
 		PanelPath:   panelPath,
 		RateLimiter: panel.NewRateLimiter(),
 		Secure:      false,
