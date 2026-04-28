@@ -48,7 +48,9 @@ func TestRenderSOCKSBoundToLoopback(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc map[string]any
-	json.Unmarshal(out, &doc)
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal output: %v\n%s", err, out)
+	}
 	inbounds := doc["inbounds"].([]any)
 	if len(inbounds) == 0 {
 		t.Fatal("no inbounds in output")
@@ -103,7 +105,9 @@ func TestRenderNoFlowWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc map[string]any
-	json.Unmarshal(out, &doc)
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal output: %v\n%s", err, out)
+	}
 	outbounds := doc["outbounds"].([]any)
 	ob := outbounds[0].(map[string]any)
 	if _, ok := ob["flow"]; ok {
