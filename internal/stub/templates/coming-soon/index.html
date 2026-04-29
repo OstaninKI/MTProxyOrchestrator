@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coming Soon</title>
+  <style>
+    /* ============================================================
+       Coming Soon Page Styles
+       Theme: Gradient, vibrant, modern
+       Fonts: System stack only — no external requests
+       ============================================================ */
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --grad-start:    #6c3cdb;
+      --grad-mid:      #a855f7;
+      --grad-end:      #ec4899;
+      --surface:       rgba(255, 255, 255, 0.08);
+      --surface-hover: rgba(255, 255, 255, 0.13);
+      --border:        rgba(255, 255, 255, 0.15);
+      --text:          #ffffff;
+      --text-dim:      rgba(255, 255, 255, 0.72);
+      --text-muted:    rgba(255, 255, 255, 0.45);
+      --input-bg:      rgba(0, 0, 0, 0.20);
+      --radius:        14px;
+      --radius-sm:     8px;
+      --radius-pill:   99px;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                   Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue',
+                   sans-serif;
+      background: linear-gradient(135deg, #1a0a3d 0%, #3b0d6b 35%, #7b1fad 65%, #c0295c 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* Noise overlay for texture */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+    }
+
+    /* ── Logo / brand mark ── */
+    .logo-wrap {
+      margin-bottom: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 72px;
+      height: 72px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06));
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+
+    .logo-icon svg {
+      width: 36px;
+      height: 36px;
+    }
+
+    .logo-name {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    /* ── Headline ── */
+    h1 {
+      font-size: clamp(36px, 6vw, 64px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      text-align: center;
+      margin-bottom: 20px;
+      background: linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.75) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .tagline {
+      font-size: 18px;
+      color: var(--text-dim);
+      text-align: center;
+      max-width: 480px;
+      margin-bottom: 48px;
+    }
+
+    /* ── Countdown ── */
+    .countdown {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 48px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .countdown-unit {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 72px;
+    }
+
+    .countdown-number {
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #ffffff, rgba(255,255,255,0.75));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+      min-width: 72px;
+      text-align: center;
+      backdrop-filter: blur(8px);
+    }
+
+    .countdown-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .countdown-sep {
+      font-size: 40px;
+      font-weight: 300;
+      color: var(--text-muted);
+      align-self: flex-start;
+      padding-top: 10px;
+    }
+
+    /* ── Signup form ── */
+    .signup-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      width: 100%;
+      max-width: 440px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.3);
+      margin-bottom: 40px;
+    }
+
+    .signup-card h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .signup-card p {
+      font-size: 14px;
+      color: var(--text-dim);
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .form-row input[type="text"],
+    .form-row input[type="email"] {
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 12px 16px;
+      outline: none;
+      width: 100%;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-row input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .form-row input:focus {
+      border-color: rgba(255,255,255,0.4);
+      box-shadow: 0 0 0 3px rgba(255,255,255,0.08);
+    }
+
+    .btn-submit {
+      background: linear-gradient(135deg, #a855f7, #ec4899);
+      border: none;
+      border-radius: var(--radius-pill);
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 14px 24px;
+      width: 100%;
+      transition: opacity 0.2s, transform 0.1s;
+      letter-spacing: -0.01em;
+      box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4);
+    }
+
+    .btn-submit:hover {
+      opacity: 0.9;
+    }
+
+    .btn-submit:active {
+      transform: scale(0.98);
+    }
+
+    .privacy-note {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 10px;
+    }
+
+    /* ── Social hints ── */
+    .social-row {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .social-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 16px;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+
+    .social-chip:hover {
+      background: var(--surface-hover);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 480px) {
+      .countdown-number {
+        font-size: 32px;
+        padding: 12px 14px;
+        min-width: 60px;
+      }
+
+      .countdown-sep {
+        font-size: 32px;
+        padding-top: 6px;
+      }
+
+      .signup-card {
+        padding: 24px 20px;
+      }
+    }
+
+    /* ============================================================
+       End of styles
+       ============================================================ */
+  </style>
+</head>
+<body>
+
+  <!-- Logo / Brand mark with inline SVG -->
+  <div class="logo-wrap">
+    <div class="logo-icon">
+      <!-- Abstract rocket / launch icon -->
+      <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M18 3C18 3 10 10 10 20c0 4.4 3.6 8 8 8s8-3.6 8-8C26 10 18 3 18 3z"
+              fill="url(#rg1)" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+        <circle cx="18" cy="20" r="3" fill="white" opacity="0.9"/>
+        <path d="M12 26 L7 31" stroke="rgba(255,255,255,0.5)" stroke-width="2"
+              stroke-linecap="round"/>
+        <path d="M24 26 L29 31" stroke="rgba(255,255,255,0.5)" stroke-width="2"
+              stroke-linecap="round"/>
+        <path d="M10 19 C8 19 6 21 6 23 L10 22z" fill="rgba(255,255,255,0.4)"/>
+        <path d="M26 19 C28 19 30 21 30 23 L26 22z" fill="rgba(255,255,255,0.4)"/>
+        <defs>
+          <linearGradient id="rg1" x1="18" y1="3" x2="18" y2="28" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#c084fc" stop-opacity="0.7"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <span class="logo-name">Velora</span>
+  </div>
+
+  <h1>Something exciting<br>is coming</h1>
+  <p class="tagline">
+    We're crafting an experience that will redefine how you work and create.
+    Get early access — no spam, just updates.
+  </p>
+
+  <!-- Static countdown display (decorative) -->
+  <div class="countdown" aria-label="Days, hours, minutes, seconds remaining">
+    <div class="countdown-unit">
+      <span class="countdown-number">14</span>
+      <span class="countdown-label">Days</span>
+    </div>
+    <span class="countdown-sep" aria-hidden="true">:</span>
+    <div class="countdown-unit">
+      <span class="countdown-number">08</span>
+      <span class="countdown-label">Hours</span>
+    </div>
+    <span class="countdown-sep" aria-hidden="true">:</span>
+    <div class="countdown-unit">
+      <span class="countdown-number">32</span>
+      <span class="countdown-label">Minutes</span>
+    </div>
+    <span class="countdown-sep" aria-hidden="true">:</span>
+    <div class="countdown-unit">
+      <span class="countdown-number">47</span>
+      <span class="countdown-label">Seconds</span>
+    </div>
+  </div>
+
+  <!-- Signup card -->
+  <div class="signup-card">
+    <h2>Get Early Access</h2>
+    <p>Join 4,200+ people waiting for launch day.</p>
+
+    <form class="form-row" action="#" method="post">
+      <input type="text"  name="name"  placeholder="Your name" autocomplete="given-name">
+      <input type="email" name="email" placeholder="your@email.com" autocomplete="email" required>
+      <button type="submit" class="btn-submit">Notify Me on Launch &#8594;</button>
+    </form>
+
+    <p class="privacy-note">No credit card required. Unsubscribe anytime.</p>
+  </div>
+
+  <!-- Social chips -->
+  <div class="social-row">
+    <a href="#" class="social-chip">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M22.46 6c-.77.35-1.6.58-2.46.69.88-.53 1.56-1.37 1.88-2.38-.83.5-1.75.85-2.72
+                 1.05C18.37 4.5 17.26 4 16 4c-2.35 0-4.27 1.92-4.27 4.29 0 .34.04.67.11.98
+                 C8.28 9.09 5.11 7.38 3 4.79c-.37.63-.58 1.37-.58 2.15 0 1.49.75 2.81 1.91
+                 3.56-.71 0-1.37-.2-1.95-.5v.03c0 2.08 1.48 3.82 3.44 4.21a4.22 4.22 0 0
+                 1-1.93.07 4.28 4.28 0 0 0 4 2.98 8.521 8.521 0 0 1-5.33 1.84c-.34
+                 0-.68-.02-1.02-.06C3.44 20.29 5.7 21 8.12 21 16 21 20.33 14.46 20.33
+                 8.79c0-.19 0-.37-.01-.56.84-.6 1.56-1.36 2.14-2.23z"/>
+      </svg>
+      Follow updates
+    </a>
+    <a href="#" class="social-chip">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0
+                 4l-8 5-8-5V6l8 5 8-5v2z"/>
+      </svg>
+      Subscribe to newsletter
+    </a>
+  </div>
+
+</body>
+</html>

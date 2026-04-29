@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<!--
+  Developer Portfolio — Dark / Light theme toggle via pure CSS checkbox trick.
+  No JavaScript. No external resources. System fonts only.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jordan Lee — Full-Stack Developer</title>
+  <style>
+    /* ============================================================
+       Developer Portfolio
+       Theme toggle: CSS checkbox trick (no JS)
+       Layout: Sticky header, sections, CSS grid/flexbox
+       Fonts: System stack only
+       ============================================================ */
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ── Token custom properties (dark mode = default) ── */
+    :root {
+      --bg:           #0d1117;
+      --bg-2:         #161b22;
+      --bg-3:         #21262d;
+      --surface:      #1c2128;
+      --border:       #30363d;
+      --border-light: #21262d;
+      --text:         #e6edf3;
+      --text-2:       #8b949e;
+      --text-3:       #484f58;
+      --accent:       #58a6ff;
+      --accent-2:     #388bfd;
+      --accent-dim:   rgba(88,166,255,0.15);
+      --green:        #3fb950;
+      --orange:       #d29922;
+      --purple:       #bc8cff;
+      --red:          #f85149;
+
+      --radius:    8px;
+      --radius-lg: 14px;
+      --shadow:    0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    /* ── Light theme via checkbox trick ── */
+    #theme-toggle { display: none; }
+
+    #theme-toggle:checked ~ * {
+      --bg:           #ffffff;
+      --bg-2:         #f6f8fa;
+      --bg-3:         #eaeef2;
+      --surface:      #ffffff;
+      --border:       #d0d7de;
+      --border-light: #eaeef2;
+      --text:         #1f2328;
+      --text-2:       #656d76;
+      --text-3:       #9198a1;
+      --accent:       #0969da;
+      --accent-2:     #0550ae;
+      --accent-dim:   rgba(9,105,218,0.10);
+      --green:        #1a7f37;
+      --orange:       #9a6700;
+      --purple:       #8250df;
+      --shadow:       0 4px 20px rgba(0,0,0,0.10);
+    }
+
+    /* ── Toggle label (moon/sun) ── */
+    .theme-toggle-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-2);
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+      flex-shrink: 0;
+    }
+
+    .theme-toggle-label:hover {
+      background: var(--bg-3);
+    }
+
+    .theme-toggle-label .icon-dark,
+    .theme-toggle-label .icon-light {
+      width: 18px;
+      height: 18px;
+    }
+
+    #theme-toggle:not(:checked) ~ * .icon-light { display: none; }
+    #theme-toggle:checked ~ * .icon-dark  { display: none; }
+    #theme-toggle:checked ~ * .icon-light { display: block; }
+
+    /* ── Base ── */
+    html { font-size: 16px; scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                   Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue',
+                   sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      min-height: 100vh;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-2); text-decoration: underline; }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ─────────────────────────────────────────────
+       STICKY HEADER
+    ───────────────────────────────────────────── */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      height: 60px;
+      gap: 16px;
+    }
+
+    .header-name {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+
+    .header-name:hover {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      list-style: none;
+      flex: 1;
+    }
+
+    .header-nav a {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-2);
+      padding: 5px 10px;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .header-nav a:hover {
+      background: var(--accent-dim);
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    /* ─────────────────────────────────────────────
+       HERO
+    ───────────────────────────────────────────── */
+    .hero {
+      padding: 72px 0 64px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .hero-greeting {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 12px;
+    }
+
+    .hero h1 {
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      margin-bottom: 16px;
+    }
+
+    .hero h1 span {
+      color: var(--accent);
+    }
+
+    .hero-sub {
+      font-size: 16px;
+      color: var(--text-2);
+      max-width: 480px;
+      margin-bottom: 32px;
+      line-height: 1.7;
+    }
+
+    .hero-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      border: 1px solid transparent;
+    }
+
+    .btn:hover { text-decoration: none; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-2);
+      border-color: var(--accent-2);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: var(--bg-2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-3);
+      color: var(--text);
+    }
+
+    /* ── Avatar placeholder ── */
+    .hero-avatar {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--bg-3), var(--bg-2));
+      border: 3px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      box-shadow: var(--shadow);
+    }
+
+    .hero-avatar svg {
+      width: 90px;
+      height: 90px;
+    }
+
+    /* ─────────────────────────────────────────────
+       SECTION COMMON
+    ───────────────────────────────────────────── */
+    .section {
+      padding: 64px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+
+    .section-title {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 32px;
+    }
+
+    /* ─────────────────────────────────────────────
+       SKILLS
+    ───────────────────────────────────────────── */
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .skill-group {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+    }
+
+    .skill-group h3 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-2);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .skill-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .skill-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+    }
+
+    .skill-tag.featured {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ─────────────────────────────────────────────
+       PROJECTS
+    ───────────────────────────────────────────── */
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .project-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .project-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    .project-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      background: var(--bg-3);
+      border: 1px solid var(--border-light);
+    }
+
+    .project-icon svg { width: 22px; height: 22px; }
+
+    .project-card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .project-card p {
+      font-size: 13px;
+      color: var(--text-2);
+      line-height: 1.65;
+      flex: 1;
+      margin-bottom: 16px;
+    }
+
+    .project-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .project-lang {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-2);
+    }
+
+    .lang-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .lang-dot.go     { background: #00ADD8; }
+    .lang-dot.rust   { background: #DEA584; }
+    .lang-dot.ts     { background: #3178C6; }
+
+    .project-links {
+      display: flex;
+      gap: 8px;
+    }
+
+    .project-links a {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-2);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .project-links a:hover {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .project-stars {
+      font-size: 12px;
+      color: var(--orange);
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    /* ─────────────────────────────────────────────
+       CONTACT
+    ───────────────────────────────────────────── */
+    .contact-wrap {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .contact-intro p {
+      font-size: 15px;
+      color: var(--text-2);
+      margin-bottom: 24px;
+      line-height: 1.7;
+    }
+
+    .contact-links {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .contact-links li a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-2);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .contact-links li a:hover {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .contact-links li svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    /* ── Contact form ── */
+    .contact-form {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+    }
+
+    .contact-form h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-2);
+      margin-bottom: 6px;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-group input::placeholder,
+    .form-group textarea::placeholder {
+      color: var(--text-3);
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    .form-group textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .contact-form button {
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 11px 22px;
+      width: 100%;
+      transition: background 0.15s;
+    }
+
+    .contact-form button:hover {
+      background: var(--accent-2);
+    }
+
+    /* ─────────────────────────────────────────────
+       FOOTER
+    ───────────────────────────────────────────── */
+    .site-footer {
+      padding: 28px 0;
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .footer-copy {
+      font-size: 13px;
+      color: var(--text-3);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 16px;
+      list-style: none;
+    }
+
+    .footer-links a {
+      font-size: 13px;
+      color: var(--text-3);
+      text-decoration: none;
+    }
+
+    .footer-links a:hover {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    /* ─────────────────────────────────────────────
+       RESPONSIVE
+    ───────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .hero-inner {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-avatar {
+        width: 120px;
+        height: 120px;
+        order: -1;
+      }
+
+      .skills-grid,
+      .projects-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .contact-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .header-nav { display: none; }
+    }
+
+    @media (max-width: 520px) {
+      .hero { padding: 48px 0 40px; }
+      .section { padding: 48px 0; }
+    }
+
+    /* ============================================================
+       End of styles
+       ============================================================ */
+  </style>
+</head>
+<body>
+
+  <!--
+    THEME TOGGLE TRICK:
+    The hidden checkbox #theme-toggle is placed BEFORE the rest of the DOM.
+    When checked, CSS sibling selectors (~) override CSS custom properties
+    to switch to the light theme. No JavaScript needed.
+  -->
+  <input type="checkbox" id="theme-toggle" aria-label="Toggle colour theme">
+
+  <!-- ── HEADER ── -->
+  <header class="site-header">
+    <div class="container">
+      <div class="header-inner">
+        <a href="#" class="header-name">Jordan Lee</a>
+
+        <nav aria-label="Main navigation">
+          <ul class="header-nav">
+            <li><a href="#about">About</a></li>
+            <li><a href="#skills">Skills</a></li>
+            <li><a href="#projects">Projects</a></li>
+            <li><a href="#contact">Contact</a></li>
+          </ul>
+        </nav>
+
+        <div class="header-actions">
+          <!-- Theme toggle label (connected to hidden checkbox above) -->
+          <label for="theme-toggle" class="theme-toggle-label" title="Toggle dark/light theme"
+                 aria-label="Toggle colour theme">
+            <!-- Moon icon (shown in dark mode) -->
+            <svg class="icon-dark" viewBox="0 0 18 18" fill="none"
+                 xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M15.5 11.5A7 7 0 0 1 6.5 2.5a7 7 0 1 0 9 9z"
+                    fill="currentColor" opacity="0.8"/>
+            </svg>
+            <!-- Sun icon (shown in light mode) -->
+            <svg class="icon-light" viewBox="0 0 18 18" fill="none"
+                 xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="9" cy="9" r="3.5" fill="currentColor"/>
+              <path d="M9 1v2M9 15v2M1 9h2M15 9h2M3.2 3.2l1.4 1.4M13.4 13.4l1.4 1.4
+                       M3.2 14.8l1.4-1.4M13.4 4.6l1.4-1.4"
+                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </label>
+
+          <a href="#contact" class="btn btn-primary">Hire me</a>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- ── HERO ── -->
+  <section class="hero" id="about">
+    <div class="container">
+      <div class="hero-inner">
+
+        <div class="hero-text">
+          <p class="hero-greeting">&#128075; Hey, I'm Jordan</p>
+          <h1>I build fast,<br><span>reliable software</span></h1>
+          <p class="hero-sub">
+            Full-stack developer with 7 years of experience turning complex
+            requirements into clean, maintainable systems. Specialising in
+            distributed backends with Go and Rust, and snappy frontends with
+            TypeScript. Open-source contributor, occasional conference speaker.
+          </p>
+          <div class="hero-buttons">
+            <a href="#projects" class="btn btn-primary">View my work</a>
+            <a href="#contact"  class="btn btn-secondary">Get in touch</a>
+          </div>
+        </div>
+
+        <!-- Avatar placeholder (inline SVG person) -->
+        <div class="hero-avatar" aria-label="Avatar placeholder">
+          <svg viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg"
+               aria-hidden="true">
+            <circle cx="45" cy="34" r="18" fill="var(--accent)" opacity="0.25"/>
+            <circle cx="45" cy="34" r="14" fill="var(--accent)" opacity="0.5"/>
+            <path d="M15 82c0-16.6 13.4-30 30-30s30 13.4 30 30"
+                  fill="var(--accent)" opacity="0.3"/>
+          </svg>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SKILLS ── -->
+  <section class="section" id="skills">
+    <div class="container">
+      <div class="section-label">What I work with</div>
+      <h2 class="section-title">Skills &amp; Technologies</h2>
+
+      <div class="skills-grid">
+
+        <div class="skill-group">
+          <h3>Backend</h3>
+          <div class="skill-tags">
+            <span class="skill-tag featured">Go</span>
+            <span class="skill-tag featured">Rust</span>
+            <span class="skill-tag">PostgreSQL</span>
+            <span class="skill-tag">Redis</span>
+            <span class="skill-tag">gRPC</span>
+            <span class="skill-tag">NATS</span>
+            <span class="skill-tag">Kafka</span>
+            <span class="skill-tag">SQLite</span>
+          </div>
+        </div>
+
+        <div class="skill-group">
+          <h3>Frontend</h3>
+          <div class="skill-tags">
+            <span class="skill-tag featured">TypeScript</span>
+            <span class="skill-tag featured">React</span>
+            <span class="skill-tag">Next.js</span>
+            <span class="skill-tag">CSS / Tailwind</span>
+            <span class="skill-tag">WebAssembly</span>
+            <span class="skill-tag">Vite</span>
+          </div>
+        </div>
+
+        <div class="skill-group">
+          <h3>Infrastructure</h3>
+          <div class="skill-tags">
+            <span class="skill-tag featured">Linux</span>
+            <span class="skill-tag featured">Docker</span>
+            <span class="skill-tag">Kubernetes</span>
+            <span class="skill-tag">Terraform</span>
+            <span class="skill-tag">Prometheus</span>
+            <span class="skill-tag">nginx</span>
+            <span class="skill-tag">systemd</span>
+          </div>
+        </div>
+
+      </div><!-- /.skills-grid -->
+    </div>
+  </section>
+
+  <!-- ── PROJECTS ── -->
+  <section class="section" id="projects">
+    <div class="container">
+      <div class="section-label">Selected work</div>
+      <h2 class="section-title">Open-Source Projects</h2>
+
+      <div class="projects-grid">
+
+        <!-- Project 1 -->
+        <div class="project-card">
+          <div class="project-icon">
+            <!-- Database icon -->
+            <svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <ellipse cx="11" cy="5" rx="8" ry="3" fill="var(--accent)" opacity="0.3"/>
+              <path d="M3 5v4c0 1.66 3.58 3 8 3s8-1.34 8-3V5"
+                    stroke="var(--accent)" stroke-width="1.5"/>
+              <path d="M3 9v4c0 1.66 3.58 3 8 3s8-1.34 8-3V9"
+                    stroke="var(--accent)" stroke-width="1.5"/>
+              <path d="M3 13v4c0 1.66 3.58 3 8 3s8-1.34 8-3v-4"
+                    stroke="var(--accent)" stroke-width="1.5"/>
+            </svg>
+          </div>
+          <h3>pgstream</h3>
+          <p>
+            Zero-downtime Postgres logical replication consumer written in Go.
+            Supports multi-tenant schemas, back-pressure, and exactly-once delivery
+            to NATS JetStream and Kafka.
+          </p>
+          <div class="project-footer">
+            <span class="project-lang">
+              <span class="lang-dot go"></span>
+              Go
+            </span>
+            <span class="project-stars">
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75
+                         0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088
+                         .791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194
+                         L.873 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75
+                         0 0 1 8 .25z"/>
+              </svg>
+              1.2k
+            </span>
+            <div class="project-links">
+              <a href="#">GitHub</a>
+              <a href="#">Docs</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Project 2 -->
+        <div class="project-card">
+          <div class="project-icon">
+            <!-- Terminal icon -->
+            <svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="3" width="18" height="16" rx="2"
+                    fill="var(--purple)" opacity="0.2"/>
+              <rect x="2" y="3" width="18" height="16" rx="2"
+                    stroke="var(--purple)" stroke-width="1.5"/>
+              <path d="M6 9l3 3-3 3M12 15h4"
+                    stroke="var(--purple)" stroke-width="1.5"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>tach</h3>
+          <p>
+            Minimal, embeddable task runner for Rust projects. Replaces Make
+            for common build, lint, and test workflows. Config via TOML, shell-free
+            cross-platform execution.
+          </p>
+          <div class="project-footer">
+            <span class="project-lang">
+              <span class="lang-dot rust"></span>
+              Rust
+            </span>
+            <span class="project-stars">
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75
+                         0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088
+                         .791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194
+                         L.873 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75
+                         0 0 1 8 .25z"/>
+              </svg>
+              863
+            </span>
+            <div class="project-links">
+              <a href="#">GitHub</a>
+              <a href="#">Crates.io</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Project 3 -->
+        <div class="project-card">
+          <div class="project-icon">
+            <!-- API / cloud icon -->
+            <svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M17 16a4 4 0 0 0 0-8 .5.5 0 0 0-.09 0A5 5 0 0 0 7.1 9.9 3 3
+                       0 0 0 8 16h9z"
+                    fill="var(--green)" opacity="0.2"/>
+              <path d="M17 16a4 4 0 0 0 0-8 .5.5 0 0 0-.09 0A5 5 0 0 0 7.1 9.9 3 3
+                       0 0 0 8 16h9z"
+                    stroke="var(--green)" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>httpfuzz</h3>
+          <p>
+            Blackbox HTTP API fuzzer written in TypeScript. Generates mutation
+            payloads from OpenAPI specs, detects common injection classes, and
+            outputs structured SARIF reports for CI integration.
+          </p>
+          <div class="project-footer">
+            <span class="project-lang">
+              <span class="lang-dot ts"></span>
+              TypeScript
+            </span>
+            <span class="project-stars">
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75
+                         0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088
+                         .791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194
+                         L.873 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75
+                         0 0 1 8 .25z"/>
+              </svg>
+              2.7k
+            </span>
+            <div class="project-links">
+              <a href="#">GitHub</a>
+              <a href="#">npm</a>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /.projects-grid -->
+    </div>
+  </section>
+
+  <!-- ── CONTACT ── -->
+  <section class="section" id="contact">
+    <div class="container">
+      <div class="section-label">Let's work together</div>
+      <h2 class="section-title">Get in touch</h2>
+
+      <div class="contact-wrap">
+
+        <div class="contact-intro">
+          <p>
+            I'm currently open to new opportunities — freelance contracts,
+            consulting engagements, and interesting full-time roles. If you
+            have something to build, I'd love to hear about it.
+          </p>
+          <p>
+            Response time is typically under 24 hours on business days.
+          </p>
+
+          <ul class="contact-links" style="margin-top: 24px;">
+            <li>
+              <a href="#">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55
+                           -.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94
+                           -.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21
+                           1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95
+                           0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64
+                           -.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44
+                           1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65
+                           3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38
+                           A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                </svg>
+                github.com/jordanlee
+              </a>
+            </li>
+            <li>
+              <a href="#">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708
+                           c0 .633-.526 1.146-1.175 1.146H8.82v-5.97H10.9l.397-2.6H8.82V5.964
+                           c0-.71.348-1.402 1.465-1.402h1.134V2.308s-1.029-.176-2.013-.176
+                           c-2.054 0-3.396 1.245-3.396 3.501v1.98H3.678v2.6h2.232V16H1.175
+                           C.526 16 0 15.487 0 14.854z"/>
+                </svg>
+                linkedin.com/in/jordanlee
+              </a>
+            </li>
+            <li>
+              <a href="#">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2
+                           0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v.217l7 4.2 7-4.2V4a1 1 0
+                           0 0-1-1H2zm13 2.383-4.708 2.825L15 11.105V5.383zm-.034
+                           6.876-5.64-3.471L8 9.583l-1.326-.795-5.64 3.47A1 1 0 0 0
+                           2 13h12a1 1 0 0 0 .966-.741zM1 11.105l4.708-2.897L1 5.383v5.722z"/>
+                </svg>
+                jordan@example.dev
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Contact form -->
+        <div class="contact-form">
+          <h3>Send a message</h3>
+          <form action="#" method="post">
+            <div class="form-group">
+              <label for="cf-name">Name</label>
+              <input type="text" id="cf-name" name="name"
+                     placeholder="Your name" autocomplete="name">
+            </div>
+            <div class="form-group">
+              <label for="cf-email">Email</label>
+              <input type="email" id="cf-email" name="email"
+                     placeholder="your@email.com" autocomplete="email" required>
+            </div>
+            <div class="form-group">
+              <label for="cf-message">Message</label>
+              <textarea id="cf-message" name="message"
+                        placeholder="Tell me about your project…" required></textarea>
+            </div>
+            <button type="submit">Send message &#8594;</button>
+          </form>
+        </div>
+
+      </div><!-- /.contact-wrap -->
+    </div>
+  </section>
+
+  <!-- ── FOOTER ── -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <p class="footer-copy">
+          &copy; 2026 Jordan Lee &mdash; Built with care, no frameworks harmed.
+        </p>
+        <nav aria-label="Footer navigation">
+          <ul class="footer-links">
+            <li><a href="#">Privacy</a></li>
+            <li><a href="#">Accessibility</a></li>
+            <li><a href="#">Source</a></li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

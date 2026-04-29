@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Site Maintenance</title>
+  <style>
+    /* ============================================================
+       Maintenance Page Styles
+       Theme: Dark, minimal, professional
+       Font: System stack only — no external font requests
+       ============================================================ */
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Root variables */
+    :root {
+      --bg-primary:   #0f1117;
+      --bg-card:      #1a1d27;
+      --border:       #2a2d3a;
+      --accent:       #4f8ef7;
+      --accent-dim:   #3a6fd8;
+      --text-primary: #e8eaf0;
+      --text-secondary: #9098b0;
+      --text-muted:   #5a6070;
+      --success:      #34c68a;
+      --warning:      #f5a623;
+      --radius:       12px;
+      --radius-sm:    8px;
+      --shadow:       0 4px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                   Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue',
+                   sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      line-height: 1.6;
+    }
+
+    /* Background grid pattern */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(79, 142, 247, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(79, 142, 247, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    /* Glowing orb behind the card */
+    body::after {
+      content: '';
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -60%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(79, 142, 247, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* ── Card ── */
+    .card {
+      position: relative;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 56px 48px;
+      max-width: 520px;
+      width: 100%;
+      text-align: center;
+      z-index: 1;
+    }
+
+    /* ── Icon wrapper ── */
+    .icon-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 88px;
+      height: 88px;
+      background: linear-gradient(135deg, #1e2235, #252a3d);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      margin-bottom: 32px;
+      box-shadow: 0 0 0 8px rgba(79, 142, 247, 0.06);
+    }
+
+    .icon-wrap svg {
+      width: 44px;
+      height: 44px;
+    }
+
+    /* ── Status badge ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(245, 166, 35, 0.12);
+      border: 1px solid rgba(245, 166, 35, 0.3);
+      color: var(--warning);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 24px;
+    }
+
+    .badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--warning);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ── Headings ── */
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-bottom: 36px;
+      max-width: 360px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 32px 0;
+    }
+
+    /* ── Info rows ── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .info-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      text-align: left;
+    }
+
+    .info-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .info-value {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    /* ── Progress bar ── */
+    .progress-wrap {
+      text-align: left;
+      margin-bottom: 32px;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .progress-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .progress-pct {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .progress-track {
+      height: 6px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 73%;
+      background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+      border-radius: 99px;
+    }
+
+    /* ── Notify form ── */
+    .notify-form {
+      display: flex;
+      gap: 8px;
+    }
+
+    .notify-form input[type="email"] {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .notify-form input[type="email"]::placeholder {
+      color: var(--text-muted);
+    }
+
+    .notify-form input[type="email"]:focus {
+      border-color: var(--accent);
+    }
+
+    .notify-form button {
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 18px;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+
+    .notify-form button:hover {
+      background: var(--accent-dim);
+    }
+
+    /* ── Footer note ── */
+    .footer-note {
+      margin-top: 24px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 480px) {
+      .card {
+        padding: 40px 24px;
+      }
+
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .notify-form {
+        flex-direction: column;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+    }
+
+    /* ============================================================
+       End of styles
+       ============================================================ */
+  </style>
+</head>
+<body>
+
+  <div class="card">
+
+    <!-- Wrench + gear icon (inline SVG) -->
+    <div class="icon-wrap">
+      <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- Gear -->
+        <path d="M22 14a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 13a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"
+              fill="#4f8ef7" opacity="0.5"/>
+        <!-- Gear teeth -->
+        <path d="M23.5 10h-3v3.2A9.05 9.05 0 0 0 17 15.1L14.2 13.4l-2.1 2.1 1.7 2.8A9.05
+                 9.05 0 0 0 12 21.5v3h3.2c.4.8.9 1.5 1.5 2.1l-1.7 2.8 2.1 2.1 2.8-1.7
+                 c.7.6 1.4 1.1 2.1 1.5V34h3v-3.2c.8-.4 1.5-.9 2.1-1.5l2.8 1.7 2.1-2.1
+                 -1.7-2.8c.6-.7 1.1-1.4 1.5-2.1H34v-3h-3.2a9.05 9.05 0 0 0-1.5-2.1l1.7-2.8
+                 -2.1-2.1-2.8 1.7a9.05 9.05 0 0 0-2.1-1.5V10z"
+              fill="#4f8ef7" opacity="0.9"/>
+        <!-- Wrench overlay -->
+        <path d="M10 32 L20 22 M18 12 a6 6 0 0 1 8.5 8.5 L14 33 a2 2 0 0 1-2.8 0
+                 l-1.2-1.2 a2 2 0 0 1 0-2.8z"
+              stroke="#f5a623" stroke-width="2" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+
+    <div class="badge">Scheduled Maintenance</div>
+
+    <h1>We'll Be Back Soon</h1>
+    <p class="subtitle">
+      We're performing scheduled maintenance to improve performance and
+      reliability. Thank you for your patience.
+    </p>
+
+    <!-- Info grid -->
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">Started</div>
+        <div class="info-value">Today, 02:00 UTC</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Est. completion</div>
+        <div class="info-value">Today, 06:00 UTC</div>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-wrap">
+      <div class="progress-header">
+        <span class="progress-label">Maintenance progress</span>
+        <span class="progress-pct">73%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill"></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Notify form -->
+    <form class="notify-form" action="#" method="post">
+      <input type="email" name="email" placeholder="your@email.com"
+             autocomplete="email" aria-label="Email address">
+      <button type="submit">Notify Me</button>
+    </form>
+
+    <p class="footer-note">
+      We'll send you a one-time notification when the site is back online.
+      No spam, ever.
+    </p>
+
+  </div>
+
+</body>
+</html>

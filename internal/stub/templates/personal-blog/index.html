@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alex Mercer — Notes on software & life</title>
+  <style>
+    /* ============================================================
+       Personal Blog Styles
+       Theme: Clean, readable, minimal — inspired by classic blogs
+       Layout: CSS flexbox + grid
+       Fonts: System stack only
+       ============================================================ */
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      /* Colour palette */
+      --bg:           #fafaf9;
+      --surface:      #ffffff;
+      --surface-alt:  #f5f5f3;
+      --border:       #e5e5e2;
+      --border-light: #efefed;
+      --text:         #1a1917;
+      --text-2:       #57534e;
+      --text-3:       #a8a29e;
+      --accent:       #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-light: #eff6ff;
+      --tag-bg:       #f0fdf4;
+      --tag-text:     #166534;
+      --tag-border:   #bbf7d0;
+
+      /* Spacing */
+      --container:    720px;
+      --gap:          32px;
+
+      /* Typography */
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                    Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      --font-serif: Georgia, 'Times New Roman', Times, serif;
+
+      /* Misc */
+      --radius:    6px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow:    0 4px 12px rgba(0,0,0,0.08);
+    }
+
+    html {
+      font-size: 16px;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      color: var(--accent-hover);
+      text-decoration: underline;
+    }
+
+    img {
+      max-width: 100%;
+      display: block;
+    }
+
+    /* ── Layout helpers ── */
+    .container {
+      max-width: var(--container);
+      margin: 0 auto;
+      padding: 0 24px;
+      width: 100%;
+    }
+
+    /* ─────────────────────────────────────────────
+       HEADER / NAVIGATION
+    ───────────────────────────────────────────── */
+    .site-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+    }
+
+    .site-brand {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      text-decoration: none;
+    }
+
+    .site-brand:hover {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .site-brand span {
+      color: var(--accent);
+    }
+
+    .site-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      list-style: none;
+    }
+
+    .site-nav a {
+      color: var(--text-2);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .site-nav a:hover,
+    .site-nav a.active {
+      background: var(--accent-light);
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    /* ─────────────────────────────────────────────
+       HERO / INTRO
+    ───────────────────────────────────────────── */
+    .hero {
+      border-bottom: 1px solid var(--border);
+      padding: 52px 0 48px;
+    }
+
+    .hero-inner {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    .hero-avatar {
+      flex-shrink: 0;
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+      border: 3px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .hero-avatar svg {
+      width: 44px;
+      height: 44px;
+    }
+
+    .hero-text h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    .hero-text p {
+      font-size: 15px;
+      color: var(--text-2);
+      max-width: 480px;
+    }
+
+    /* ─────────────────────────────────────────────
+       MAIN LAYOUT
+    ───────────────────────────────────────────── */
+    .main-layout {
+      flex: 1;
+      padding: 48px 0;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 48px;
+      align-items: start;
+    }
+
+    /* ─────────────────────────────────────────────
+       SECTION HEADING
+    ───────────────────────────────────────────── */
+    .section-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .section-heading h2 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    .section-heading a {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    /* ─────────────────────────────────────────────
+       POST CARDS
+    ───────────────────────────────────────────── */
+    .post-list {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .post-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow 0.2s, border-color 0.2s;
+    }
+
+    .post-card:hover {
+      box-shadow: var(--shadow);
+      border-color: var(--accent);
+    }
+
+    .post-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .post-date {
+      font-size: 13px;
+      color: var(--text-3);
+      font-weight: 500;
+    }
+
+    .post-tag {
+      display: inline-block;
+      background: var(--tag-bg);
+      border: 1px solid var(--tag-border);
+      color: var(--tag-text);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .reading-time {
+      font-size: 12px;
+      color: var(--text-3);
+    }
+
+    .post-card h3 {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+      line-height: 1.3;
+    }
+
+    .post-card h3 a {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .post-card h3 a:hover {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .post-excerpt {
+      font-size: 15px;
+      color: var(--text-2);
+      margin-bottom: 20px;
+      line-height: 1.65;
+    }
+
+    .post-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .read-more {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      text-decoration: none;
+    }
+
+    .read-more:hover {
+      color: var(--accent-hover);
+      text-decoration: none;
+    }
+
+    .read-more::after {
+      content: '→';
+    }
+
+    .post-stats {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .stat {
+      font-size: 12px;
+      color: var(--text-3);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ─────────────────────────────────────────────
+       SIDEBAR
+    ───────────────────────────────────────────── */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    .widget {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .widget-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .widget-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .widget-list li a {
+      font-size: 14px;
+      color: var(--text-2);
+      text-decoration: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .widget-list li a:hover {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .widget-list .count {
+      font-size: 12px;
+      color: var(--text-3);
+      background: var(--surface-alt);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+
+    /* Tags widget */
+    .tag-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .tag-cloud a {
+      display: inline-block;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-2);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .tag-cloud a:hover {
+      background: var(--accent-light);
+      color: var(--accent);
+      border-color: #bfdbfe;
+      text-decoration: none;
+    }
+
+    /* Newsletter widget */
+    .newsletter-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .newsletter-form input[type="email"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .newsletter-form input[type="email"]::placeholder {
+      color: var(--text-3);
+    }
+
+    .newsletter-form input[type="email"]:focus {
+      border-color: var(--accent);
+    }
+
+    .newsletter-form button {
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 9px 16px;
+      transition: background 0.2s;
+    }
+
+    .newsletter-form button:hover {
+      background: var(--accent-hover);
+    }
+
+    /* ─────────────────────────────────────────────
+       FOOTER
+    ───────────────────────────────────────────── */
+    .site-footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 28px 0;
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .footer-copy {
+      font-size: 13px;
+      color: var(--text-3);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 16px;
+      list-style: none;
+    }
+
+    .footer-links a {
+      font-size: 13px;
+      color: var(--text-3);
+      text-decoration: none;
+    }
+
+    .footer-links a:hover {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    /* ─────────────────────────────────────────────
+       RESPONSIVE
+    ───────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        order: -1;
+      }
+
+      .hero-inner {
+        flex-direction: column;
+        text-align: center;
+        gap: 20px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .site-nav a {
+        padding: 6px 8px;
+      }
+
+      .post-card {
+        padding: 20px;
+      }
+    }
+
+    /* ============================================================
+       End of styles
+       ============================================================ */
+  </style>
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header class="site-header">
+    <div class="container">
+      <div class="header-inner">
+        <a href="#" class="site-brand">Alex<span>.</span>dev</a>
+        <nav aria-label="Main navigation">
+          <ul class="site-nav">
+            <li><a href="#" class="active">Home</a></li>
+            <li><a href="#">About</a></li>
+            <li><a href="#">Archive</a></li>
+            <li><a href="#">RSS</a></li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── HERO ── -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-inner">
+        <div class="hero-avatar" aria-hidden="true">
+          <!-- Person silhouette SVG -->
+          <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="22" cy="16" r="8" fill="#93c5fd"/>
+            <path d="M6 38c0-8.8 7.2-16 16-16s16 7.2 16 16" fill="#bfdbfe"/>
+          </svg>
+        </div>
+        <div class="hero-text">
+          <h1>Hi, I'm Alex Mercer</h1>
+          <p>
+            Software engineer turned writer. I share notes on distributed systems,
+            Go, developer ergonomics, and the occasional half-baked opinion.
+            Building in public since 2019.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── MAIN ── -->
+  <main class="main-layout" id="main">
+    <div class="container">
+      <div class="main-grid">
+
+        <!-- Posts column -->
+        <section aria-label="Recent posts">
+          <div class="section-heading">
+            <h2>Recent Posts</h2>
+            <a href="#">View all →</a>
+          </div>
+
+          <div class="post-list">
+
+            <!-- Post 1 -->
+            <article class="post-card">
+              <div class="post-meta">
+                <time class="post-date" datetime="2026-04-15">April 15, 2026</time>
+                <span class="post-tag">Systems</span>
+                <span class="reading-time">8 min read</span>
+              </div>
+              <h3>
+                <a href="#">
+                  Why I Stopped Using ORMs and What I Use Instead
+                </a>
+              </h3>
+              <p class="post-excerpt">
+                After four years of wrestling with N+1 queries, opaque migrations,
+                and "magic" that quietly breaks under load, I made the jump to raw SQL
+                with a thin query builder. Here's what that transition looked like and
+                why my team hasn't looked back.
+              </p>
+              <div class="post-footer">
+                <a href="#" class="read-more">Read more</a>
+                <div class="post-stats">
+                  <span class="stat">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M12 4.5C7 4.5 2.7 7.6 1 12c1.7 4.4 6 7.5 11 7.5s9.3-3.1 11-7.5c-1.7-4.4-6-7.5-11-7.5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>
+                    </svg>
+                    2.4k views
+                  </span>
+                  <span class="stat">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    34 comments
+                  </span>
+                </div>
+              </div>
+            </article>
+
+            <!-- Post 2 -->
+            <article class="post-card">
+              <div class="post-meta">
+                <time class="post-date" datetime="2026-03-28">March 28, 2026</time>
+                <span class="post-tag">Go</span>
+                <span class="reading-time">5 min read</span>
+              </div>
+              <h3>
+                <a href="#">
+                  Structured Logging in Go: slog Patterns That Actually Scale
+                </a>
+              </h3>
+              <p class="post-excerpt">
+                The <code>log/slog</code> package landed in Go 1.21 and it's genuinely
+                good. But there are a handful of patterns — context propagation, shared
+                attribute groups, test helpers — that take a bit of thinking to get right.
+                This post walks through what I've settled on after six months of production use.
+              </p>
+              <div class="post-footer">
+                <a href="#" class="read-more">Read more</a>
+                <div class="post-stats">
+                  <span class="stat">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M12 4.5C7 4.5 2.7 7.6 1 12c1.7 4.4 6 7.5 11 7.5s9.3-3.1 11-7.5c-1.7-4.4-6-7.5-11-7.5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>
+                    </svg>
+                    1.8k views
+                  </span>
+                  <span class="stat">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    19 comments
+                  </span>
+                </div>
+              </div>
+            </article>
+
+            <!-- Post 3 -->
+            <article class="post-card">
+              <div class="post-meta">
+                <time class="post-date" datetime="2026-03-10">March 10, 2026</time>
+                <span class="post-tag">Career</span>
+                <span class="reading-time">11 min read</span>
+              </div>
+              <h3>
+                <a href="#">
+                  The Unsexy Skill That Made Me a Better Engineer: Reading Code
+                </a>
+              </h3>
+              <p class="post-excerpt">
+                Everyone talks about writing clean code. Hardly anyone talks about
+                becoming an excellent reader of code. Yet the ability to quickly
+                orient yourself in an unfamiliar codebase is one of the highest-leverage
+                skills a senior engineer can have — and it's almost entirely learnable.
+              </p>
+              <div class="post-footer">
+                <a href="#" class="read-more">Read more</a>
+                <div class="post-stats">
+                  <span class="stat">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M12 4.5C7 4.5 2.7 7.6 1 12c1.7 4.4 6 7.5 11 7.5s9.3-3.1 11-7.5c-1.7-4.4-6-7.5-11-7.5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>
+                    </svg>
+                    5.1k views
+                  </span>
+                  <span class="stat">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    61 comments
+                  </span>
+                </div>
+              </div>
+            </article>
+
+          </div><!-- /.post-list -->
+        </section>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" aria-label="Sidebar">
+
+          <!-- Archives widget -->
+          <div class="widget">
+            <h2 class="widget-title">Archives</h2>
+            <ul class="widget-list">
+              <li><a href="#">April 2026 <span class="count">3</span></a></li>
+              <li><a href="#">March 2026 <span class="count">5</span></a></li>
+              <li><a href="#">February 2026 <span class="count">4</span></a></li>
+              <li><a href="#">January 2026 <span class="count">6</span></a></li>
+              <li><a href="#">December 2025 <span class="count">3</span></a></li>
+            </ul>
+          </div>
+
+          <!-- Tag cloud -->
+          <div class="widget">
+            <h2 class="widget-title">Tags</h2>
+            <div class="tag-cloud">
+              <a href="#">Go</a>
+              <a href="#">Systems</a>
+              <a href="#">Career</a>
+              <a href="#">Databases</a>
+              <a href="#">Linux</a>
+              <a href="#">Networking</a>
+              <a href="#">Testing</a>
+              <a href="#">OSS</a>
+              <a href="#">Tooling</a>
+            </div>
+          </div>
+
+          <!-- Newsletter -->
+          <div class="widget">
+            <h2 class="widget-title">Newsletter</h2>
+            <p style="font-size:13px; color:var(--text-2); margin-bottom:12px;">
+              One email per week. No noise.
+            </p>
+            <form class="newsletter-form" action="#" method="post">
+              <input type="email" name="email" placeholder="your@email.com"
+                     autocomplete="email" aria-label="Email for newsletter">
+              <button type="submit">Subscribe</button>
+            </form>
+          </div>
+
+        </aside>
+
+      </div><!-- /.main-grid -->
+    </div>
+  </main>
+
+  <!-- ── FOOTER ── -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <p class="footer-copy">
+          &copy; 2026 Alex Mercer. All rights reserved.
+        </p>
+        <nav aria-label="Footer navigation">
+          <ul class="footer-links">
+            <li><a href="#">RSS</a></li>
+            <li><a href="#">Privacy</a></li>
+            <li><a href="#">Contact</a></li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

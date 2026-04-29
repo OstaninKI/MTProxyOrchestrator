@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus Platform — Modern Infrastructure for Growing Teams</title>
+  <style>
+    /* ============================================================
+       Corporate SaaS Landing Page
+       Theme: Professional blue / grey palette
+       Fonts: System stack only — no external requests
+       ============================================================ */
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      /* Brand colours */
+      --blue-50:   #eff6ff;
+      --blue-100:  #dbeafe;
+      --blue-200:  #bfdbfe;
+      --blue-400:  #60a5fa;
+      --blue-500:  #3b82f6;
+      --blue-600:  #2563eb;
+      --blue-700:  #1d4ed8;
+      --blue-900:  #1e3a8a;
+      --grey-50:   #f8fafc;
+      --grey-100:  #f1f5f9;
+      --grey-200:  #e2e8f0;
+      --grey-300:  #cbd5e1;
+      --grey-400:  #94a3b8;
+      --grey-500:  #64748b;
+      --grey-600:  #475569;
+      --grey-700:  #334155;
+      --grey-800:  #1e293b;
+      --grey-900:  #0f172a;
+
+      /* Semantic */
+      --bg:           var(--grey-50);
+      --surface:      #ffffff;
+      --border:       var(--grey-200);
+      --text:         var(--grey-900);
+      --text-2:       var(--grey-600);
+      --text-3:       var(--grey-400);
+      --accent:       var(--blue-600);
+      --accent-hover: var(--blue-700);
+
+      /* Layout */
+      --max-width: 1140px;
+      --radius:    10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow:    0 4px 16px rgba(0,0,0,0.08);
+      --shadow-lg: 0 10px 40px rgba(0,0,0,0.12);
+    }
+
+    html {
+      scroll-behavior: smooth;
+      font-size: 16px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                   Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue',
+                   sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ─────────────────────────────────────────────
+       NAVIGATION
+    ───────────────────────────────────────────── */
+    .topnav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 200;
+    }
+
+    .topnav-inner {
+      display: flex;
+      align-items: center;
+      height: 64px;
+      gap: 40px;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--grey-900);
+      letter-spacing: -0.03em;
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+
+    .nav-logo:hover { text-decoration: none; color: var(--accent); }
+
+    .logo-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--blue-600), var(--blue-400));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-mark svg { width: 18px; height: 18px; }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      list-style: none;
+      flex: 1;
+    }
+
+    .nav-links a {
+      color: var(--grey-600);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .nav-links a:hover {
+      background: var(--blue-50);
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 9px 18px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+      border: none;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--grey-700);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover {
+      background: var(--grey-100);
+      color: var(--grey-900);
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #ffffff;
+      box-shadow: 0 1px 2px rgba(37,99,235,0.25);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      color: #fff;
+      text-decoration: none;
+      box-shadow: 0 4px 12px rgba(37,99,235,0.35);
+    }
+
+    .btn-lg {
+      font-size: 16px;
+      padding: 13px 28px;
+      border-radius: 10px;
+    }
+
+    /* ─────────────────────────────────────────────
+       HERO
+    ───────────────────────────────────────────── */
+    .hero {
+      background: linear-gradient(180deg, var(--surface) 0%, var(--blue-50) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 80px 0 88px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Decorative rings */
+    .hero::before,
+    .hero::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid var(--blue-200);
+      pointer-events: none;
+    }
+
+    .hero::before {
+      width: 700px; height: 700px;
+      top: -300px; left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .hero::after {
+      width: 1000px; height: 1000px;
+      top: -420px; left: 50%;
+      transform: translateX(-50%);
+      border-color: var(--blue-100);
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--blue-50);
+      border: 1px solid var(--blue-200);
+      color: var(--blue-700);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      padding: 5px 14px;
+      border-radius: 99px;
+      margin-bottom: 28px;
+    }
+
+    .hero-badge span {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--blue-500);
+    }
+
+    .hero h1 {
+      font-size: clamp(32px, 5vw, 56px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      color: var(--grey-900);
+      max-width: 680px;
+      margin: 0 auto 20px;
+    }
+
+    .hero h1 em {
+      font-style: normal;
+      color: var(--blue-600);
+    }
+
+    .hero-sub {
+      font-size: 18px;
+      color: var(--text-2);
+      max-width: 520px;
+      margin: 0 auto 40px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .hero-note {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--text-3);
+    }
+
+    .hero-stats {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 64px;
+      flex-wrap: wrap;
+    }
+
+    .hero-stat {
+      text-align: center;
+    }
+
+    .hero-stat .number {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--grey-900);
+    }
+
+    .hero-stat .label {
+      font-size: 13px;
+      color: var(--text-3);
+      margin-top: 2px;
+    }
+
+    .hero-stat-sep {
+      width: 1px;
+      height: 40px;
+      background: var(--border);
+    }
+
+    /* ─────────────────────────────────────────────
+       SECTION SHARED
+    ───────────────────────────────────────────── */
+    section {
+      padding: 80px 0;
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--blue-600);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: clamp(24px, 3.5vw, 36px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      color: var(--grey-900);
+      margin-bottom: 16px;
+    }
+
+    .section-desc {
+      font-size: 16px;
+      color: var(--text-2);
+      max-width: 520px;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+
+    .section-header .section-desc {
+      margin: 0 auto;
+    }
+
+    /* ─────────────────────────────────────────────
+       FEATURES
+    ───────────────────────────────────────────── */
+    .features {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+    }
+
+    .feature-card {
+      padding: 32px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--grey-50);
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+
+    .feature-card:hover {
+      box-shadow: var(--shadow);
+      transform: translateY(-2px);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .feature-icon.blue  { background: var(--blue-50);  }
+    .feature-icon.green { background: #f0fdf4; }
+    .feature-icon.amber { background: #fffbeb; }
+
+    .feature-icon svg { width: 24px; height: 24px; }
+
+    .feature-card h3 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+
+    .feature-card p {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.65;
+    }
+
+    /* ─────────────────────────────────────────────
+       PRICING
+    ───────────────────────────────────────────── */
+    .pricing {
+      background: var(--bg);
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .pricing-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pricing-card.featured {
+      border-color: var(--blue-400);
+      box-shadow: 0 0 0 4px var(--blue-50), var(--shadow);
+      position: relative;
+    }
+
+    .pricing-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--blue-600);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 4px 14px;
+      border-radius: 99px;
+      white-space: nowrap;
+    }
+
+    .plan-name {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 12px;
+    }
+
+    .plan-price {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .plan-price .currency {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-2);
+      margin-bottom: 4px;
+    }
+
+    .plan-price .amount {
+      font-size: 44px;
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      color: var(--grey-900);
+      line-height: 1;
+    }
+
+    .plan-price .period {
+      font-size: 14px;
+      color: var(--text-3);
+      margin-bottom: 6px;
+    }
+
+    .plan-desc {
+      font-size: 14px;
+      color: var(--text-2);
+      margin-bottom: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .plan-features {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 28px;
+      flex: 1;
+    }
+
+    .plan-features li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      color: var(--grey-700);
+    }
+
+    .plan-features li::before {
+      content: '';
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      margin-top: 2px;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='8' cy='8' r='8' fill='%232563eb' fill-opacity='0.12'/%3E%3Cpath d='M4.5 8l2.5 2.5 4.5-5' stroke='%232563eb' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-size: contain;
+      background-repeat: no-repeat;
+    }
+
+    .plan-cta {
+      width: 100%;
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 2px solid var(--border);
+      color: var(--grey-700);
+    }
+
+    .btn-outline:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    /* ─────────────────────────────────────────────
+       FOOTER
+    ───────────────────────────────────────────── */
+    .site-footer {
+      background: var(--grey-900);
+      color: var(--grey-400);
+      padding: 48px 0 32px;
+    }
+
+    .footer-top {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr 1fr 1fr;
+      gap: 40px;
+      margin-bottom: 40px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--grey-800);
+    }
+
+    .footer-brand .nav-logo {
+      color: #fff;
+      margin-bottom: 12px;
+      display: inline-flex;
+    }
+
+    .footer-brand p {
+      font-size: 13px;
+      line-height: 1.6;
+      max-width: 240px;
+    }
+
+    .footer-col h4 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--grey-300);
+      margin-bottom: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .footer-col ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .footer-col a {
+      font-size: 13px;
+      color: var(--grey-400);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .footer-col a:hover {
+      color: #fff;
+      text-decoration: none;
+    }
+
+    .footer-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .footer-bottom p {
+      font-size: 12px;
+      color: var(--grey-500);
+    }
+
+    .footer-bottom nav {
+      display: flex;
+      gap: 16px;
+    }
+
+    .footer-bottom nav a {
+      font-size: 12px;
+      color: var(--grey-500);
+      text-decoration: none;
+    }
+
+    .footer-bottom nav a:hover {
+      color: var(--grey-300);
+      text-decoration: none;
+    }
+
+    /* ─────────────────────────────────────────────
+       RESPONSIVE
+    ───────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .features-grid,
+      .pricing-grid {
+        grid-template-columns: 1fr;
+        max-width: 480px;
+        margin: 0 auto;
+      }
+
+      .footer-top {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .nav-links { display: none; }
+    }
+
+    @media (max-width: 600px) {
+      .footer-top { grid-template-columns: 1fr; }
+      .hero-stats { gap: 20px; }
+      .hero-stat-sep { display: none; }
+    }
+
+    /* ============================================================
+       End of styles
+       ============================================================ */
+  </style>
+</head>
+<body>
+
+  <!-- ── NAVIGATION ── -->
+  <header class="topnav">
+    <div class="container">
+      <div class="topnav-inner">
+
+        <a href="#" class="nav-logo">
+          <span class="logo-mark" aria-hidden="true">
+            <!-- Bolt / infrastructure icon -->
+            <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10 2L4 10h5l-1 6 7-9h-5l1-5z" fill="white"/>
+            </svg>
+          </span>
+          Nexus
+        </a>
+
+        <ul class="nav-links">
+          <li><a href="#">Product</a></li>
+          <li><a href="#">Solutions</a></li>
+          <li><a href="#">Pricing</a></li>
+          <li><a href="#">Docs</a></li>
+          <li><a href="#">Blog</a></li>
+        </ul>
+
+        <div class="nav-actions">
+          <a href="#" class="btn btn-ghost">Log in</a>
+          <a href="#" class="btn btn-primary">Start free</a>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- ── HERO ── -->
+  <section class="hero">
+    <div class="container">
+
+      <div class="hero-badge">
+        <span></span>
+        Now in General Availability — v3.0
+      </div>
+
+      <h1>Modern infrastructure for <em>teams that ship</em></h1>
+
+      <p class="hero-sub">
+        Nexus unifies observability, deployment pipelines, and access control
+        in one platform — so your engineers spend less time firefighting and
+        more time building.
+      </p>
+
+      <div class="hero-actions">
+        <a href="#" class="btn btn-primary btn-lg">Start free trial</a>
+        <a href="#" class="btn btn-ghost btn-lg">Watch demo</a>
+      </div>
+
+      <p class="hero-note">No credit card required &middot; 14-day free trial &middot; Cancel anytime</p>
+
+      <!-- Social proof numbers -->
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="number">12,000+</div>
+          <div class="label">Teams worldwide</div>
+        </div>
+        <div class="hero-stat-sep" aria-hidden="true"></div>
+        <div class="hero-stat">
+          <div class="number">99.99%</div>
+          <div class="label">SLA uptime</div>
+        </div>
+        <div class="hero-stat-sep" aria-hidden="true"></div>
+        <div class="hero-stat">
+          <div class="number">4.8/5</div>
+          <div class="label">G2 rating</div>
+        </div>
+        <div class="hero-stat-sep" aria-hidden="true"></div>
+        <div class="hero-stat">
+          <div class="number">&lt; 50 ms</div>
+          <div class="label">Avg. API latency</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── FEATURES ── -->
+  <section class="features" id="features">
+    <div class="container">
+
+      <div class="section-header">
+        <div class="section-label">Platform capabilities</div>
+        <h2 class="section-title">Everything your team needs</h2>
+        <p class="section-desc">
+          Integrated tooling that replaces a patchwork of third-party SaaS products —
+          without the vendor lock-in.
+        </p>
+      </div>
+
+      <div class="features-grid">
+
+        <!-- Feature 1 -->
+        <div class="feature-card">
+          <div class="feature-icon blue">
+            <!-- Shield / security SVG -->
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L4 5v6c0 5 3.6 9.7 8 11 4.4-1.3 8-6 8-11V5l-8-3z"
+                    fill="#2563eb" opacity="0.15"/>
+              <path d="M12 2L4 5v6c0 5 3.6 9.7 8 11 4.4-1.3 8-6 8-11V5l-8-3z"
+                    stroke="#2563eb" stroke-width="1.5" stroke-linejoin="round"/>
+              <path d="M9 12l2 2 4-4" stroke="#2563eb" stroke-width="1.5"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>Zero-trust Access Control</h3>
+          <p>
+            Define fine-grained IAM policies with RBAC, SSO via SAML/OIDC,
+            and session recording — all enforced at the infrastructure layer.
+            Achieve SOC 2 compliance in days, not quarters.
+          </p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="feature-card">
+          <div class="feature-icon green">
+            <!-- Chart / metrics SVG -->
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="12" width="4" height="9" rx="1" fill="#16a34a" opacity="0.2"/>
+              <rect x="10" y="7"  width="4" height="14" rx="1" fill="#16a34a" opacity="0.4"/>
+              <rect x="17" y="3"  width="4" height="18" rx="1" fill="#16a34a" opacity="0.7"/>
+              <path d="M3 3h18" stroke="#16a34a" stroke-width="1.5" stroke-linecap="round"
+                    stroke-dasharray="2 3"/>
+            </svg>
+          </div>
+          <h3>Unified Observability</h3>
+          <p>
+            Metrics, logs, and traces in one place. Built-in dashboards, anomaly
+            detection, and alert routing via PagerDuty, Slack, or webhook — so
+            MTTD stays low and MTTR even lower.
+          </p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="feature-card">
+          <div class="feature-icon amber">
+            <!-- Rocket / deployment SVG -->
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C12 2 7 7 7 13c0 2.8 2.2 5 5 5s5-2.2 5-5C17 7 12 2 12 2z"
+                    fill="#f59e0b" opacity="0.2"/>
+              <path d="M12 2C12 2 7 7 7 13c0 2.8 2.2 5 5 5s5-2.2 5-5C17 7 12 2 12 2z"
+                    stroke="#f59e0b" stroke-width="1.5"/>
+              <circle cx="12" cy="13" r="2" fill="#f59e0b"/>
+              <path d="M9 19l-2 3M15 19l2 3" stroke="#f59e0b" stroke-width="1.5"
+                    stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Progressive Deployments</h3>
+          <p>
+            Blue-green, canary, and feature-flag releases with automatic rollback
+            on error budget breach. Integrate with GitHub, GitLab, or any CI system
+            via our open API.
+          </p>
+        </div>
+
+      </div><!-- /.features-grid -->
+    </div>
+  </section>
+
+  <!-- ── PRICING ── -->
+  <section class="pricing" id="pricing">
+    <div class="container">
+
+      <div class="section-header">
+        <div class="section-label">Simple pricing</div>
+        <h2 class="section-title">Pick the plan that fits</h2>
+        <p class="section-desc">
+          All plans include unlimited users. Scale up or down at any time.
+          Annual billing saves 20%.
+        </p>
+      </div>
+
+      <div class="pricing-grid">
+
+        <!-- Starter -->
+        <div class="pricing-card">
+          <div class="plan-name">Starter</div>
+          <div class="plan-price">
+            <span class="currency">$</span>
+            <span class="amount">0</span>
+            <span class="period">/ mo</span>
+          </div>
+          <p class="plan-desc">For indie hackers and small side projects.</p>
+          <ul class="plan-features">
+            <li>Up to 3 projects</li>
+            <li>5 GB log retention (7 days)</li>
+            <li>Community support</li>
+            <li>1 deployment environment</li>
+            <li>Basic alerting</li>
+          </ul>
+          <a href="#" class="btn btn-outline btn-lg plan-cta">Get started free</a>
+        </div>
+
+        <!-- Pro (featured) -->
+        <div class="pricing-card featured">
+          <div class="pricing-badge">Most popular</div>
+          <div class="plan-name">Pro</div>
+          <div class="plan-price">
+            <span class="currency">$</span>
+            <span class="amount">79</span>
+            <span class="period">/ mo</span>
+          </div>
+          <p class="plan-desc">For growing engineering teams who move fast.</p>
+          <ul class="plan-features">
+            <li>Unlimited projects</li>
+            <li>50 GB log retention (90 days)</li>
+            <li>Priority email + chat support</li>
+            <li>Multi-environment deployments</li>
+            <li>Canary releases</li>
+            <li>SSO (Google, GitHub)</li>
+            <li>Audit log (30 days)</li>
+          </ul>
+          <a href="#" class="btn btn-primary btn-lg plan-cta">Start 14-day trial</a>
+        </div>
+
+        <!-- Enterprise -->
+        <div class="pricing-card">
+          <div class="plan-name">Enterprise</div>
+          <div class="plan-price">
+            <span class="amount" style="font-size:32px; margin-bottom:4px;">Custom</span>
+          </div>
+          <p class="plan-desc">For large organisations with security &amp; compliance needs.</p>
+          <ul class="plan-features">
+            <li>Unlimited everything</li>
+            <li>1 TB+ log retention, custom period</li>
+            <li>Dedicated support engineer</li>
+            <li>SAML/OIDC SSO</li>
+            <li>RBAC + session recording</li>
+            <li>SLA 99.99%</li>
+            <li>On-premises deployment option</li>
+            <li>Security review &amp; BAA</li>
+          </ul>
+          <a href="#" class="btn btn-ghost btn-lg plan-cta">Contact sales</a>
+        </div>
+
+      </div><!-- /.pricing-grid -->
+    </div>
+  </section>
+
+  <!-- ── FOOTER ── -->
+  <footer class="site-footer">
+    <div class="container">
+
+      <div class="footer-top">
+
+        <div class="footer-brand">
+          <a href="#" class="nav-logo">
+            <span class="logo-mark" aria-hidden="true">
+              <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 2L4 10h5l-1 6 7-9h-5l1-5z" fill="white"/>
+              </svg>
+            </span>
+            Nexus
+          </a>
+          <p>Modern infrastructure platform for engineering teams that need to move fast and break nothing.</p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="#">Features</a></li>
+            <li><a href="#">Pricing</a></li>
+            <li><a href="#">Changelog</a></li>
+            <li><a href="#">Roadmap</a></li>
+            <li><a href="#">Status</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Company</h4>
+          <ul>
+            <li><a href="#">About</a></li>
+            <li><a href="#">Blog</a></li>
+            <li><a href="#">Careers</a></li>
+            <li><a href="#">Press</a></li>
+            <li><a href="#">Contact</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="#">Privacy Policy</a></li>
+            <li><a href="#">Terms of Service</a></li>
+            <li><a href="#">Cookie Policy</a></li>
+            <li><a href="#">Security</a></li>
+            <li><a href="#">DPA</a></li>
+          </ul>
+        </div>
+
+      </div><!-- /.footer-top -->
+
+      <div class="footer-bottom">
+        <p>&copy; 2026 Nexus Technologies, Inc. All rights reserved.</p>
+        <nav aria-label="Footer legal navigation">
+          <a href="#">Privacy</a>
+          <a href="#">Terms</a>
+          <a href="#">Cookies</a>
+        </nav>
+      </div>
+
+    </div>
+  </footer>
+
+</body>
+</html>
