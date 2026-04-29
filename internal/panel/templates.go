@@ -42,10 +42,15 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!DOCTYPE htm
 <title>Dashboard</title>
 <style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}a{color:#2563eb}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb}
-.ok{color:#16a34a}.down{color:#dc2626}</style>
+.ok{color:#16a34a}.down{color:#dc2626}
+.periods{margin:.5rem 0 1rem;display:flex;gap:.5rem}.periods a{padding:.25rem .75rem;border:1px solid #ccc;border-radius:4px;text-decoration:none;color:#333}
+.periods a.active{background:#2563eb;color:#fff;border-color:#2563eb}
+h2{margin:1.5rem 0 .5rem}</style>
 </head>
 <body>
 <h1>Dashboard</h1>
+
+<h2>Services</h2>
 <table>
 <thead><tr><th>Service</th><th>Status</th><th>Message</th></tr></thead>
 <tbody>
@@ -58,7 +63,33 @@ table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.5rem;bo
 {{end}}
 </tbody>
 </table>
-<p style="margin-top:2rem"><a href="logout">Logout</a></p>
+
+<h2>Top Users</h2>
+<div class="periods">
+  <a href="?period=1h"{{if eq .Period "1h"}} class="active"{{end}}>1h</a>
+  <a href="?period=24h"{{if eq .Period "24h"}} class="active"{{end}}>24h</a>
+  <a href="?period=7d"{{if eq .Period "7d"}} class="active"{{end}}>7d</a>
+  <a href="?period=30d"{{if eq .Period "30d"}} class="active"{{end}}>30d</a>
+</div>
+{{if .TopUsers}}
+<table>
+<thead><tr><th>User</th><th>Bytes In</th><th>Bytes Out</th><th>Connections</th></tr></thead>
+<tbody>
+{{range .TopUsers}}
+<tr>
+  <td>{{.UserLabel}}</td>
+  <td>{{.BytesIn}}</td>
+  <td>{{.BytesOut}}</td>
+  <td>{{.Connections}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p style="color:#888">No traffic data for this period.</p>
+{{end}}
+
+<p style="margin-top:2rem"><a href="users">Users</a> &nbsp;|&nbsp; <a href="logout">Logout</a></p>
 </body>
 </html>
 `))
