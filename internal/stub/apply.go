@@ -8,13 +8,13 @@ import (
 
 // Applier copies a stub template directory to the web root.
 type Applier struct {
-	WebRoot     string                                    // destination, e.g. /var/www/tgproxy-stub
-	ReloadNginx func() error                             // injectable: calls "systemctl reload nginx" in prod
-	MkdirAll    func(string, os.FileMode) error          // injectable; defaults to os.MkdirAll
-	WriteFile   func(string, []byte, os.FileMode) error  // injectable; defaults to os.WriteFile
-	ReadDir     func(string) ([]os.DirEntry, error)      // injectable; defaults to os.ReadDir
-	ReadFile    func(string) ([]byte, error)              // injectable; defaults to os.ReadFile
-	Remove      func(string) error                        // injectable; defaults to os.Remove
+	WebRoot     string                                  // destination, e.g. /var/www/tgproxy-stub
+	ReloadNginx func() error                            // injectable: calls "systemctl reload nginx" in prod
+	MkdirAll    func(string, os.FileMode) error         // injectable; defaults to os.MkdirAll
+	WriteFile   func(string, []byte, os.FileMode) error // injectable; defaults to os.WriteFile
+	ReadDir     func(string) ([]os.DirEntry, error)     // injectable; defaults to os.ReadDir
+	ReadFile    func(string) ([]byte, error)            // injectable; defaults to os.ReadFile
+	Remove      func(string) error                      // injectable; defaults to os.Remove
 }
 
 // DefaultApplier returns an Applier wired to real OS calls.

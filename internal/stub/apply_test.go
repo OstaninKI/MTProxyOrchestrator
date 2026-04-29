@@ -101,9 +101,9 @@ type fakeFI struct {
 	isDir bool
 }
 
-func (fi fakeFI) Name() string      { return fi.name }
-func (fi fakeFI) Size() int64       { return 0 }
-func (fi fakeFI) Mode() fs.FileMode { return 0644 }
+func (fi fakeFI) Name() string       { return fi.name }
+func (fi fakeFI) Size() int64        { return 0 }
+func (fi fakeFI) Mode() fs.FileMode  { return 0644 }
 func (fi fakeFI) ModTime() time.Time { return time.Time{} }
 func (fi fakeFI) IsDir() bool        { return fi.isDir }
 func (fi fakeFI) Sys() any           { return nil }
