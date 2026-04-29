@@ -181,6 +181,50 @@ func TestEnableBridgeRollbackOnStartFailure(t *testing.T) {
 	}
 }
 
+func TestEnableBridgeRollbackRestoresExistingOutboundsOnStartFailure(t *testing.T) {
+	exec := newFakeExecutor()
+	exec.failOn = "StartService:sing-box.service"
+	cfg := testEnableCfg(t)
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	original := []byte("{\"nodes\":[{\"id\":7,\"type\":\"vless-reality\",\"tag\":\"old\",\"host\":\"old.example\",\"port\":443,\"uuid\":\"old-uuid\",\"sni\":\"old.example\",\"public_key\":\"old-pk\",\"short_id\":\"old-sid\",\"enabled\":true}]}\n")
+	if err := os.WriteFile(nodePath, original, 0o600); err != nil {
+		t.Fatalf("write original outbounds: %v", err)
+	}
+	svc := &bridge.BridgeService{Exec: exec, NodePath: nodePath}
+
+	err := svc.Enable(cfg)
+	if err == nil {
+		t.Fatal("expected error when sing-box fails to start")
+	}
+
+	got, err := os.ReadFile(nodePath)
+	if err != nil {
+		t.Fatalf("read restored outbounds: %v", err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("outbounds.json not restored\nwant: %s\ngot:  %s", original, got)
+	}
+}
+
+func TestEnableBridgeRollbackRemovesOutboundsWhenOriginallyMissing(t *testing.T) {
+	exec := newFakeExecutor()
+	exec.failOn = "StartService:sing-box.service"
+	cfg := testEnableCfg(t)
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	svc := &bridge.BridgeService{Exec: exec, NodePath: nodePath}
+
+	err := svc.Enable(cfg)
+	if err == nil {
+		t.Fatal("expected error when sing-box fails to start")
+	}
+
+	if _, err := os.Stat(nodePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outbounds.json should be absent after rollback, stat err=%v", err)
+	}
+}
+
 func TestEnableBridgePersistsNode(t *testing.T) {
 	exec := newFakeExecutor()
 	cfg := testEnableCfg(t)

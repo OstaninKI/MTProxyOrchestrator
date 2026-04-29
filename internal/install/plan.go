@@ -11,6 +11,11 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
 
+const (
+	teleproxyLinuxAMD64URL    = "https://github.com/teleproxy/teleproxy/releases/download/v4.12.2/teleproxy-linux-amd64"
+	teleproxyLinuxAMD64SHA256 = "02d5e0e4f1f8f44c45eb4c9b3cf6e6bc88c9b4f7f1682622da96eede8f02089f"
+)
+
 type StepKind string
 
 const (
@@ -95,9 +100,19 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 	}
 
 	panelUnit := systemd.PanelUnitConfig{
-		BinaryPath: paths.PanelBin,
-		ConfigPath: paths.ConfigFile,
-		LogPath:    paths.PanelLog,
+		BinaryPath:  paths.PanelBin,
+		ConfigPath:  paths.ConfigFile,
+		DBPath:      paths.PanelDB,
+		PanelPath:   panelPath,
+		ListenAddr:  fmt.Sprintf("127.0.0.1:%d", panelPort),
+		MTProtoPort: cfg.MTProtoPort,
+		MaskHost:    cfg.MaskHost,
+		StatsPort:   9091,
+		LogPath:     paths.PanelLog,
+		ConfigDir:   paths.ConfigDir,
+		LogDir:      paths.LogDir,
+		BinDir:      paths.BinDir,
+		SystemdDir:  paths.SystemdDir,
 	}
 
 	steps := []Step{
@@ -107,7 +122,7 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepCreateDir, Target: paths.ConfigDir, Mode: 0o700},
 		{Kind: StepCreateDir, Target: paths.LogDir, Mode: 0o755},
 		{Kind: StepCreateDir, Target: paths.StubDir, Mode: 0o755},
-		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: ""},
+		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: teleproxyDownloadSHA256()},
 		{Kind: StepWriteFile, Target: paths.TeleproxyTOML, Content: tpData, Mode: 0o600},
 		{Kind: StepWriteFile, Target: paths.TeleproxyService, Content: tpUnit.Render(), Mode: 0o644},
 		{Kind: StepWriteFile, Target: "/etc/nginx/sites-available/tgproxy-stub", Content: ngData, Mode: 0o644},
@@ -115,6 +130,8 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepWriteFile, Target: paths.PanelService, Content: panelUnit.Render(), Mode: 0o644},
 		{Kind: StepEnableService, Target: "teleproxy"},
 		{Kind: StepStartService, Target: "teleproxy"},
+		{Kind: StepEnableService, Target: "tgproxy-panel"},
+		{Kind: StepStartService, Target: "tgproxy-panel"},
 	}
 
 	return Plan{
@@ -125,7 +142,11 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 }
 
 func teleproxyDownloadURL() string {
-	return "https://github.com/teleproxy/teleproxy/releases/latest/download/teleproxy_linux_amd64"
+	return teleproxyLinuxAMD64URL
+}
+
+func teleproxyDownloadSHA256() string {
+	return teleproxyLinuxAMD64SHA256
 }
 
 func minimalStubHTML() []byte {

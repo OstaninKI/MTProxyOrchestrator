@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/tgproxy-panel --config /etc/tgproxy/config.toml
+ExecStart=/usr/local/bin/tgproxy-panel serve --db /etc/tgproxy/panel.db --path /p-example/ --listen 127.0.0.1:8443 --mtproto-port 443 --mask-host www.microsoft.com --stats-port 9091
 StandardOutput=append:/var/log/tgproxy/panel.log
 StandardError=append:/var/log/tgproxy/panel.log
 Restart=on-failure
@@ -13,6 +13,7 @@ RestartSec=5
 NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict
+ReadWritePaths=/etc/tgproxy /var/log/tgproxy /usr/local/bin /etc/systemd/system
 PrivateTmp=yes
 
 [Install]

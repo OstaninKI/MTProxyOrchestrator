@@ -18,9 +18,19 @@ var baseTeleproxy = systemd.TeleproxyUnitConfig{
 }
 
 var basePanel = systemd.PanelUnitConfig{
-	BinaryPath: "/usr/local/bin/tgproxy-panel",
-	ConfigPath: "/etc/tgproxy/config.toml",
-	LogPath:    "/var/log/tgproxy/panel.log",
+	BinaryPath:  "/usr/local/bin/tgproxy-panel",
+	ConfigPath:  "/etc/tgproxy/config.toml",
+	DBPath:      "/etc/tgproxy/panel.db",
+	PanelPath:   "/p-example/",
+	ListenAddr:  "127.0.0.1:8443",
+	MTProtoPort: 443,
+	MaskHost:    "www.microsoft.com",
+	StatsPort:   9091,
+	LogPath:     "/var/log/tgproxy/panel.log",
+	ConfigDir:   "/etc/tgproxy",
+	LogDir:      "/var/log/tgproxy",
+	BinDir:      "/usr/local/bin",
+	SystemdDir:  "/etc/systemd/system",
 }
 
 func TestTeleproxyUnitHasNoNewPrivileges(t *testing.T) {
@@ -48,6 +58,31 @@ func TestPanelUnitNoNetBindCap(t *testing.T) {
 	got := basePanel.Render()
 	if bytes.Contains(got, []byte("AmbientCapabilities=CAP_NET_BIND_SERVICE")) {
 		t.Error("panel unit must not contain AmbientCapabilities=CAP_NET_BIND_SERVICE")
+	}
+}
+
+func TestPanelUnitPassesServeFlags(t *testing.T) {
+	got := basePanel.Render()
+	for _, want := range []string{
+		"tgproxy-panel serve",
+		"--db /etc/tgproxy/panel.db",
+		"--path /p-example/",
+		"--listen 127.0.0.1:8443",
+		"--mtproto-port 443",
+		"--mask-host www.microsoft.com",
+		"--stats-port 9091",
+	} {
+		if !bytes.Contains(got, []byte(want)) {
+			t.Errorf("panel unit missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestPanelUnitAllowsRequiredWritePaths(t *testing.T) {
+	got := basePanel.Render()
+	want := "ReadWritePaths=/etc/tgproxy /var/log/tgproxy /usr/local/bin /etc/systemd/system"
+	if !bytes.Contains(got, []byte(want)) {
+		t.Fatalf("panel unit must allow required write paths under ProtectSystem=strict:\n%s", got)
 	}
 }
 

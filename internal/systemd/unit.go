@@ -15,9 +15,19 @@ type TeleproxyUnitConfig struct {
 
 // PanelUnitConfig holds fields for tgproxy-panel.service.
 type PanelUnitConfig struct {
-	BinaryPath string // /usr/local/bin/tgproxy-panel
-	ConfigPath string // /etc/tgproxy/config.toml
-	LogPath    string // /var/log/tgproxy/panel.log
+	BinaryPath  string // /usr/local/bin/tgproxy-panel
+	ConfigPath  string // /etc/tgproxy/config.toml
+	DBPath      string // /etc/tgproxy/panel.db
+	PanelPath   string // /p-random/
+	ListenAddr  string // 127.0.0.1:8443
+	MTProtoPort int    // 443
+	MaskHost    string // www.microsoft.com
+	StatsPort   int    // 9091
+	LogPath     string // /var/log/tgproxy/panel.log
+	ConfigDir   string // /etc/tgproxy
+	LogDir      string // /var/log/tgproxy
+	BinDir      string // /usr/local/bin
+	SystemdDir  string // /etc/systemd/system
 }
 
 func (c TeleproxyUnitConfig) Render() []byte {
@@ -65,7 +75,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={{.BinaryPath}} --config {{.ConfigPath}}
+ExecStart={{.BinaryPath}} serve --db {{.DBPath}} --path {{.PanelPath}} --listen {{.ListenAddr}} --mtproto-port {{.MTProtoPort}} --mask-host {{.MaskHost}} --stats-port {{.StatsPort}}
 StandardOutput=append:{{.LogPath}}
 StandardError=append:{{.LogPath}}
 Restart=on-failure
@@ -74,6 +84,7 @@ RestartSec=5
 NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict
+ReadWritePaths={{.ConfigDir}} {{.LogDir}} {{.BinDir}} {{.SystemdDir}}
 PrivateTmp=yes
 
 [Install]

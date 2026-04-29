@@ -12,23 +12,33 @@ import (
 // NodeType identifies the outbound protocol.
 type NodeType string
 
-const NodeTypeVLESSReality NodeType = "vless-reality"
+const (
+	NodeTypeVLESSReality NodeType = "vless-reality"
+	NodeTypeTrojan       NodeType = "trojan"
+	NodeTypeShadowsocks  NodeType = "shadowsocks"
+	NodeTypeHysteria2    NodeType = "hysteria2"
+	NodeTypeTUIC         NodeType = "tuic"
+)
 
 // Node represents a single outbound proxy node.
 type Node struct {
-	ID          int64      `json:"id"`
-	Type        NodeType   `json:"type"`
-	Tag         string     `json:"tag"`
-	Host        string     `json:"host"`
-	Port        int        `json:"port"`
-	UUID        string     `json:"uuid"`
-	Flow        string     `json:"flow,omitempty"`
-	SNI         string     `json:"sni"`
-	PublicKey   string     `json:"public_key"`
-	ShortID     string     `json:"short_id"`
-	Enabled     bool       `json:"enabled"`
-	LastLatency int64      `json:"last_latency_ms,omitempty"` // milliseconds; 0 = not measured
-	LastChecked *time.Time `json:"last_checked,omitempty"`
+	ID        int64    `json:"id"`
+	Type      NodeType `json:"type"`
+	Tag       string   `json:"tag"`
+	Host      string   `json:"host"`
+	Port      int      `json:"port"`
+	UUID      string   `json:"uuid,omitempty"`
+	Flow      string   `json:"flow,omitempty"`
+	SNI       string   `json:"sni,omitempty"`
+	PublicKey string   `json:"public_key,omitempty"`
+	ShortID   string   `json:"short_id,omitempty"`
+	// Multi-protocol fields
+	Password          string     `json:"password,omitempty"`           // Trojan, SS, Hysteria2, TUIC
+	Method            string     `json:"method,omitempty"`             // Shadowsocks cipher method
+	CongestionControl string     `json:"congestion_control,omitempty"` // TUIC
+	Enabled           bool       `json:"enabled"`
+	LastLatency       int64      `json:"last_latency_ms,omitempty"` // milliseconds; 0 = not measured
+	LastChecked       *time.Time `json:"last_checked,omitempty"`
 }
 
 // Validate returns an error if required VLESS Reality fields are missing.

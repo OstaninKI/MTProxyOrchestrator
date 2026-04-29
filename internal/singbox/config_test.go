@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/singbox"
@@ -11,7 +12,8 @@ import (
 
 const updateGolden = false
 
-var testNode = singbox.VLESSOutbound{
+var testNode = singbox.Outbound{
+	Type:      singbox.OutboundVLESSReality,
 	Tag:       "node-1",
 	Server:    "198.51.100.1",
 	Port:      443,
@@ -27,7 +29,7 @@ func baseCfg() singbox.Config {
 		SOCKSListenAddr: "127.0.0.1",
 		SOCKSListenPort: 2080,
 		Strategy:        singbox.StrategyURLTest,
-		Outbounds:       []singbox.VLESSOutbound{testNode},
+		Outbounds:       []singbox.Outbound{testNode},
 	}
 }
 
@@ -89,7 +91,8 @@ func TestRenderNoFlowWhenEmpty(t *testing.T) {
 		SOCKSListenAddr: "127.0.0.1",
 		SOCKSListenPort: 2080,
 		Strategy:        singbox.StrategyURLTest,
-		Outbounds: []singbox.VLESSOutbound{{
+		Outbounds: []singbox.Outbound{{
+			Type:      singbox.OutboundVLESSReality,
 			Tag:       "n1",
 			Server:    "1.2.3.4",
 			Port:      443,
@@ -112,5 +115,127 @@ func TestRenderNoFlowWhenEmpty(t *testing.T) {
 	ob := outbounds[0].(map[string]any)
 	if _, ok := ob["flow"]; ok {
 		t.Error("flow key must be absent when Flow is empty")
+	}
+}
+
+func TestRenderTrojanOutbound(t *testing.T) {
+	cfg := singbox.Config{
+		SOCKSListenAddr: "127.0.0.1",
+		SOCKSListenPort: 2080,
+		Strategy:        singbox.StrategyURLTest,
+		Outbounds: []singbox.Outbound{{
+			Type:      singbox.OutboundTrojan,
+			Tag:       "trojan-node",
+			Server:    "1.2.3.4",
+			Port:      443,
+			TLSServer: "example.com",
+			Password:  "secret123",
+		}},
+	}
+	out, err := cfg.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"type": "trojan"`) {
+		t.Errorf("rendered JSON should contain \"type\": \"trojan\"\n%s", out)
+	}
+	if !strings.Contains(string(out), `"password": "secret123"`) {
+		t.Errorf("rendered JSON should contain the password\n%s", out)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+}
+
+func TestRenderShadowsocksOutbound(t *testing.T) {
+	cfg := singbox.Config{
+		SOCKSListenAddr: "127.0.0.1",
+		SOCKSListenPort: 2080,
+		Strategy:        singbox.StrategyURLTest,
+		Outbounds: []singbox.Outbound{{
+			Type:     singbox.OutboundShadowsocks,
+			Tag:      "ss-node",
+			Server:   "5.6.7.8",
+			Port:     8388,
+			Method:   "2022-blake3-aes-128-gcm",
+			Password: "sspassword",
+		}},
+	}
+	out, err := cfg.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"type": "shadowsocks"`) {
+		t.Errorf("rendered JSON should contain \"type\": \"shadowsocks\"\n%s", out)
+	}
+	if !strings.Contains(string(out), `"method": "2022-blake3-aes-128-gcm"`) {
+		t.Errorf("rendered JSON should contain the method\n%s", out)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+}
+
+func TestRenderHysteria2Outbound(t *testing.T) {
+	cfg := singbox.Config{
+		SOCKSListenAddr: "127.0.0.1",
+		SOCKSListenPort: 2080,
+		Strategy:        singbox.StrategyURLTest,
+		Outbounds: []singbox.Outbound{{
+			Type:      singbox.OutboundHysteria2,
+			Tag:       "hy2-node",
+			Server:    "9.10.11.12",
+			Port:      443,
+			TLSServer: "hy2.example.com",
+			Password:  "hy2secret",
+		}},
+	}
+	out, err := cfg.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"type": "hysteria2"`) {
+		t.Errorf("rendered JSON should contain \"type\": \"hysteria2\"\n%s", out)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+}
+
+func TestRenderTUICOutbound(t *testing.T) {
+	cfg := singbox.Config{
+		SOCKSListenAddr: "127.0.0.1",
+		SOCKSListenPort: 2080,
+		Strategy:        singbox.StrategyURLTest,
+		Outbounds: []singbox.Outbound{{
+			Type:              singbox.OutboundTUIC,
+			Tag:               "tuic-node",
+			Server:            "13.14.15.16",
+			Port:              443,
+			TLSServer:         "tuic.example.com",
+			UUID:              "aaaabbbb-cccc-dddd-eeee-ffffffffffff",
+			Password:          "tuicpass",
+			CongestionControl: "bbr",
+		}},
+	}
+	out, err := cfg.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"type": "tuic"`) {
+		t.Errorf("rendered JSON should contain \"type\": \"tuic\"\n%s", out)
+	}
+	if !strings.Contains(string(out), `"uuid": "aaaabbbb-cccc-dddd-eeee-ffffffffffff"`) {
+		t.Errorf("rendered JSON should contain the uuid\n%s", out)
+	}
+	if !strings.Contains(string(out), `"congestion_control": "bbr"`) {
+		t.Errorf("rendered JSON should contain congestion_control\n%s", out)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
 	}
 }

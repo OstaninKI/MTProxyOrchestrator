@@ -8,12 +8,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
+)
+
+const (
+	singboxLinuxAMD64URL    = "https://github.com/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-linux-amd64.tar.gz"
+	singboxLinuxAMD64SHA256 = "10ff037632165ca4f6472a0ec21393280ef5a33677e05bcde7fbcf6f9737637b"
 )
 
 // BridgeConfig holds panel-level settings for Bridge mode operations.
@@ -32,6 +38,7 @@ func (s *Server) handleBridgePage(w http.ResponseWriter, r *http.Request) {
 	SetCSRFCookie(w, csrfToken, s.Secure)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	bridgePage(w, bridgePageData{
+		CSRFField: CSRFField(),
 		CSRFToken: csrfToken,
 		Nodes:     nl.Nodes,
 	})
@@ -76,8 +83,8 @@ func (s *Server) handleBridgeEnable(w http.ResponseWriter, r *http.Request) {
 		MTProtoPort:    s.bridgeMTProtoPort(),
 		MaskHost:       s.bridgeMaskHost(),
 		StatsPort:      s.bridgeStatsPort(),
-		SingboxURL:     "", // download handled by installer; panel only re-enables
-		SingboxSHA256:  "",
+		SingboxURL:     singboxDownloadURL(),
+		SingboxSHA256:  singboxDownloadSHA256(),
 	}
 	if err := svc.Enable(enableCfg); err != nil {
 		http.Error(w, fmt.Sprintf("bridge enable failed: %v", err), http.StatusInternalServerError)
@@ -173,7 +180,18 @@ func (realBridgeExecutor) WriteFile(path string, data []byte, mode os.FileMode) 
 
 func (realBridgeExecutor) Download(url, sha256hex, destPath string) error {
 	d := component.Downloader{}
+	if strings.HasSuffix(url, ".tar.gz") {
+		return d.DownloadTarGzBinary(url, sha256hex, "sing-box", destPath)
+	}
 	return d.Download(url, sha256hex, destPath)
+}
+
+func singboxDownloadURL() string {
+	return singboxLinuxAMD64URL
+}
+
+func singboxDownloadSHA256() string {
+	return singboxLinuxAMD64SHA256
 }
 
 func (realBridgeExecutor) EnableService(name string) error {
@@ -200,6 +218,7 @@ func (realBridgeExecutor) ServiceActive(name string) (bool, error) {
 // --- templates ---
 
 type bridgePageData struct {
+	CSRFField string
 	CSRFToken string
 	Nodes     []bridge.Node
 }
@@ -220,7 +239,7 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 <h1>Bridge Mode</h1>
 <h2>Add outbound node</h2>
 <form method="post" action="bridge/enable">
-<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>VLESS Reality share URL</label>
 <input type="text" name="vless_url" placeholder="vless://...#tag" required>
 <button type="submit">Enable Bridge</button>
@@ -241,7 +260,7 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 </tbody>
 </table>
 <form method="post" action="bridge/disable" style="margin-top:1rem">
-<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <button type="submit" class="danger">Disable Bridge (return to Single)</button>
 </form>
 {{end}}

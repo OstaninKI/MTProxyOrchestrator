@@ -1,8 +1,9 @@
 package panel
 
 import (
-	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -48,7 +49,11 @@ func (s *Server) handleUserToggle(w http.ResponseWriter, r *http.Request) {
 		action = "user.disable"
 	}
 	audit.Log(s.DB, s.sessionAdminID(r), action, target.Label, "", clientIP(r)) //nolint:errcheck
-	s.reloadTeleproxy()
+	if err := s.reloadTeleproxy(); err != nil {
+		_ = repo.SetEnabled(id, target.Enabled)
+		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "../users", http.StatusSeeOther)
 }
 
@@ -75,7 +80,11 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	audit.Log(s.DB, s.sessionAdminID(r), "user.delete", label, "", clientIP(r)) //nolint:errcheck
-	s.reloadTeleproxy()
+	if err := s.reloadTeleproxy(); err != nil {
+		_ = repo.Restore(id)
+		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "../users", http.StatusSeeOther)
 }
 
@@ -97,9 +106,11 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 	repo := UserRepo{DB: s.DB}
 	users, _ := repo.List()
 	var label string
+	var oldSecret string
 	for _, u := range users {
 		if u.ID == id {
 			label = u.Label
+			oldSecret = u.SecretHex
 		}
 	}
 	if err := repo.UpdateSecret(id, secret.Hex()); err != nil {
@@ -107,17 +118,22 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	audit.Log(s.DB, s.sessionAdminID(r), "user.rotate", label, "", clientIP(r)) //nolint:errcheck
-	s.reloadTeleproxy()
+	if err := s.reloadTeleproxy(); err != nil {
+		if oldSecret != "" {
+			_ = repo.UpdateSecret(id, oldSecret)
+		}
+		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	userCreatedPage(w, label, secret.Hex())
 }
 
 // reloadTeleproxy rewrites the Teleproxy config and reloads the service.
-// Errors are logged but do not abort the HTTP response.
-func (s *Server) reloadTeleproxy() {
+func (s *Server) reloadTeleproxy() error {
 	users, err := UserRepo{DB: s.DB}.List()
 	if err != nil {
-		return
+		return err
 	}
 	var entries []teleproxy.UserEntry
 	for _, u := range users {
@@ -126,20 +142,23 @@ func (s *Server) reloadTeleproxy() {
 		}
 	}
 	cfg := teleproxy.Config{
-		Port:      443,
-		MaskHost:  "www.microsoft.com",
-		StatsPort: 9091,
+		Port:      s.bridgeMTProtoPort(),
+		MaskHost:  s.bridgeMaskHost(),
+		StatsPort: s.bridgeStatsPort(),
 		Users:     entries,
 	}
 	data := cfg.Render()
-	// Write config then reload — errors are best-effort in this phase.
-	writeAndReload(data)
+	return writeAndReload(s.bridgePaths().TeleproxyTOML, data)
 }
 
 // writeAndReload is a hook for tests; production writes to the real path.
-var writeAndReload = func(data []byte) {
-	_ = data // Phase 4: config path from settings is Phase 5+
+var writeAndReload = func(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
 	ctrl := teleproxy.DefaultController()
-	ctrl.Reload()                     //nolint:errcheck
-	fmt.Println("teleproxy reloaded") // placeholder until proper logging
+	return ctrl.Reload()
 }

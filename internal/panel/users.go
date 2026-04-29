@@ -109,6 +109,15 @@ func (r UserRepo) Delete(id int64) error {
 	return err
 }
 
+// Restore clears deleted_at after a failed apply path.
+func (r UserRepo) Restore(id int64) error {
+	_, err := r.DB.Exec(
+		`UPDATE users SET deleted_at=NULL WHERE id=?`,
+		id,
+	)
+	return err
+}
+
 // UpdateSecret replaces the secret_hex and sets rotated_at.
 func (r UserRepo) UpdateSecret(id int64, secretHex string) error {
 	_, err := r.DB.Exec(
@@ -171,6 +180,11 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	audit.Log(s.DB, s.sessionAdminID(r), "user.create", label, fmt.Sprintf("id=%d", id), clientIP(r)) //nolint:errcheck
+	if err := s.reloadTeleproxy(); err != nil {
+		_ = repo.Delete(id)
+		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	userCreatedPage(w, label, secret.Hex())
