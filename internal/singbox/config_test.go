@@ -396,8 +396,8 @@ func TestStrategyGolden(t *testing.T) {
 				t.Fatalf("Render: %v", err)
 			}
 			if updateStrategyGoldens {
-				os.MkdirAll("testdata", 0o755)          //nolint:errcheck
-				os.WriteFile(tc.golden, out, 0o644)     //nolint:errcheck
+				os.MkdirAll("testdata", 0o755)      //nolint:errcheck
+				os.WriteFile(tc.golden, out, 0o644) //nolint:errcheck
 				t.Logf("updated %s", tc.golden)
 				return
 			}
