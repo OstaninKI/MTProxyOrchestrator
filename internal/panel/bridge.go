@@ -8,12 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/singbox"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
 
@@ -232,38 +235,63 @@ var bridgeTmpl = template.Must(template.New("bridge").Parse(`<!DOCTYPE html>
 <style>body{font-family:sans-serif;margin:2rem;color:#333}h1,h2{margin-bottom:1rem}a{color:#2563eb}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb}
 input[type=text]{width:100%;box-sizing:border-box;padding:.5rem;border:1px solid #ccc;border-radius:4px;font-size:1rem;margin-bottom:.75rem}
-button{padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
-button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{background:#b91c1c}</style>
+button{padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;font-size:.875rem;cursor:pointer}
+button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{background:#b91c1c}
+.warn{background:#d97706}.warn:hover{background:#b45309}</style>
 </head>
 <body>
 <h1>Bridge Mode</h1>
+
 <h2>Add outbound node</h2>
-<form method="post" action="bridge/enable">
+<form method="post" action="bridge/nodes/add">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>VLESS Reality share URL</label>
-<input type="text" name="vless_url" placeholder="vless://...#tag" required>
-<button type="submit">Enable Bridge</button>
+<label>Share URL (vless://, trojan://, ss://, hysteria2://, tuic://)</label>
+<input type="text" name="share_url" placeholder="vless://uuid@host:port?...#tag" required>
+<button type="submit">Add Node</button>
 </form>
+
 {{if .Nodes}}
-<h2>Current nodes</h2>
+<h2>Outbound nodes</h2>
 <table>
-<thead><tr><th>Tag</th><th>Host</th><th>Port</th><th>Enabled</th></tr></thead>
+<thead><tr><th>Tag</th><th>Type</th><th>Host</th><th>Port</th><th>Status</th><th>Latency</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Nodes}}
 <tr>
   <td>{{.Tag}}</td>
+  <td>{{.Type}}</td>
   <td>{{.Host}}</td>
   <td>{{.Port}}</td>
-  <td>{{if .Enabled}}yes{{else}}no{{end}}</td>
+  <td>{{if .Enabled}}<span style="color:#16a34a">enabled</span>{{else}}<span style="color:#6b7280">disabled</span>{{end}}</td>
+  <td>{{if .LastLatency}}{{.LastLatency}}ms{{else}}—{{end}}</td>
+  <td>
+    <form method="post" action="bridge/nodes/{{.ID}}/toggle" style="display:inline">
+      <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
+      <button type="submit" class="warn">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+    </form>
+    <form method="post" action="bridge/nodes/{{.ID}}/delete" style="display:inline"
+          onsubmit="return confirm('Delete node {{.Tag}}?')">
+      <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
+      <button type="submit" class="danger">Delete</button>
+    </form>
+  </td>
 </tr>
 {{end}}
 </tbody>
 </table>
+
+<h2 style="margin-top:2rem">Mode control</h2>
+<form method="post" action="bridge/enable">
+<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
+<label>Enable Bridge with share URL</label>
+<input type="text" name="vless_url" placeholder="vless://...#tag (VLESS Reality only for first enable)">
+<button type="submit">Enable Bridge</button>
+</form>
 <form method="post" action="bridge/disable" style="margin-top:1rem">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <button type="submit" class="danger">Disable Bridge (return to Single)</button>
 </form>
 {{end}}
+
 <p style="margin-top:2rem"><a href="../dashboard">← Dashboard</a></p>
 </body>
 </html>
@@ -271,4 +299,178 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 
 func bridgePage(w io.Writer, data bridgePageData) {
 	bridgeTmpl.Execute(w, data) //nolint:errcheck
+}
+
+// handleBridgeAddNode adds a node via any supported share URL and re-renders
+// the sing-box config if Bridge is currently active.
+// Form field: share_url (required) — any of vless://, trojan://, ss://, hysteria2://, hy2://, tuic://
+func (s *Server) handleBridgeAddNode(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	rawURL := r.FormValue("share_url")
+	node, err := bridge.Import(rawURL)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid share URL: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	nodePath := s.nodePath()
+	nl, err := bridge.Load(nodePath)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	node.ID = nl.NextID()
+	node.Enabled = true
+	nl.Nodes = append(nl.Nodes, node)
+	if err := nl.Save(nodePath); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Re-render sing-box.json if Bridge is active; errors are best-effort.
+	s.rerenderSingboxIfActive(nl)
+
+	// Log tag and type only — never password, uuid, or key material.
+	audit.Log(s.DB, s.sessionAdminID(r), "node.add", node.Tag, string(node.Type), clientIP(r)) //nolint:errcheck
+	http.Redirect(w, r, "../bridge", http.StatusSeeOther)
+}
+
+// handleBridgeToggleNode enables or disables a node and re-renders sing-box if active.
+func (s *Server) handleBridgeToggleNode(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	nodePath := s.nodePath()
+	nl, err := bridge.Load(nodePath)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	var tag string
+	found := false
+	for i := range nl.Nodes {
+		if nl.Nodes[i].ID == id {
+			nl.Nodes[i].Enabled = !nl.Nodes[i].Enabled
+			tag = nl.Nodes[i].Tag
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	if err := nl.Save(nodePath); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	s.rerenderSingboxIfActive(nl)
+	audit.Log(s.DB, s.sessionAdminID(r), "node.toggle", tag, "", clientIP(r)) //nolint:errcheck
+	http.Redirect(w, r, "../../bridge", http.StatusSeeOther)
+}
+
+// handleBridgeDeleteNode removes a node from the list and re-renders sing-box if active.
+func (s *Server) handleBridgeDeleteNode(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	nodePath := s.nodePath()
+	nl, err := bridge.Load(nodePath)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	var tag string
+	filtered := nl.Nodes[:0]
+	for _, n := range nl.Nodes {
+		if n.ID == id {
+			tag = n.Tag
+			continue // remove this node
+		}
+		filtered = append(filtered, n)
+	}
+	nl.Nodes = filtered
+
+	if err := nl.Save(nodePath); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	s.rerenderSingboxIfActive(nl)
+	audit.Log(s.DB, s.sessionAdminID(r), "node.delete", tag, "", clientIP(r)) //nolint:errcheck
+	http.Redirect(w, r, "../../bridge", http.StatusSeeOther)
+}
+
+// rerenderSingboxIfActive re-renders and writes sing-box.json when Bridge is active.
+// Errors are best-effort — Bridge mode continues even if re-render fails (config is stale).
+func (s *Server) rerenderSingboxIfActive(nl bridge.NodeList) {
+	exec := realBridgeExecutor{}
+	active, _ := exec.ServiceActive("sing-box.service")
+	if !active {
+		return
+	}
+
+	outbounds := nodeListToOutbounds(nl.Active())
+	if len(outbounds) == 0 {
+		return
+	}
+
+	cfg := singbox.Config{
+		SOCKSListenAddr: "127.0.0.1",
+		SOCKSListenPort: 1080,
+		Strategy:        singbox.StrategyURLTest,
+		Outbounds:       outbounds,
+	}
+	data, err := cfg.Render()
+	if err != nil {
+		return
+	}
+	paths := s.bridgePaths()
+	_ = exec.WriteFile(paths.SingboxJSON, data, 0o600)
+}
+
+// nodeListToOutbounds converts active bridge nodes to singbox Outbound structs.
+func nodeListToOutbounds(nodes []bridge.Node) []singbox.Outbound {
+	out := make([]singbox.Outbound, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, singbox.Outbound{
+			Type:              singbox.OutboundType(n.Type),
+			Tag:               n.Tag,
+			Server:            n.Host,
+			Port:              n.Port,
+			UUID:              n.UUID,
+			Flow:              n.Flow,
+			TLSServer:         n.SNI,
+			PublicKey:         n.PublicKey,
+			ShortID:           n.ShortID,
+			Password:          n.Password,
+			Method:            n.Method,
+			CongestionControl: n.CongestionControl,
+		})
+	}
+	return out
 }
