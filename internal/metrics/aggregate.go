@@ -1,0 +1,108 @@
+package metrics
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
+)
+
+// Retention boundaries (exported so tests can override via Retainer fields).
+const (
+	MinuteRetentionDays = 7
+	HourlyRetentionDays = 30
+)
+
+// Retainer handles data retention and aggregation.
+type Retainer struct {
+	DB  *db.DB
+	Now func() int64 // returns current Unix timestamp; defaults to time.Now().Unix()
+}
+
+func (r Retainer) now() int64 {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now().Unix()
+}
+
+// Run executes the full retention cycle:
+//  1. Aggregate traffic_samples older than MinuteRetentionDays into traffic_hourly.
+//  2. Delete from traffic_samples rows older than MinuteRetentionDays (after aggregation).
+//  3. Delete from traffic_hourly rows older than HourlyRetentionDays.
+//
+// Each step runs in its own transaction. Run returns the first error encountered.
+func (r Retainer) Run() error {
+	now := r.now()
+	minuteCutoff := now - int64(MinuteRetentionDays)*86400
+	hourlyCutoff := now - int64(HourlyRetentionDays)*86400
+
+	if err := r.AggregateOldSamples(minuteCutoff); err != nil {
+		return fmt.Errorf("aggregate old samples: %w", err)
+	}
+	if err := r.DeleteOldSamples(minuteCutoff); err != nil {
+		return fmt.Errorf("delete old samples: %w", err)
+	}
+	if err := r.DeleteOldHourly(hourlyCutoff); err != nil {
+		return fmt.Errorf("delete old hourly: %w", err)
+	}
+	return nil
+}
+
+// AggregateOldSamples aggregates traffic_samples rows with ts < cutoff
+// into traffic_hourly using INSERT OR REPLACE, grouping by (user_label, hour_ts).
+// hour_ts = ts - (ts % 3600).
+// bytes_in/out = SUM; connections = MAX.
+func (r Retainer) AggregateOldSamples(cutoff int64) error {
+	tx, err := r.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	_, err = tx.Exec(`
+INSERT OR REPLACE INTO traffic_hourly(user_label, hour_ts, bytes_in, bytes_out, connections)
+SELECT user_label,
+       ts - (ts % 3600) AS hour_ts,
+       SUM(bytes_in),
+       SUM(bytes_out),
+       MAX(connections)
+FROM traffic_samples
+WHERE ts < ?
+GROUP BY user_label, hour_ts
+`, cutoff)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteOldSamples deletes rows from traffic_samples where ts < cutoff.
+func (r Retainer) DeleteOldSamples(cutoff int64) error {
+	tx, err := r.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	_, err = tx.Exec(`DELETE FROM traffic_samples WHERE ts < ?`, cutoff)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteOldHourly deletes rows from traffic_hourly where hour_ts < cutoff.
+func (r Retainer) DeleteOldHourly(cutoff int64) error {
+	tx, err := r.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	_, err = tx.Exec(`DELETE FROM traffic_hourly WHERE hour_ts < ?`, cutoff)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
