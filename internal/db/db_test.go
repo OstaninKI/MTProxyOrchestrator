@@ -24,8 +24,8 @@ func TestMigrationsIdempotent(t *testing.T) {
 	if err := d.QueryRow(`SELECT COUNT(*) FROM migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Errorf("expected 1 migration recorded, got %d", count)
+	if count != 2 {
+		t.Errorf("expected 2 migrations recorded, got %d", count)
 	}
 }
 

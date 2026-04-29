@@ -9,6 +9,7 @@ type migration struct {
 
 var migrations = []migration{
 	{"001_create_schema", sqlSchema},
+	{"002_traffic_schema", sqlTrafficSchema},
 }
 
 func migrate(d *DB) error {
@@ -35,6 +36,38 @@ func migrate(d *DB) error {
 	}
 	return nil
 }
+
+const sqlTrafficSchema = `
+CREATE TABLE IF NOT EXISTS traffic_samples (
+    id          INTEGER PRIMARY KEY,
+    user_label  TEXT    NOT NULL,
+    ts          INTEGER NOT NULL,
+    bytes_in    INTEGER NOT NULL,
+    bytes_out   INTEGER NOT NULL,
+    connections INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_time ON traffic_samples(user_label, ts);
+
+CREATE TABLE IF NOT EXISTS traffic_hourly (
+    id          INTEGER PRIMARY KEY,
+    user_label  TEXT    NOT NULL,
+    hour_ts     INTEGER NOT NULL,
+    bytes_in    INTEGER NOT NULL,
+    bytes_out   INTEGER NOT NULL,
+    connections INTEGER NOT NULL,
+    UNIQUE(user_label, hour_ts)
+);
+
+CREATE TABLE IF NOT EXISTS traffic_daily (
+    id          INTEGER PRIMARY KEY,
+    user_label  TEXT    NOT NULL,
+    day_ts      INTEGER NOT NULL,
+    bytes_in    INTEGER NOT NULL,
+    bytes_out   INTEGER NOT NULL,
+    connections INTEGER NOT NULL,
+    UNIQUE(user_label, day_ts)
+);
+`
 
 const sqlSchema = `
 CREATE TABLE IF NOT EXISTS admin (
