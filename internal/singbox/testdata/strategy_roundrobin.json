@@ -1,0 +1,60 @@
+{
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 1080,
+      "tag": "socks-in",
+      "type": "socks"
+    }
+  ],
+  "outbounds": [
+    {
+      "server": "1.1.1.1",
+      "server_port": 443,
+      "tag": "node-a",
+      "tls": {
+        "enabled": true,
+        "reality": {
+          "enabled": true,
+          "public_key": "AAAA=",
+          "short_id": "aa"
+        },
+        "server_name": "a.example.com"
+      },
+      "type": "vless",
+      "uuid": "aaaaaaaa-0000-0000-0000-000000000001"
+    },
+    {
+      "server": "2.2.2.2",
+      "server_port": 443,
+      "tag": "node-b",
+      "tls": {
+        "enabled": true,
+        "reality": {
+          "enabled": true,
+          "public_key": "BBBB=",
+          "short_id": "bb"
+        },
+        "server_name": "b.example.com"
+      },
+      "type": "vless",
+      "uuid": "bbbbbbbb-0000-0000-0000-000000000002"
+    },
+    {
+      "default": "node-a",
+      "outbounds": [
+        "node-a",
+        "node-b"
+      ],
+      "tag": "proxy",
+      "type": "selector"
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "final": "proxy"
+  }
+}
