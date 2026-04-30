@@ -15,6 +15,12 @@ ProtectHome=yes
 ProtectSystem=strict
 ReadWritePaths=/etc/tgproxy /var/log/tgproxy /usr/local/bin /etc/systemd/system
 PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
 
 [Install]
 WantedBy=multi-user.target

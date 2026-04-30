@@ -86,6 +86,47 @@ func TestPanelUnitAllowsRequiredWritePaths(t *testing.T) {
 	}
 }
 
+var hardeningDirectives = []string{
+	"PrivateDevices=yes",
+	"ProtectKernelTunables=yes",
+	"ProtectKernelModules=yes",
+	"ProtectControlGroups=yes",
+	"LockPersonality=yes",
+	"RestrictRealtime=yes",
+}
+
+func TestTeleproxyUnitHardening(t *testing.T) {
+	got := baseTeleproxy.Render()
+	for _, d := range hardeningDirectives {
+		if !bytes.Contains(got, []byte(d)) {
+			t.Errorf("teleproxy unit missing hardening directive: %s", d)
+		}
+	}
+}
+
+func TestPanelUnitHardening(t *testing.T) {
+	got := basePanel.Render()
+	for _, d := range hardeningDirectives {
+		if !bytes.Contains(got, []byte(d)) {
+			t.Errorf("panel unit missing hardening directive: %s", d)
+		}
+	}
+}
+
+func TestSingboxUnitHardening(t *testing.T) {
+	cfg := systemd.SingboxUnitConfig{
+		BinaryPath: "/usr/local/bin/sing-box",
+		ConfigPath: "/etc/tgproxy/sing-box.json",
+		LogPath:    "/var/log/tgproxy/sing-box.log",
+	}
+	got := cfg.Render()
+	for _, d := range hardeningDirectives {
+		if !bytes.Contains(got, []byte(d)) {
+			t.Errorf("sing-box unit missing hardening directive: %s", d)
+		}
+	}
+}
+
 func TestTeleproxyUnitGolden(t *testing.T) {
 	got := baseTeleproxy.Render()
 	checkGolden(t, "teleproxy.service", got)

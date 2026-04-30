@@ -62,6 +62,12 @@ NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict
 PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
@@ -86,6 +92,12 @@ ProtectHome=yes
 ProtectSystem=strict
 ReadWritePaths={{.ConfigDir}} {{.LogDir}} {{.BinDir}} {{.SystemdDir}}
 PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -122,6 +134,12 @@ NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict
 PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
 
 [Install]
 WantedBy=multi-user.target
