@@ -49,3 +49,69 @@ func TestRenderGolden(t *testing.T) {
 		t.Errorf("render mismatch for %s:\n--- want ---\n%s\n--- got ---\n%s", path, want, got)
 	}
 }
+
+// PanelProxyConfig tests
+
+var panelCfg = nginx.PanelProxyConfig{
+	Domain:      "proxy.example.com",
+	CertPath:    "/etc/lego/certificates/proxy.example.com.crt",
+	KeyPath:     "/etc/lego/certificates/proxy.example.com.key",
+	BackendAddr: "127.0.0.1:8443",
+}
+
+func TestPanelProxyConfig_HasTLS12And13(t *testing.T) {
+	out := panelCfg.Render()
+	if !bytes.Contains(out, []byte("ssl_protocols TLSv1.2 TLSv1.3")) {
+		t.Error("output must contain ssl_protocols TLSv1.2 TLSv1.3")
+	}
+}
+
+func TestPanelProxyConfig_HasHSTS(t *testing.T) {
+	out := panelCfg.Render()
+	if !bytes.Contains(out, []byte(`Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"`)) {
+		t.Error("output must contain Strict-Transport-Security header with max-age=63072000; includeSubDomains; preload")
+	}
+}
+
+func TestPanelProxyConfig_ServerTokensOff(t *testing.T) {
+	out := panelCfg.Render()
+	if !bytes.Contains(out, []byte("server_tokens off")) {
+		t.Error("output must contain server_tokens off")
+	}
+}
+
+func TestPanelProxyConfig_ProxiesToBackend(t *testing.T) {
+	out := panelCfg.Render()
+	if !bytes.Contains(out, []byte("proxy_pass https://127.0.0.1:8443")) {
+		t.Error("output must contain proxy_pass https://127.0.0.1:8443")
+	}
+}
+
+func TestPanelProxyConfig_HasSecurityHeaders(t *testing.T) {
+	out := panelCfg.Render()
+	if !bytes.Contains(out, []byte("X-Frame-Options DENY")) {
+		t.Error("output must contain X-Frame-Options DENY")
+	}
+	if !bytes.Contains(out, []byte("X-Content-Type-Options nosniff")) {
+		t.Error("output must contain X-Content-Type-Options nosniff")
+	}
+}
+
+func TestPanelProxyConfig_Golden(t *testing.T) {
+	got := panelCfg.Render()
+	path := filepath.Join("testdata", "panel-proxy.conf")
+	if updateGolden {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatalf("write golden %s: %v", path, err)
+		}
+		t.Logf("updated golden file %s", path)
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden %s: %v (set updateGolden=true to generate)", path, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("render mismatch for %s:\n--- want ---\n%s\n--- got ---\n%s", path, want, got)
+	}
+}
