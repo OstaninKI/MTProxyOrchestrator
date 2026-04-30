@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
@@ -24,6 +26,17 @@ var rootCmd = &cobra.Command{
 
 var unattended bool
 
+type preflightRunner interface {
+	Run(panelPort int) install.CheckResult
+}
+
+var (
+	defaultChecker       = func() preflightRunner { return install.DefaultChecker() }
+	resolveLocalBinaries = currentLocalBinaries
+	buildSinglePlan      = install.BuildSinglePlan
+	newExecutor          = func() install.Executor { return install.NewSystemExecutor() }
+)
+
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install MTProto proxy (Single or Bridge mode)",
@@ -39,6 +52,10 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	cfg := config.Default()
 	paths := config.DefaultPaths()
 	const panelPort = 8443
+
+	if result := defaultChecker().Run(panelPort); !result.OK() {
+		return fmt.Errorf("preflight failed:\n%s", formatCheckResult(result))
+	}
 
 	if !unattended {
 		p := install.NewHuhPrompter()
@@ -58,7 +75,12 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	plan, err := install.BuildSinglePlan(cfg, paths, panelPort)
+	binaries, err := resolveLocalBinaries()
+	if err != nil {
+		return err
+	}
+
+	plan, err := buildSinglePlan(cfg, paths, panelPort, binaries)
 	if err != nil {
 		return fmt.Errorf("build plan: %w", err)
 	}
@@ -68,7 +90,34 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "Password:   %s\n", plan.Creds.AdminPassword)
 	fmt.Fprintf(cmd.OutOrStdout(), "First user: tg://proxy?server=<your-ip>&port=443&secret=%s\n", plan.Creds.FirstUser.Secret.Hex())
 
-	exec := install.NewSystemExecutor()
+	exec := newExecutor()
 	inst := install.Installer{Executor: exec, Plan: plan}
 	return inst.Run()
+}
+
+func currentLocalBinaries() (install.LocalBinaries, error) {
+	cliPath, err := os.Executable()
+	if err != nil {
+		return install.LocalBinaries{}, fmt.Errorf("resolve current executable: %w", err)
+	}
+	return siblingLocalBinaries(cliPath)
+}
+
+func siblingLocalBinaries(cliPath string) (install.LocalBinaries, error) {
+	panelPath := filepath.Join(filepath.Dir(cliPath), "tgproxy-panel")
+	if _, err := os.Stat(panelPath); err != nil {
+		return install.LocalBinaries{}, fmt.Errorf("resolve tgproxy-panel рядом с %s: expected %s: %w", cliPath, panelPath, err)
+	}
+	return install.LocalBinaries{
+		CLI:   cliPath,
+		Panel: panelPath,
+	}, nil
+}
+
+func formatCheckResult(result install.CheckResult) string {
+	lines := make([]string, 0, len(result.Errors))
+	for _, checkErr := range result.Errors {
+		lines = append(lines, fmt.Sprintf("- %s: %s (%s)", checkErr.Check, checkErr.Description, checkErr.Remediation))
+	}
+	return strings.Join(lines, "\n")
 }
