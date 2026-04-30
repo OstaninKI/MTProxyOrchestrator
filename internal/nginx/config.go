@@ -72,6 +72,7 @@ var panelProxyTmpl = template.Must(template.New("nginx-panel-proxy").Parse(`serv
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
     add_header X-Frame-Options DENY always;
     add_header X-Content-Type-Options nosniff always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';" always;
 
     location / {
         proxy_pass https://{{.BackendAddr}};

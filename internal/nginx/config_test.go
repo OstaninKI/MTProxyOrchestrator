@@ -97,6 +97,16 @@ func TestPanelProxyConfig_HasSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestPanelProxyConfig_HasCSP(t *testing.T) {
+	out := panelCfg.Render()
+	if !bytes.Contains(out, []byte("Content-Security-Policy")) {
+		t.Error("output must contain Content-Security-Policy header")
+	}
+	if !bytes.Contains(out, []byte("frame-ancestors 'none'")) {
+		t.Error("Content-Security-Policy must include frame-ancestors 'none'")
+	}
+}
+
 func TestPanelProxyConfig_Golden(t *testing.T) {
 	got := panelCfg.Render()
 	path := filepath.Join("testdata", "panel-proxy.conf")
