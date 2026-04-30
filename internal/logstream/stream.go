@@ -144,8 +144,8 @@ func NewRedactor() *Redactor {
 	return &Redactor{
 		// MTProto secrets: exactly 32 hex characters (not part of a longer hex string)
 		mtprotoSecret: regexp.MustCompile(`\b[0-9a-fA-F]{32}\b`),
-		// Key=value pairs where key is password or secret (case-insensitive)
-		keyValuePairs: regexp.MustCompile(`(?i)(password|secret)=\S+`),
+		// Key=value pairs where key is a credential field (case-insensitive)
+		keyValuePairs: regexp.MustCompile(`(?i)(password|secret|token|auth|apikey|api_key)=\S+`),
 		// JWT / session tokens: base64url strings 32+ characters that contain
 		// at least one uppercase letter (distinguishing them from plain hex secrets).
 		jwtPattern: regexp.MustCompile(`[A-Za-z0-9_\-]{32,}`),
