@@ -10,8 +10,15 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
 )
 
+func testLocalBinaries() install.LocalBinaries {
+	return install.LocalBinaries{
+		CLI:   "/tmp/tgproxy-cli",
+		Panel: "/tmp/tgproxy-panel",
+	}
+}
+
 func TestSinglePlanNoSingBox(t *testing.T) {
-	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443)
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +30,7 @@ func TestSinglePlanNoSingBox(t *testing.T) {
 }
 
 func TestSinglePlanHasTeleproxy(t *testing.T) {
-	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443)
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +43,7 @@ func TestSinglePlanHasTeleproxy(t *testing.T) {
 }
 
 func TestSinglePlanTeleproxyDownloadHasSHA256(t *testing.T) {
-	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443)
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +63,7 @@ func TestSinglePlanTeleproxyDownloadHasSHA256(t *testing.T) {
 }
 
 func TestSinglePlanHasApt(t *testing.T) {
-	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443)
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +79,7 @@ func TestSinglePlanHasApt(t *testing.T) {
 }
 
 func TestSinglePlanPanelUnitUsesGeneratedPath(t *testing.T) {
-	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443)
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +109,7 @@ func TestSinglePlanPanelUnitUsesGeneratedPath(t *testing.T) {
 }
 
 func TestSinglePlanStartsPanelService(t *testing.T) {
-	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443)
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,4 +128,65 @@ func TestSinglePlanStartsPanelService(t *testing.T) {
 	if !slices.Contains(starts, "tgproxy-panel") {
 		t.Fatalf("Single plan must start tgproxy-panel, got %v", starts)
 	}
+}
+
+func TestSinglePlanInstallsLocalBinaries(t *testing.T) {
+	paths := config.DefaultPaths()
+	bins := testLocalBinaries()
+	plan, err := install.BuildSinglePlan(config.Default(), paths, 8443, bins)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var gotCLI, gotPanel bool
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepInstallFile {
+			continue
+		}
+		if s.Target == paths.CLIBin && s.Source == bins.CLI && s.Mode == 0o755 {
+			gotCLI = true
+		}
+		if s.Target == paths.PanelBin && s.Source == bins.Panel && s.Mode == 0o755 {
+			gotPanel = true
+		}
+	}
+
+	if !gotCLI {
+		t.Fatalf("Single plan must install local tgproxy-cli binary to %s", paths.CLIBin)
+	}
+	if !gotPanel {
+		t.Fatalf("Single plan must install local tgproxy-panel binary to %s", paths.PanelBin)
+	}
+}
+
+func TestSinglePlanInitializesPanelDB(t *testing.T) {
+	paths := config.DefaultPaths()
+	plan, err := install.BuildSinglePlan(config.Default(), paths, 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepInitPanelDB {
+			continue
+		}
+		if s.Target != paths.PanelDB {
+			t.Fatalf("panel DB init target: got %s want %s", s.Target, paths.PanelDB)
+		}
+		if s.Bootstrap == nil {
+			t.Fatal("panel DB init step must carry bootstrap data")
+		}
+		if s.Bootstrap.AdminLogin != plan.Creds.AdminLogin {
+			t.Fatalf("admin login mismatch: got %s want %s", s.Bootstrap.AdminLogin, plan.Creds.AdminLogin)
+		}
+		if s.Bootstrap.UserLabel != plan.Creds.FirstUser.Label {
+			t.Fatalf("first user label mismatch: got %s want %s", s.Bootstrap.UserLabel, plan.Creds.FirstUser.Label)
+		}
+		if s.Bootstrap.UserSecretHex != plan.Creds.FirstUser.Secret.Hex() {
+			t.Fatal("first user secret in bootstrap does not match generated creds")
+		}
+		return
+	}
+
+	t.Fatal("Single plan must include panel DB bootstrap step")
 }

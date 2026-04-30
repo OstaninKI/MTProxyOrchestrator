@@ -22,18 +22,34 @@ const (
 	StepAptInstall     StepKind = "apt-install"
 	StepCreateDir      StepKind = "create-dir"
 	StepDownloadBinary StepKind = "download-binary"
+	StepInstallFile    StepKind = "install-file"
+	StepInitPanelDB    StepKind = "init-panel-db"
 	StepWriteFile      StepKind = "write-file"
 	StepEnableService  StepKind = "enable-service"
 	StepStartService   StepKind = "start-service"
 )
 
+type LocalBinaries struct {
+	CLI   string
+	Panel string
+}
+
+type PanelBootstrap struct {
+	AdminLogin    string
+	AdminPassword string
+	UserLabel     string
+	UserSecretHex string
+}
+
 type Step struct {
-	Kind    StepKind
-	Target  string
-	Content []byte
-	Mode    os.FileMode
-	URL     string
-	SHA256  string
+	Kind      StepKind
+	Target    string
+	Source    string
+	Content   []byte
+	Mode      os.FileMode
+	URL       string
+	SHA256    string
+	Bootstrap *PanelBootstrap
 }
 
 // GeneratedCreds holds fresh credentials produced during planning.
@@ -53,7 +69,7 @@ type Plan struct {
 
 // BuildSinglePlan returns the install plan for Single mode.
 // It generates fresh credentials and renders all config files but does not touch the host.
-func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int) (Plan, error) {
+func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int, binaries LocalBinaries) (Plan, error) {
 	login, err := secrets.GenerateAdminLogin()
 	if err != nil {
 		return Plan{}, fmt.Errorf("generate admin login: %w", err)
@@ -122,8 +138,20 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepCreateDir, Target: paths.ConfigDir, Mode: 0o700},
 		{Kind: StepCreateDir, Target: paths.LogDir, Mode: 0o755},
 		{Kind: StepCreateDir, Target: paths.StubDir, Mode: 0o755},
+		{Kind: StepInstallFile, Source: binaries.CLI, Target: paths.CLIBin, Mode: 0o755},
+		{Kind: StepInstallFile, Source: binaries.Panel, Target: paths.PanelBin, Mode: 0o755},
 		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: teleproxyDownloadSHA256()},
 		{Kind: StepWriteFile, Target: paths.TeleproxyTOML, Content: tpData, Mode: 0o600},
+		{
+			Kind:   StepInitPanelDB,
+			Target: paths.PanelDB,
+			Bootstrap: &PanelBootstrap{
+				AdminLogin:    creds.AdminLogin,
+				AdminPassword: creds.AdminPassword,
+				UserLabel:     creds.FirstUser.Label,
+				UserSecretHex: creds.FirstUser.Secret.Hex(),
+			},
+		},
 		{Kind: StepWriteFile, Target: paths.TeleproxyService, Content: tpUnit.Render(), Mode: 0o644},
 		{Kind: StepWriteFile, Target: "/etc/nginx/sites-available/tgproxy-stub", Content: ngData, Mode: 0o644},
 		{Kind: StepWriteFile, Target: paths.StubDir + "/index.html", Content: minimalStubHTML(), Mode: 0o644},
