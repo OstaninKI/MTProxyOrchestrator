@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/go-chi/chi/v5 v5.2.5
+	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.67.2
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
