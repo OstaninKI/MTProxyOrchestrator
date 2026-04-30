@@ -58,6 +58,9 @@ func (s *Server) panelRouter() http.Handler {
 		r.Post("/bridge/nodes/add", s.handleBridgeAddNode)
 		r.Post("/bridge/nodes/{id}/toggle", s.handleBridgeToggleNode)
 		r.Post("/bridge/nodes/{id}/delete", s.handleBridgeDeleteNode)
+		r.Get("/logs", s.handleLogsPage)
+		r.Get("/logs/stream", s.handleLogsStream)
+		r.Get("/logs/download", s.handleLogsDownload)
 	})
 
 	return r
