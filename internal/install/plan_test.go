@@ -159,6 +159,56 @@ func TestSinglePlanInstallsLocalBinaries(t *testing.T) {
 	}
 }
 
+func TestSinglePlanConfigDirPermissions(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// All StepCreateDir steps targeting /etc/tgproxy or its subdirectories must
+	// never exceed mode 0700 (root-only access for config directories).
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepCreateDir {
+			continue
+		}
+		if !strings.HasPrefix(s.Target, "/etc/tgproxy") {
+			continue
+		}
+		if s.Mode > 0o700 {
+			t.Errorf("config dir %s has mode %04o, want <= 0700", s.Target, s.Mode)
+		}
+	}
+}
+
+func TestSinglePlanSecretsFilePermissions(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// At least one StepWriteFile must target a path under secrets/ with mode 0600.
+	for _, s := range plan.Steps {
+		if s.Kind == install.StepWriteFile && strings.Contains(s.Target, "/secrets/") && s.Mode == 0o600 {
+			return // found
+		}
+	}
+	t.Error("Single plan must include a write-file step with mode 0600 for a file under secrets/")
+}
+
+func TestSinglePlanBinaryPermissions(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every StepInstallFile step must use mode 0755.
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepInstallFile {
+			continue
+		}
+		if s.Mode != 0o755 {
+			t.Errorf("binary install step for %s has mode %04o, want 0755", s.Target, s.Mode)
+		}
+	}
+}
+
 func TestSinglePlanInitializesPanelDB(t *testing.T) {
 	paths := config.DefaultPaths()
 	plan, err := install.BuildSinglePlan(config.Default(), paths, 8443, testLocalBinaries())

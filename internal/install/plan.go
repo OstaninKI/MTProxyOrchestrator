@@ -136,12 +136,15 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepAptInstall, Target: "curl"},
 		{Kind: StepAptInstall, Target: "ca-certificates"},
 		{Kind: StepCreateDir, Target: paths.ConfigDir, Mode: 0o700},
+		{Kind: StepCreateDir, Target: paths.ConfigDir + "/secrets", Mode: 0o700},
+		{Kind: StepCreateDir, Target: paths.ConfigDir + "/nodes", Mode: 0o700},
 		{Kind: StepCreateDir, Target: paths.LogDir, Mode: 0o755},
 		{Kind: StepCreateDir, Target: paths.StubDir, Mode: 0o755},
 		{Kind: StepInstallFile, Source: binaries.CLI, Target: paths.CLIBin, Mode: 0o755},
 		{Kind: StepInstallFile, Source: binaries.Panel, Target: paths.PanelBin, Mode: 0o755},
 		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: teleproxyDownloadSHA256()},
 		{Kind: StepWriteFile, Target: paths.TeleproxyTOML, Content: tpData, Mode: 0o600},
+		{Kind: StepWriteFile, Target: paths.UsersJSON, Content: usersJSONContent(firstUser), Mode: 0o600},
 		{
 			Kind:   StepInitPanelDB,
 			Target: paths.PanelDB,
@@ -184,4 +187,9 @@ func minimalStubHTML() []byte {
 <body><h1>Welcome</h1></body>
 </html>
 `)
+}
+
+// usersJSONContent returns the initial users.json content with the first user's secret.
+func usersJSONContent(firstUser secrets.UserSecret) []byte {
+	return []byte(fmt.Sprintf(`{"users":[{"label":%q,"secret":%q}]}`, firstUser.Label, firstUser.Secret.Hex()))
 }
