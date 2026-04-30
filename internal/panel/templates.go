@@ -99,7 +99,8 @@ h2{margin:1.5rem 0 .5rem}</style>
 <p style="color:#888">No traffic data for this period.</p>
 {{end}}
 
-<p style="margin-top:2rem"><a href="users">Users</a> &nbsp;|&nbsp; <a href="logout">Logout</a></p>
+<p style="margin-top:2rem"><a href="users">Users</a> &nbsp;|&nbsp; <form method="post" action="logout" style="display:inline"><input type="hidden" name="_csrf" class="js-csrf"><button type="submit" style="background:none;border:none;color:#2563eb;cursor:pointer;padding:0;font-size:inherit;text-decoration:underline">Logout</button></form></p>
+<script>(function(){var m=document.cookie.match(/(?:^|;)\s*csrf_token=([^;]+)/);if(m)document.querySelectorAll('.js-csrf').forEach(function(el){el.value=decodeURIComponent(m[1]);})})();</script>
 </body>
 </html>
 `))

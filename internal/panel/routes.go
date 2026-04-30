@@ -98,6 +98,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		Name:     sessionCookieName,
 		Value:    sessionID,
 		Path:     s.PanelPath,
+		MaxAge:   int(sessionDuration.Seconds()),
 		HttpOnly: true,
 		Secure:   s.Secure,
 		SameSite: http.SameSiteStrictMode,
@@ -106,6 +107,10 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		s.DB.Exec(`DELETE FROM sessions WHERE id=?`, cookie.Value)
 	}
@@ -120,13 +125,23 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, strings.TrimSuffix(s.PanelPath, "/")+"/login", http.StatusSeeOther)
 }
 
+// clientIP returns the real client IP for rate limiting.
+// X-Forwarded-For is trusted only when the direct connection comes from loopback
+// (i.e. nginx reverse proxy on the same host). Direct connections from non-loopback
+// addresses use RemoteAddr so an attacker cannot spoof their IP via the header.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.SplitN(xff, ",", 2)[0]
+	remoteHost := r.RemoteAddr
+	if i := strings.LastIndex(remoteHost, ":"); i >= 0 {
+		remoteHost = remoteHost[:i]
 	}
-	ip := r.RemoteAddr
-	if i := strings.LastIndex(ip, ":"); i >= 0 {
-		ip = ip[:i]
+	if isLoopback(remoteHost) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			return strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
+		}
 	}
-	return ip
+	return remoteHost
+}
+
+func isLoopback(host string) bool {
+	return host == "127.0.0.1" || host == "::1" || host == "[::1]"
 }

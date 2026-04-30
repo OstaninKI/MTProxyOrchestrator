@@ -41,7 +41,7 @@ func (s *Server) panelRouter() http.Handler {
 
 	r.Get("/login", s.handleLoginForm)
 	r.Post("/login", s.handleLoginSubmit)
-	r.Get("/logout", s.handleLogout)
+	r.Post("/logout", s.handleLogout)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireAuth)
