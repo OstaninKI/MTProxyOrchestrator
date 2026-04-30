@@ -61,6 +61,13 @@ func TestPanelUnitNoNetBindCap(t *testing.T) {
 	}
 }
 
+func TestPanelUnitDropsAllCapabilities(t *testing.T) {
+	got := basePanel.Render()
+	if !bytes.Contains(got, []byte("CapabilityBoundingSet=\n")) {
+		t.Error("panel unit must have empty CapabilityBoundingSet to drop all capabilities")
+	}
+}
+
 func TestPanelUnitPassesServeFlags(t *testing.T) {
 	got := basePanel.Render()
 	for _, want := range []string{

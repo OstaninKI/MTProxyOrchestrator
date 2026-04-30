@@ -98,6 +98,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 LockPersonality=yes
 RestrictRealtime=yes
+CapabilityBoundingSet=
 
 [Install]
 WantedBy=multi-user.target
