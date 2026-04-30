@@ -64,6 +64,16 @@ h2{margin:1.5rem 0 .5rem}</style>
 </tbody>
 </table>
 
+<h2>Components</h2>
+<table>
+<thead><tr><th>Component</th><th>Version</th></tr></thead>
+<tbody>
+{{range .Components}}
+<tr><td>{{.Name}}</td><td>{{.Version}}</td></tr>
+{{end}}
+</tbody>
+</table>
+
 <h2>Top Users</h2>
 <div class="periods">
   <a href="?period=1h"{{if eq .Period "1h"}} class="active"{{end}}>1h</a>
