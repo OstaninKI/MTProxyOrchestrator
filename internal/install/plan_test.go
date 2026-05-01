@@ -209,6 +209,90 @@ func TestSinglePlanBinaryPermissions(t *testing.T) {
 	}
 }
 
+// TestSinglePlanConfigFilePermissions verifies that all StepWriteFile steps for
+// config and secret files under /etc/tgproxy use mode 0600 (not 0644 or looser).
+func TestSinglePlanConfigFilePermissions(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := config.DefaultPaths()
+	// These files hold secrets or configuration and must be mode 0600.
+	sensitiveFiles := []string{
+		paths.TeleproxyTOML,
+		paths.UsersJSON,
+	}
+	for _, want := range sensitiveFiles {
+		for _, s := range plan.Steps {
+			if s.Kind == install.StepWriteFile && s.Target == want {
+				if s.Mode != 0o600 {
+					t.Errorf("config file %s has mode %04o, want 0600", s.Target, s.Mode)
+				}
+			}
+		}
+	}
+}
+
+// TestSinglePlanPanelDBPermissions verifies the panel DB init step uses mode 0600.
+func TestSinglePlanPanelDBPermissions(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepInitPanelDB {
+			continue
+		}
+		if s.Mode != 0o600 {
+			t.Errorf("panel DB init step has mode %04o, want 0600", s.Mode)
+		}
+		return
+	}
+	t.Fatal("Single plan must include panel DB bootstrap step")
+}
+
+// TestSinglePlanDownloadBinaryPermissions verifies that downloaded binaries use mode 0755.
+func TestSinglePlanDownloadBinaryPermissions(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepDownloadBinary {
+			continue
+		}
+		found = true
+		if s.Mode != 0o755 {
+			t.Errorf("downloaded binary %s has mode %04o, want 0755", s.Target, s.Mode)
+		}
+	}
+	if !found {
+		t.Error("Single plan must include at least one download-binary step")
+	}
+}
+
+// TestSinglePlanNoOverlyPermissiveSecrets ensures no StepWriteFile for
+// paths under /etc/tgproxy uses an overly permissive mode like 0644.
+func TestSinglePlanNoOverlyPermissiveSecrets(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepWriteFile {
+			continue
+		}
+		if !strings.HasPrefix(s.Target, "/etc/tgproxy") {
+			continue
+		}
+		// Config and secret files under /etc/tgproxy must not be world-readable.
+		if s.Mode > 0o600 {
+			t.Errorf("file %s under /etc/tgproxy has mode %04o, want <= 0600 (no world/group read for secrets)", s.Target, s.Mode)
+		}
+	}
+}
+
 func TestSinglePlanInitializesPanelDB(t *testing.T) {
 	paths := config.DefaultPaths()
 	plan, err := install.BuildSinglePlan(config.Default(), paths, 8443, testLocalBinaries())

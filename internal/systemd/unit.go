@@ -87,6 +87,7 @@ StandardError=append:{{.LogPath}}
 Restart=on-failure
 RestartSec=5
 
+DynamicUser=yes
 NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict

@@ -61,6 +61,32 @@ func TestPanelUnitNoNetBindCap(t *testing.T) {
 	}
 }
 
+func TestPanelUnitHasDynamicUser(t *testing.T) {
+	got := basePanel.Render()
+	if !bytes.Contains(got, []byte("DynamicUser=yes")) {
+		t.Error("panel unit missing DynamicUser=yes")
+	}
+}
+
+func TestTeleproxyUnitNoDynamicUser(t *testing.T) {
+	got := baseTeleproxy.Render()
+	if bytes.Contains(got, []byte("DynamicUser=yes")) {
+		t.Error("teleproxy unit must not contain DynamicUser=yes (needs CAP_NET_BIND_SERVICE)")
+	}
+}
+
+func TestSingboxUnitNoDynamicUser(t *testing.T) {
+	cfg := systemd.SingboxUnitConfig{
+		BinaryPath: "/usr/local/bin/sing-box",
+		ConfigPath: "/etc/tgproxy/sing-box.json",
+		LogPath:    "/var/log/tgproxy/sing-box.log",
+	}
+	got := cfg.Render()
+	if bytes.Contains(got, []byte("DynamicUser=yes")) {
+		t.Error("sing-box unit must not contain DynamicUser=yes (needs port binding capabilities)")
+	}
+}
+
 func TestPanelUnitDropsAllCapabilities(t *testing.T) {
 	got := basePanel.Render()
 	if !bytes.Contains(got, []byte("CapabilityBoundingSet=\n")) {

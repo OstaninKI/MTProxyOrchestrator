@@ -10,6 +10,7 @@ StandardError=append:/var/log/tgproxy/panel.log
 Restart=on-failure
 RestartSec=5
 
+DynamicUser=yes
 NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict

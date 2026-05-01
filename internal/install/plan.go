@@ -142,12 +142,13 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepCreateDir, Target: paths.StubDir, Mode: 0o755},
 		{Kind: StepInstallFile, Source: binaries.CLI, Target: paths.CLIBin, Mode: 0o755},
 		{Kind: StepInstallFile, Source: binaries.Panel, Target: paths.PanelBin, Mode: 0o755},
-		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: teleproxyDownloadSHA256()},
+		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: teleproxyDownloadSHA256(), Mode: 0o755},
 		{Kind: StepWriteFile, Target: paths.TeleproxyTOML, Content: tpData, Mode: 0o600},
 		{Kind: StepWriteFile, Target: paths.UsersJSON, Content: usersJSONContent(firstUser), Mode: 0o600},
 		{
 			Kind:   StepInitPanelDB,
 			Target: paths.PanelDB,
+			Mode:   0o600,
 			Bootstrap: &PanelBootstrap{
 				AdminLogin:    creds.AdminLogin,
 				AdminPassword: creds.AdminPassword,
