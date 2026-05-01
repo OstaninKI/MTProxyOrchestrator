@@ -9,10 +9,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
 )
@@ -201,6 +203,63 @@ func TestDownloadTarGzBinaryExtractsMember(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o755 {
 		t.Fatalf("mode = %o, want 755", info.Mode().Perm())
+	}
+}
+
+// TestDownloadOversizedRejected verifies that downloads exceeding MaxSize are rejected.
+func TestDownloadOversizedRejected(t *testing.T) {
+	// 5 bytes of data with a MaxSize of 3 bytes — should be rejected.
+	data := []byte("hello")
+	h := sha256.Sum256(data)
+	expectedSHA := hex.EncodeToString(h[:])
+
+	destDir := t.TempDir()
+	destPath := filepath.Join(destDir, "binary")
+
+	dl := component.Downloader{
+		Client: &fakeHTTPClient{
+			body: io.NopCloser(bytes.NewReader(data)),
+		},
+		TmpDir:  t.TempDir(),
+		MaxSize: 3,
+	}
+
+	err := dl.Download("https://example.test/binary", expectedSHA, destPath)
+	if err == nil {
+		t.Fatal("expected error for oversized download, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Fatalf("expected 'exceeds maximum size' error, got: %v", err)
+	}
+	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+		t.Fatal("expected dest file to not exist after oversized download rejection")
+	}
+}
+
+// TestDownloadTimeout verifies that downloads from a slow server are cancelled after the timeout.
+func TestDownloadTimeout(t *testing.T) {
+	// Server that blocks forever until the client disconnects.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		// Block until the request context is done (client disconnected/timed out).
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	dl := component.Downloader{
+		Client: &http.Client{Timeout: 50 * time.Millisecond},
+		TmpDir: t.TempDir(),
+	}
+
+	destPath := filepath.Join(t.TempDir(), "binary")
+	err := dl.Download(srv.URL+"/binary", strings.Repeat("0", 64), destPath)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+		t.Fatal("expected dest file to not exist after timeout")
 	}
 }
 

@@ -1,10 +1,12 @@
 package panel
 
 import (
+	"fmt"
 	"net/http"
 	"os/exec"
 	"strings"
 
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
@@ -19,10 +21,13 @@ type ComponentVersion struct {
 
 // DashboardData holds what the dashboard template receives.
 type DashboardData struct {
-	Services   []health.ServiceState
-	Period     metrics.Period
-	TopUsers   []metrics.UserTraffic
-	Components []ComponentVersion
+	Services        []health.ServiceState
+	BridgeSteps     []health.BridgeStepStatus // populated in Bridge mode
+	IsBridge        bool
+	Period          metrics.Period
+	TopUsers        []metrics.UserTraffic
+	LiveConnections []metrics.Sample // latest per-user active connection counts
+	Components      []ComponentVersion
 }
 
 // collectComponentVersions returns installed versions for all known components.
@@ -50,19 +55,61 @@ func collectComponentVersions() []ComponentVersion {
 	}
 }
 
+// isBridgeMode returns true when Bridge mode is active, determined by the
+// presence of at least one enabled node in outbounds.json.
+func (s *Server) isBridgeMode() bool {
+	nl, err := bridge.Load(s.nodePath())
+	if err != nil {
+		return false
+	}
+	return len(nl.Active()) > 0
+}
+
+// statsAddr returns the Teleproxy metrics base URL, e.g. "http://127.0.0.1:9091".
+func (s *Server) statsAddr() string {
+	port := s.bridgeStatsPort()
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
+}
+
+// scrapeLiveConnections fetches current per-user metrics from Teleproxy without
+// persisting them. Returns nil on error (dashboard degrades gracefully).
+func (s *Server) scrapeLiveConnections() []metrics.Sample {
+	scraper := metrics.DefaultScraper(s.statsAddr())
+	samples, err := scraper.Scrape()
+	if err != nil {
+		return nil
+	}
+	return samples
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	period := metrics.ParsePeriod(r.URL.Query().Get("period"))
 
 	checker := health.DefaultChecker()
-	status := checker.CheckSingle()
+	isBridge := s.isBridgeMode()
+
+	var services []health.ServiceState
+	var bridgeSteps []health.BridgeStepStatus
+
+	if isBridge {
+		bs := checker.CheckBridge()
+		bridgeSteps = bs.Steps
+	} else {
+		status := checker.CheckSingle()
+		services = status.Services
+	}
 
 	topUsers, _ := metrics.QueryTopUsers(s.DB, period, 5, nil)
+	liveConns := s.scrapeLiveConnections()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	dashboardPage(w, DashboardData{
-		Services:   status.Services,
-		Period:     period,
-		TopUsers:   topUsers,
-		Components: collectComponentVersions(),
+		Services:        services,
+		BridgeSteps:     bridgeSteps,
+		IsBridge:        isBridge,
+		Period:          period,
+		TopUsers:        topUsers,
+		LiveConnections: liveConns,
+		Components:      collectComponentVersions(),
 	})
 }

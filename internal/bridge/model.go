@@ -71,7 +71,8 @@ func (n Node) Validate() error {
 
 // NodeList is the root structure of outbounds.json.
 type NodeList struct {
-	Nodes []Node `json:"nodes"`
+	Nodes    []Node `json:"nodes"`
+	Strategy string `json:"strategy,omitempty"` // urltest | fallback | roundrobin | selector; empty → urltest
 }
 
 // Load reads a NodeList from path. Returns empty list if file does not exist.

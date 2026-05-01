@@ -11,6 +11,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+)
+
+// Download size limits.
+const (
+	// MaxBinaryBytes is the maximum size allowed for a direct binary download (200 MB).
+	MaxBinaryBytes = 200 * 1024 * 1024
+	// MaxArchiveBytes is the maximum size allowed for a tar.gz archive download (50 MB).
+	MaxArchiveBytes = 50 * 1024 * 1024
+
+	// DefaultHTTPTimeout is the timeout applied to each HTTP download request.
+	DefaultHTTPTimeout = 10 * time.Minute
 )
 
 // HTTPClient lets tests inject a fake HTTP client.
@@ -20,13 +32,15 @@ type HTTPClient interface {
 
 // Downloader performs verified binary downloads.
 type Downloader struct {
-	Client HTTPClient
-	TmpDir string // defaults to os.TempDir() when empty
+	Client  HTTPClient
+	TmpDir  string // defaults to os.TempDir() when empty
+	MaxSize int64  // maximum download size in bytes; 0 means use the default for the download type
 }
 
 // Download fetches url to destPath, verifies sha256hex, sets mode 0755.
 // Writes to a temp file first, verifies, then os.Rename (atomic on same fs).
 // Removes the temp file on any error.
+// The download body is limited to MaxBinaryBytes (or d.MaxSize if set).
 func (d Downloader) Download(url, sha256hex, destPath string) error {
 	if err := validateSHA256Hex(sha256hex); err != nil {
 		return err
@@ -36,7 +50,11 @@ func (d Downloader) Download(url, sha256hex, destPath string) error {
 	if tmpDir == "" {
 		tmpDir = os.TempDir()
 	}
-	tmpPath, err := d.downloadVerified(url, sha256hex, tmpDir)
+	maxSize := d.MaxSize
+	if maxSize <= 0 {
+		maxSize = MaxBinaryBytes
+	}
+	tmpPath, err := d.downloadVerified(url, sha256hex, tmpDir, maxSize)
 	if err != nil {
 		return err
 	}
@@ -68,7 +86,11 @@ func (d Downloader) DownloadTarGzBinary(url, sha256hex, memberName, destPath str
 	if tmpDir == "" {
 		tmpDir = os.TempDir()
 	}
-	archive, err := d.downloadVerified(url, sha256hex, tmpDir)
+	maxSize := d.MaxSize
+	if maxSize <= 0 {
+		maxSize = MaxArchiveBytes
+	}
+	archive, err := d.downloadVerified(url, sha256hex, tmpDir, maxSize)
 	if err != nil {
 		return err
 	}
@@ -111,10 +133,10 @@ func validateSHA256Hex(sha256hex string) error {
 	return nil
 }
 
-func (d Downloader) downloadVerified(url, sha256hex, tmpDir string) (string, error) {
+func (d Downloader) downloadVerified(url, sha256hex, tmpDir string, maxSize int64) (string, error) {
 	client := d.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: DefaultHTTPTimeout}
 	}
 
 	tmp, err := os.CreateTemp(tmpDir, "tgproxy-download-*")
@@ -140,10 +162,17 @@ func (d Downloader) downloadVerified(url, sha256hex, tmpDir string) (string, err
 		return "", fmt.Errorf("unexpected status %d fetching %s", resp.StatusCode, url)
 	}
 
+	// Limit the response body to maxSize+1 so that we can detect oversized downloads.
+	limited := io.LimitReader(resp.Body, maxSize+1)
 	hash := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(tmp, hash), resp.Body); err != nil {
+	written, err := io.Copy(io.MultiWriter(tmp, hash), limited)
+	if err != nil {
 		cleanup()
 		return "", fmt.Errorf("download body: %w", err)
+	}
+	if written > maxSize {
+		cleanup()
+		return "", fmt.Errorf("download exceeds maximum size of %d bytes", maxSize)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpPath)

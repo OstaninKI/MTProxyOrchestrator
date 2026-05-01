@@ -1,8 +1,10 @@
 package panel
 
 import (
+	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 
@@ -11,6 +13,27 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
+
+const (
+	singboxSOCKSHost = "127.0.0.1"
+	singboxSOCKSPort = 1080
+)
+
+// isSingboxActive reports whether the sing-box systemd service is currently active.
+// It is a var so tests can replace it without touching the real system.
+var isSingboxActive = func() bool {
+	err := exec.Command("systemctl", "is-active", "sing-box.service").Run()
+	return err == nil
+}
+
+// bridgeSOCKS5Addr returns the sing-box SOCKS5 address when Bridge mode is active,
+// and an empty string when Single mode is active.
+func (s *Server) bridgeSOCKS5Addr() string {
+	if isSingboxActive() {
+		return fmt.Sprintf("%s:%d", singboxSOCKSHost, singboxSOCKSPort)
+	}
+	return ""
+}
 
 func (s *Server) handleUserToggle(w http.ResponseWriter, r *http.Request) {
 	if !ValidateCSRF(r) {
@@ -130,6 +153,7 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 }
 
 // reloadTeleproxy rewrites the Teleproxy config and reloads the service.
+// It preserves Bridge mode by including the SOCKS5 upstream when sing-box is active.
 func (s *Server) reloadTeleproxy() error {
 	users, err := UserRepo{DB: s.DB}.List()
 	if err != nil {
@@ -142,10 +166,11 @@ func (s *Server) reloadTeleproxy() error {
 		}
 	}
 	cfg := teleproxy.Config{
-		Port:      s.bridgeMTProtoPort(),
-		MaskHost:  s.bridgeMaskHost(),
-		StatsPort: s.bridgeStatsPort(),
-		Users:     entries,
+		Port:       s.bridgeMTProtoPort(),
+		MaskHost:   s.bridgeMaskHost(),
+		StatsPort:  s.bridgeStatsPort(),
+		SOCKS5Addr: s.bridgeSOCKS5Addr(),
+		Users:      entries,
 	}
 	data := cfg.Render()
 	return writeAndReload(s.bridgePaths().TeleproxyTOML, data)

@@ -50,6 +50,22 @@ h2{margin:1.5rem 0 .5rem}</style>
 <body>
 <h1>Dashboard</h1>
 
+{{if .IsBridge}}
+<h2>Bridge Mode — Chain Health</h2>
+<table>
+<thead><tr><th>Step</th><th>Status</th><th>Latency</th><th>Message</th></tr></thead>
+<tbody>
+{{range .BridgeSteps}}
+<tr>
+  <td>{{.Name}}</td>
+  <td>{{if .OK}}<span class="ok">ok</span>{{else}}<span class="down">down</span>{{end}}</td>
+  <td>{{if .Latency}}{{.Latency}}{{else}}&mdash;{{end}}</td>
+  <td>{{.Message}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
 <h2>Services</h2>
 <table>
 <thead><tr><th>Service</th><th>Status</th><th>Message</th></tr></thead>
@@ -63,6 +79,7 @@ h2{margin:1.5rem 0 .5rem}</style>
 {{end}}
 </tbody>
 </table>
+{{end}}
 
 <h2>Components</h2>
 <table>
@@ -73,6 +90,21 @@ h2{margin:1.5rem 0 .5rem}</style>
 {{end}}
 </tbody>
 </table>
+
+{{if .LiveConnections}}
+<h2>Active Connections</h2>
+<table>
+<thead><tr><th>User</th><th>Active Connections</th></tr></thead>
+<tbody>
+{{range .LiveConnections}}
+<tr>
+  <td>{{.UserLabel}}</td>
+  <td>{{.Connections}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{end}}
 
 <h2>Top Users</h2>
 <div class="periods">

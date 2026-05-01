@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
 	"github.com/spf13/cobra"
@@ -48,12 +53,63 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 }
 
+// newPanelHTTPServer builds the http.Server used by runServe.
+// All timeout and limit fields are set explicitly; callers must not rely on
+// zero-value defaults.
+func newPanelHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
+	}
+}
+
 func runServe(cmd *cobra.Command, args []string) error {
 	d, err := db.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer d.Close()
+
+	statsAddr := fmt.Sprintf("http://127.0.0.1:%d", statsPort)
+	scraper := metrics.DefaultScraper(statsAddr)
+	sampler := metrics.Sampler{
+		Source: scraper.Scrape,
+		Store:  metrics.DBStoreFn(d),
+		Now:    func() int64 { return time.Now().Unix() },
+	}
+	retainer := metrics.Retainer{DB: d}
+
+	// Context that is cancelled on SIGINT/SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Start metrics sampler goroutine.
+	go func() {
+		if err := sampler.Run(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "metrics sampler: %v\n", err)
+		}
+	}()
+
+	// Start retention/aggregation goroutine on a daily schedule.
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := retainer.Run(); err != nil {
+					fmt.Fprintf(os.Stderr, "metrics retention: %v\n", err)
+				}
+			}
+		}
+	}()
 
 	srv := &panel.Server{
 		DB:          d,
@@ -67,6 +123,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 		},
 	}
 
+	httpSrv := newPanelHTTPServer(listenAddr, srv.Handler())
+
+	// Shut down the HTTP server gracefully when the context is cancelled.
+	go func() {
+		<-ctx.Done()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		//nolint:errcheck
+		httpSrv.Shutdown(shutCtx)
+	}()
+
 	fmt.Fprintf(cmd.OutOrStdout(), "panel listening on %s%s\n", listenAddr, panelPath)
-	return http.ListenAndServe(listenAddr, srv.Handler())
+	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }

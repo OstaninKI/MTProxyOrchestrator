@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
 )
 
 const sessionCookieName = "session_id"
@@ -53,6 +55,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 
 	if s.RateLimiter.IsBlocked(ip) {
+		audit.Log(s.DB, 0, "login_rate_limited", "", "", ip) //nolint:errcheck
 		http.Error(w, "too many failed attempts, try again later", http.StatusTooManyRequests)
 		return
 	}
@@ -70,6 +73,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	err := s.DB.QueryRow(`SELECT id, password_hash FROM admin WHERE login=?`, login).Scan(&adminID, &hash)
 	if err != nil || !CheckPassword(hash, password) {
 		s.RateLimiter.RecordFailure(ip)
+		audit.Log(s.DB, 0, "login_failed", login, "", ip) //nolint:errcheck
 		tok, _ := NewCSRFToken()
 		SetCSRFCookie(w, tok, s.Secure)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -78,6 +82,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.RateLimiter.RecordSuccess(ip)
+	audit.Log(s.DB, adminID, "login_success", login, "", ip) //nolint:errcheck
 
 	sessionID, err := NewSessionID()
 	if err != nil {
@@ -111,8 +116,11 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
+	ip := clientIP(r)
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		s.DB.Exec(`DELETE FROM sessions WHERE id=?`, cookie.Value)
+		adminID := s.sessionAdminID(r)
+		s.DB.Exec(`DELETE FROM sessions WHERE id=?`, cookie.Value) //nolint:errcheck
+		audit.Log(s.DB, adminID, "logout", "", "", ip)             //nolint:errcheck
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,

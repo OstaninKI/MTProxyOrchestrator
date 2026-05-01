@@ -1,8 +1,10 @@
 package update
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -144,10 +146,11 @@ func (c *Checker) CheckOne(comp Component, manual bool) (*UpdateInfo, error) {
 		}
 	}
 
-	available, downloadURL, err := c.fetchLatestRelease(comp)
+	available, downloadURL, assetName, sha256, err := c.fetchLatestRelease(comp)
 	if err != nil {
 		return nil, err
 	}
+	_ = assetName // used internally; retained for clarity
 
 	current := c.CurrentVersions[comp]
 
@@ -170,6 +173,7 @@ func (c *Checker) CheckOne(comp Component, manual bool) (*UpdateInfo, error) {
 		CurrentVersion:   current,
 		AvailableVersion: available,
 		DownloadURL:      downloadURL,
+		SHA256:           sha256,
 	}
 	return info, nil
 }
@@ -186,13 +190,13 @@ type githubAsset struct {
 }
 
 // fetchLatestRelease queries the GitHub Releases API and returns the latest
-// tag name and a suitable download URL for the current platform.
-// For project binaries (CLI and panel) both share the same repo; we return
-// the shared tag name and an asset URL that matches the component name.
-func (c *Checker) fetchLatestRelease(comp Component) (tagName, downloadURL string, err error) {
+// tag name, a suitable download URL, the selected asset name, and the SHA256
+// checksum for that asset parsed from a checksum file in the same release.
+// For project binaries (CLI and panel) both share the same repo.
+func (c *Checker) fetchLatestRelease(comp Component) (tagName, downloadURL, assetName, sha256 string, err error) {
 	repo, ok := componentRepo[comp]
 	if !ok {
-		return "", "", fmt.Errorf("unknown component: %s", comp)
+		return "", "", "", "", fmt.Errorf("unknown component: %s", comp)
 	}
 
 	client := c.Client
@@ -200,57 +204,149 @@ func (c *Checker) fetchLatestRelease(comp Component) (tagName, downloadURL strin
 		client = http.DefaultClient
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", repo[0], repo[1])
-	resp, err := client.Get(url)
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", repo[0], repo[1])
+	resp, err := client.Get(apiURL)
 	if err != nil {
-		return "", "", fmt.Errorf("github api get: %w", err)
+		return "", "", "", "", fmt.Errorf("github api get: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("github api returned status %d for %s", resp.StatusCode, url)
+		return "", "", "", "", fmt.Errorf("github api returned status %d for %s", resp.StatusCode, apiURL)
 	}
 
 	var rel githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return "", "", fmt.Errorf("decode github release: %w", err)
+		return "", "", "", "", fmt.Errorf("decode github release: %w", err)
 	}
 
 	tagName = strings.TrimPrefix(rel.TagName, "v")
 
 	// Find the most appropriate asset for this component and platform.
-	downloadURL = findAssetURL(comp, rel.Assets)
+	downloadURL, assetName = findAssetURLAndName(comp, rel.Assets)
 
-	return tagName, downloadURL, nil
+	if downloadURL != "" && assetName != "" {
+		// Look for a checksum file among the release assets and extract the
+		// SHA256 for the selected asset.  We only accept a checksum that
+		// names the exact asset we selected.
+		checksumURL := findChecksumURL(rel.Assets)
+		if checksumURL != "" {
+			sha256, err = fetchChecksumForAsset(client, checksumURL, assetName)
+			if err != nil {
+				// Log the fetch failure but leave sha256 empty so the caller
+				// can apply fail-closed logic.
+				sha256 = ""
+			}
+		}
+	}
+
+	return tagName, downloadURL, assetName, sha256, nil
 }
 
-// findAssetURL picks the best download URL from a list of release assets.
-// It prefers linux-amd64 variants matching the component name.
-func findAssetURL(comp Component, assets []githubAsset) string {
-	compStr := string(comp)
-
-	// Preference order: exact match with linux-amd64, then linux-amd64 alone,
-	// then any asset containing the component name.
+// findChecksumURL returns the download URL of the first checksum file asset
+// in the release (e.g. *_checksums.txt or *.sha256).
+func findChecksumURL(assets []githubAsset) string {
 	for _, a := range assets {
 		name := strings.ToLower(a.Name)
-		if strings.Contains(name, compStr) && strings.Contains(name, "linux") && strings.Contains(name, "amd64") {
-			return a.BrowserDownloadURL
-		}
-	}
-	// Teleproxy uses pattern: teleproxy-linux-amd64 (no archive)
-	for _, a := range assets {
-		name := strings.ToLower(a.Name)
-		if strings.Contains(name, "linux") && strings.Contains(name, "amd64") && !strings.HasSuffix(name, ".sha256") {
-			return a.BrowserDownloadURL
-		}
-	}
-	// Fallback: first non-checksum asset.
-	for _, a := range assets {
-		if !strings.HasSuffix(strings.ToLower(a.Name), ".sha256") {
+		if strings.HasSuffix(name, "_checksums.txt") || strings.HasSuffix(name, ".sha256") ||
+			strings.HasSuffix(name, "_checksums.sha256") || strings.Contains(name, "checksums") {
 			return a.BrowserDownloadURL
 		}
 	}
 	return ""
+}
+
+// fetchChecksumForAsset downloads the checksum file at url and extracts the
+// SHA256 hex string for assetName.  The file may use either of these formats:
+//
+//	<hex>  <filename>          (GNU coreutils sha256sum format)
+//	<hex>  <filename>
+func fetchChecksumForAsset(client HTTPClient, url, assetName string) (string, error) {
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("fetch checksum file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("checksum file returned status %d", resp.StatusCode)
+	}
+
+	// Read at most 1 MiB to guard against enormous responses.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("read checksum body: %w", err)
+	}
+
+	return parseChecksumFile(string(body), assetName)
+}
+
+// parseChecksumFile scans a sha256sum-style text for a line whose filename
+// component (after whitespace) matches assetName (case-insensitive, basename only).
+// Returns an error when no matching line is found.
+func parseChecksumFile(content, assetName string) (string, error) {
+	needle := strings.ToLower(filepath.Base(assetName))
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		// Accept both "hash  filename" and "hash *filename" (binary mode).
+		filename := strings.TrimLeft(fields[1], "*")
+		if strings.ToLower(filepath.Base(filename)) == needle {
+			return fields[0], nil
+		}
+	}
+	return "", fmt.Errorf("no checksum found for asset %q", assetName)
+}
+
+// findAssetURLAndName picks the best download URL and asset name from a list of
+// release assets.  It prefers linux-amd64 variants matching the component name.
+// Checksum files are never selected as the binary asset.
+func findAssetURLAndName(comp Component, assets []githubAsset) (downloadURL, assetName string) {
+	compStr := string(comp)
+
+	isChecksumFile := func(name string) bool {
+		n := strings.ToLower(name)
+		return strings.HasSuffix(n, ".sha256") ||
+			strings.HasSuffix(n, "_checksums.txt") ||
+			strings.HasSuffix(n, "_checksums.sha256") ||
+			strings.Contains(n, "checksums")
+	}
+
+	// Preference order: exact match with linux-amd64, then linux-amd64 alone,
+	// then any asset containing the component name.
+	for _, a := range assets {
+		if isChecksumFile(a.Name) {
+			continue
+		}
+		name := strings.ToLower(a.Name)
+		if strings.Contains(name, compStr) && strings.Contains(name, "linux") && strings.Contains(name, "amd64") {
+			return a.BrowserDownloadURL, a.Name
+		}
+	}
+	// Teleproxy uses pattern: teleproxy-linux-amd64 (no archive)
+	for _, a := range assets {
+		if isChecksumFile(a.Name) {
+			continue
+		}
+		name := strings.ToLower(a.Name)
+		if strings.Contains(name, "linux") && strings.Contains(name, "amd64") {
+			return a.BrowserDownloadURL, a.Name
+		}
+	}
+	// Fallback: first non-checksum asset.
+	for _, a := range assets {
+		if !isChecksumFile(a.Name) {
+			return a.BrowserDownloadURL, a.Name
+		}
+	}
+	return "", ""
 }
 
 // FileStore is a StateStore backed by plain files under a directory.

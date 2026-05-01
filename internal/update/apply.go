@@ -3,9 +3,12 @@ package update
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
 )
 
 // Downloader downloads and SHA256-verifies a binary to a destination path.
@@ -47,12 +50,12 @@ type Applier struct {
 	TmpDir            string // defaults to os.TempDir()
 }
 
-// NewDefaultApplier returns an Applier wired to real system calls.
-// The caller must replace Downloader with a real implementation before use;
-// OSDownloader.Download returns an error directing the caller to do so.
+// NewDefaultApplier returns an Applier wired to real system calls,
+// including a real component.Downloader that performs SHA256-verified HTTP
+// downloads.
 func NewDefaultApplier() *Applier {
 	return &Applier{
-		Downloader:        OSDownloader{},
+		Downloader:        component.Downloader{Client: http.DefaultClient},
 		ServiceController: OSServiceController{},
 		HealthChecker:     OSHealthChecker{},
 		FileOps:           OSFileOps{},
@@ -177,14 +180,6 @@ func (a *Applier) rollback(destPath, backupPath, service string) error {
 }
 
 // --- Production implementations ---
-
-// OSDownloader is a stub that directs callers to inject a real downloader.
-// In production, wire component.Downloader instead.
-type OSDownloader struct{}
-
-func (OSDownloader) Download(_, _, _ string) error {
-	return fmt.Errorf("OSDownloader: inject a real Downloader (e.g. component.Downloader)")
-}
 
 // OSServiceController uses systemctl to restart services.
 type OSServiceController struct{}

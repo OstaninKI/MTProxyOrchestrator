@@ -6,10 +6,12 @@ import (
 	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -313,6 +315,182 @@ func TestMissingOptionalFilesSkipped(t *testing.T) {
 			t.Errorf("optional file %s should not exist in restore dir", rel)
 		}
 	}
+}
+
+// TestRestoreOversizedEncryptedArchiveRejected verifies that encrypted archives
+// that exceed MaxEncryptedArchiveBytes are rejected before decryption.
+func TestRestoreOversizedEncryptedArchiveRejected(t *testing.T) {
+	// Write a file that is larger than the limit.
+	oversized := make([]byte, MaxEncryptedArchiveBytes+1)
+	archivePath := filepath.Join(t.TempDir(), "big.tar.gz.enc")
+	if err := os.WriteFile(archivePath, oversized, 0600); err != nil {
+		t.Fatalf("write oversized archive: %v", err)
+	}
+
+	err := Restore(RestoreOptions{
+		ArchivePath: archivePath,
+		TargetDir:   t.TempDir(),
+		Passphrase:  "pass",
+	})
+	if err == nil {
+		t.Fatal("expected error for oversized encrypted archive, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds limit") {
+		t.Fatalf("expected 'exceeds limit' error, got: %v", err)
+	}
+}
+
+// TestRestoreExcessiveFileCountRejected verifies that archives with too many files
+// are rejected.
+func TestRestoreExcessiveFileCountRejected(t *testing.T) {
+	// Build an archive with MaxExtractedFileCount+1 files.
+	archive := buildEncryptedTarGzEnc(t, func(tw *tar.Writer) {
+		for i := 0; i <= MaxExtractedFileCount; i++ {
+			name := fmt.Sprintf("file%05d.txt", i)
+			body := []byte("x")
+			hdr := &tar.Header{
+				Name:     name,
+				Size:     int64(len(body)),
+				Mode:     0644,
+				Typeflag: tar.TypeReg,
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				panic(err)
+			}
+			if _, err := tw.Write(body); err != nil {
+				panic(err)
+			}
+		}
+	})
+
+	err := Restore(RestoreOptions{
+		ArchivePath: archive,
+		TargetDir:   t.TempDir(),
+		Passphrase:  "passphrase",
+	})
+	if err == nil {
+		t.Fatal("expected error for excessive file count, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum file count") {
+		t.Fatalf("expected 'exceeds maximum file count' error, got: %v", err)
+	}
+}
+
+// TestRestoreOversizedSingleFileRejected verifies that a single file exceeding
+// MaxExtractedFileBytes is rejected.
+func TestRestoreOversizedSingleFileRejected(t *testing.T) {
+	archive := buildEncryptedTarGzEnc(t, func(tw *tar.Writer) {
+		size := int64(MaxExtractedFileBytes + 1)
+		hdr := &tar.Header{
+			Name:     "bigfile.bin",
+			Size:     size,
+			Mode:     0644,
+			Typeflag: tar.TypeReg,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			panic(err)
+		}
+		// Write the declared bytes.
+		zeros := make([]byte, size)
+		if _, err := tw.Write(zeros); err != nil {
+			panic(err)
+		}
+	})
+
+	err := Restore(RestoreOptions{
+		ArchivePath: archive,
+		TargetDir:   t.TempDir(),
+		Passphrase:  "passphrase",
+	})
+	if err == nil {
+		t.Fatal("expected error for oversized single file, got nil")
+	}
+	if !strings.Contains(err.Error(), "per-file limit") {
+		t.Fatalf("expected 'per-file limit' error, got: %v", err)
+	}
+}
+
+// TestRestoreExcessiveTotalSizeRejected verifies that archives whose total
+// extracted size exceeds MaxExtractedTotalBytes are rejected.
+func TestRestoreExcessiveTotalSizeRejected(t *testing.T) {
+	// Each file is just under the per-file limit but together they exceed the total limit.
+	// MaxExtractedTotalBytes / (MaxExtractedFileBytes/2) + 2 files should do it.
+	fileSize := int64(MaxExtractedFileBytes / 2)          // 25 MB each
+	fileCount := int(MaxExtractedTotalBytes/fileSize) + 2 // enough to exceed total
+
+	archive := buildEncryptedTarGzEnc(t, func(tw *tar.Writer) {
+		zeros := make([]byte, fileSize)
+		for i := 0; i < fileCount; i++ {
+			name := fmt.Sprintf("file%d.bin", i)
+			hdr := &tar.Header{
+				Name:     name,
+				Size:     fileSize,
+				Mode:     0644,
+				Typeflag: tar.TypeReg,
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
+				panic(err)
+			}
+			if _, err := tw.Write(zeros); err != nil {
+				panic(err)
+			}
+		}
+	})
+
+	err := Restore(RestoreOptions{
+		ArchivePath: archive,
+		TargetDir:   t.TempDir(),
+		Passphrase:  "passphrase",
+	})
+	if err == nil {
+		t.Fatal("expected error for excessive total extracted size, got nil")
+	}
+	if !strings.Contains(err.Error(), "total extracted size exceeds limit") {
+		t.Fatalf("expected 'total extracted size exceeds limit' error, got: %v", err)
+	}
+}
+
+// buildEncryptedTarGzEnc builds a tar.gz.enc archive using passphrase "passphrase".
+// The writeFn is called to populate the tar archive.
+func buildEncryptedTarGzEnc(t *testing.T, writeFn func(tw *tar.Writer)) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	writeFn(tw)
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("close gzip: %v", err)
+	}
+
+	plaintext := buf.Bytes()
+
+	salt := make([]byte, saltLen)
+	for i := range salt {
+		salt[i] = byte(i)
+	}
+	key, err := deriveKey("passphrase", salt)
+	if err != nil {
+		t.Fatalf("derive key: %v", err)
+	}
+
+	block, _ := aes.NewCipher(key)
+	gcm, _ := cipher.NewGCM(block)
+	nonce := make([]byte, nonceLen)
+	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
+
+	outPath := filepath.Join(t.TempDir(), "archive.tar.gz.enc")
+	var out bytes.Buffer
+	out.Write(salt)
+	out.Write(nonce)
+	out.Write(ciphertext)
+	if err := os.WriteFile(outPath, out.Bytes(), 0600); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+	return outPath
 }
 
 // buildMaliciousTarGzEnc builds a tar.gz.enc archive that contains a single

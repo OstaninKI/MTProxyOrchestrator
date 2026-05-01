@@ -3,8 +3,11 @@ package panel_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
 )
 
@@ -53,5 +56,200 @@ func TestDashboardRedirectsUnauthenticated(t *testing.T) {
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusSeeOther {
 		t.Errorf("unauthenticated dashboard: want 303, got %d", w.Code)
+	}
+}
+
+// seedAdmin inserts an admin row and returns the plain-text password.
+func seedAdmin(t *testing.T, d *db.DB) (login, password string) {
+	t.Helper()
+	login = "admin"
+	password = "correcthorsebatterystaple"
+	hash, err := panel.HashPassword(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`INSERT INTO admin(id, login, password_hash) VALUES(1,?,?)`, login, hash); err != nil {
+		t.Fatal(err)
+	}
+	return login, password
+}
+
+// auditRows returns all (action, target, detail) triples from audit_log.
+func auditRows(t *testing.T, d *db.DB) []struct{ action, target, detail string } {
+	t.Helper()
+	rows, err := d.Query(`SELECT action, target, detail FROM audit_log ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []struct{ action, target, detail string }
+	for rows.Next() {
+		var row struct{ action, target, detail string }
+		if err := rows.Scan(&row.action, &row.target, &row.detail); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// postLoginForm sends a POST /p-example/login request with CSRF.
+func postLoginForm(h http.Handler, login, password string) *httptest.ResponseRecorder {
+	csrfToken := "test-csrf-token"
+	form := url.Values{
+		"_csrf":    {csrfToken},
+		"login":    {login},
+		"password": {password},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: csrfToken})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w
+}
+
+func TestAuditLoginSuccess(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	login, password := seedAdmin(t, srv.DB)
+	h := srv.Handler()
+
+	w := postLoginForm(h, login, password)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("login: want 303, got %d", w.Code)
+	}
+
+	rows := auditRows(t, srv.DB)
+	if len(rows) != 1 {
+		t.Fatalf("want 1 audit row, got %d: %+v", len(rows), rows)
+	}
+	row := rows[0]
+	if row.action != "login_success" {
+		t.Errorf("action = %q, want %q", row.action, "login_success")
+	}
+	if row.target != login {
+		t.Errorf("target = %q, want login %q", row.target, login)
+	}
+	if strings.Contains(row.detail, password) {
+		t.Errorf("audit detail must not contain password")
+	}
+}
+
+func TestAuditLoginFailedNoPassword(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	login, password := seedAdmin(t, srv.DB)
+	h := srv.Handler()
+
+	w := postLoginForm(h, login, "wrongpassword")
+	if w.Code == http.StatusSeeOther {
+		t.Fatalf("bad login: should not redirect")
+	}
+
+	rows := auditRows(t, srv.DB)
+	if len(rows) != 1 {
+		t.Fatalf("want 1 audit row, got %d: %+v", len(rows), rows)
+	}
+	row := rows[0]
+	if row.action != "login_failed" {
+		t.Errorf("action = %q, want %q", row.action, "login_failed")
+	}
+	// password must never appear in any audit field
+	for _, field := range []string{row.action, row.target, row.detail} {
+		if strings.Contains(field, password) || strings.Contains(field, "wrongpassword") {
+			t.Errorf("audit field %q must not contain a password", field)
+		}
+	}
+}
+
+func TestAuditRateLimitedNoPassword(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	login, password := seedAdmin(t, srv.DB)
+	h := srv.Handler()
+
+	// Exhaust the rate limit (5 failures)
+	for range 5 {
+		postLoginForm(h, login, "wrongpassword")
+	}
+
+	// Clear audit so far; next attempt should be blocked
+	if _, err := srv.DB.Exec(`DELETE FROM audit_log`); err != nil {
+		t.Fatal(err)
+	}
+
+	w := postLoginForm(h, login, "wrongpassword")
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("want 429, got %d", w.Code)
+	}
+
+	rows := auditRows(t, srv.DB)
+	if len(rows) != 1 {
+		t.Fatalf("want 1 audit row for rate-limit block, got %d: %+v", len(rows), rows)
+	}
+	row := rows[0]
+	if row.action != "login_rate_limited" {
+		t.Errorf("action = %q, want %q", row.action, "login_rate_limited")
+	}
+	for _, field := range []string{row.action, row.target, row.detail} {
+		if strings.Contains(field, password) || strings.Contains(field, "wrongpassword") {
+			t.Errorf("audit field %q must not contain a password", field)
+		}
+	}
+}
+
+func TestAuditLogoutNoSessionToken(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	login, password := seedAdmin(t, srv.DB)
+	h := srv.Handler()
+
+	// Log in to get a session cookie
+	loginResp := postLoginForm(h, login, password)
+	if loginResp.Code != http.StatusSeeOther {
+		t.Fatalf("login: want 303, got %d", loginResp.Code)
+	}
+
+	// Extract session cookie from response
+	var sessionCookie *http.Cookie
+	for _, c := range loginResp.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("expected session_id cookie after login")
+	}
+
+	// Clear audit rows from login
+	if _, err := srv.DB.Exec(`DELETE FROM audit_log`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Send logout with CSRF
+	csrfToken := "logout-csrf-token"
+	form := url.Values{"_csrf": {csrfToken}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/logout", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: csrfToken})
+	req.AddCookie(sessionCookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("logout: want 303, got %d", w.Code)
+	}
+
+	rows := auditRows(t, srv.DB)
+	if len(rows) != 1 {
+		t.Fatalf("want 1 audit row for logout, got %d: %+v", len(rows), rows)
+	}
+	row := rows[0]
+	if row.action != "logout" {
+		t.Errorf("action = %q, want %q", row.action, "logout")
+	}
+	// Session token value must not appear in any audit field
+	sessionTokenVal := sessionCookie.Value
+	for _, field := range []string{row.action, row.target, row.detail} {
+		if strings.Contains(field, sessionTokenVal) {
+			t.Errorf("audit field %q must not contain session token", field)
+		}
 	}
 }

@@ -256,6 +256,97 @@ func nodeToOutbound(n Node) singbox.Outbound {
 	return ob
 }
 
+// RerenderConfig re-renders and writes sing-box.json based on the current node list.
+// If render or write fails, the previous sing-box.json content is restored.
+// Returns a descriptive error for display to the admin; never includes node credentials.
+func (s *BridgeService) RerenderConfig(nl NodeList, singboxJSONPath string) error {
+	active := nl.Active()
+	if len(active) == 0 {
+		return errors.New("no enabled nodes — cannot render sing-box config")
+	}
+
+	outbounds := make([]singbox.Outbound, 0, len(active))
+	for _, n := range active {
+		outbounds = append(outbounds, nodeToOutbound(n))
+	}
+
+	strategy := singbox.Strategy(nl.Strategy)
+	switch strategy {
+	case singbox.StrategyURLTest, singbox.StrategyFallback, singbox.StrategyRoundRobin, singbox.StrategySelector:
+		// valid
+	default:
+		strategy = singbox.StrategyURLTest
+	}
+
+	cfg := singbox.Config{
+		SOCKSListenAddr: singboxSOCKSAddr,
+		SOCKSListenPort: singboxSOCKSPort,
+		Strategy:        strategy,
+		Outbounds:       outbounds,
+	}
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("sing-box config invalid: %w", err)
+	}
+	data, err := cfg.Render()
+	if err != nil {
+		return fmt.Errorf("sing-box config render failed: %w", err)
+	}
+
+	// Snapshot current sing-box.json for rollback.
+	snap, snapErr := snapshotFile(singboxJSONPath)
+
+	if err := s.Exec.WriteFile(singboxJSONPath, data, 0o600); err != nil {
+		if snapErr == nil && snap.existed {
+			_ = restoreFile(singboxJSONPath, snap)
+		}
+		return fmt.Errorf("sing-box config write failed: %w", err)
+	}
+	return nil
+}
+
+type fileSnapshot struct {
+	existed bool
+	data    []byte
+	mode    os.FileMode
+}
+
+func snapshotFile(path string) (fileSnapshot, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return fileSnapshot{}, nil
+	}
+	if err != nil {
+		return fileSnapshot{}, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileSnapshot{}, err
+	}
+	return fileSnapshot{existed: true, data: data, mode: info.Mode().Perm()}, nil
+}
+
+func restoreFile(path string, snap fileSnapshot) error {
+	if !snap.existed {
+		err := os.Remove(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp := path + ".rollback"
+	if err := os.WriteFile(tmp, snap.data, snap.mode); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
 func snapshotNodeFile(path string) (nodeFileSnapshot, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
