@@ -21,6 +21,8 @@ type Executor interface {
 	AptInstall(packages ...string) error
 	EnableService(name string) error
 	StartService(name string) error
+	ReloadService(name string) error
+	EnableNginxSite(name string) error
 }
 
 // Installer runs a Plan using a given Executor.
@@ -53,6 +55,10 @@ func (i Installer) Run() error {
 			err = i.Executor.EnableService(step.Target)
 		case StepStartService:
 			err = i.Executor.StartService(step.Target)
+		case StepReloadService:
+			err = i.Executor.ReloadService(step.Target)
+		case StepEnableNginxSite:
+			err = i.Executor.EnableNginxSite(step.Target)
 		default:
 			return fmt.Errorf("unknown step kind: %s", step.Kind)
 		}
@@ -137,4 +143,23 @@ func (e *SystemExecutor) EnableService(name string) error {
 
 func (e *SystemExecutor) StartService(name string) error {
 	return exec.Command("systemctl", "start", name).Run()
+}
+
+func (e *SystemExecutor) ReloadService(name string) error {
+	return exec.Command("systemctl", "reload", name).Run()
+}
+
+func (e *SystemExecutor) EnableNginxSite(name string) error {
+	src := filepath.Join("/etc/nginx/sites-available", filepath.Base(name))
+	dst := filepath.Join("/etc/nginx/sites-enabled", filepath.Base(name))
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if current, err := os.Readlink(dst); err == nil && current == src {
+		return nil
+	}
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Symlink(src, dst)
 }

@@ -17,6 +17,8 @@ type fakeExecutor struct {
 	apts      []string
 	enables   []string
 	starts    []string
+	reloads   []string
+	sites     []string
 	seeds     []install.PanelBootstrap
 }
 
@@ -58,6 +60,16 @@ func (f *fakeExecutor) EnableService(name string) error {
 
 func (f *fakeExecutor) StartService(name string) error {
 	f.starts = append(f.starts, name)
+	return nil
+}
+
+func (f *fakeExecutor) ReloadService(name string) error {
+	f.reloads = append(f.reloads, name)
+	return nil
+}
+
+func (f *fakeExecutor) EnableNginxSite(name string) error {
+	f.sites = append(f.sites, name)
 	return nil
 }
 

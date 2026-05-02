@@ -7,6 +7,7 @@ import (
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -20,13 +21,141 @@ func (stubExecutor) InitPanelDB(string, install.PanelBootstrap) error { return n
 func (stubExecutor) AptInstall(...string) error                       { return nil }
 func (stubExecutor) EnableService(string) error                       { return nil }
 func (stubExecutor) StartService(string) error                        { return nil }
+func (stubExecutor) ReloadService(string) error                       { return nil }
+func (stubExecutor) EnableNginxSite(string) error                     { return nil }
 
 type stubPreflightRunner struct {
-	result install.CheckResult
+	result     install.CheckResult
+	panelPort  int
+	extraPorts []int
 }
 
-func (s stubPreflightRunner) Run(int) install.CheckResult {
+func (s *stubPreflightRunner) Run(panelPort int, extraPorts ...int) install.CheckResult {
+	s.panelPort = panelPort
+	s.extraPorts = append([]int(nil), extraPorts...)
 	return s.result
+}
+
+func TestRunInstallChecksPanelBackendPort(t *testing.T) {
+	oldUnattended := unattended
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuild := buildSinglePlan
+	oldExec := newExecutor
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuild
+		newExecutor = oldExec
+	})
+
+	unattended = true
+	runner := &stubPreflightRunner{}
+	defaultChecker = func() preflightRunner { return runner }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+	buildSinglePlan = func(config.Config, config.InstallPaths, int, install.LocalBinaries) (install.Plan, error) {
+		return install.Plan{}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+
+	if err := runInstall(&cobra.Command{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if runner.panelPort != 8443 {
+		t.Fatalf("panel port = %d, want 8443", runner.panelPort)
+	}
+	if len(runner.extraPorts) != 1 || runner.extraPorts[0] != install.PanelBackendPort {
+		t.Fatalf("extra ports = %v, want [%d]", runner.extraPorts, install.PanelBackendPort)
+	}
+}
+
+func TestRunInstallPassesPanelTLSFlagsToPlan(t *testing.T) {
+	oldUnattended := unattended
+	oldPanelDomain := panelDomain
+	oldPanelCert := panelCert
+	oldPanelKey := panelKey
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuild := buildSinglePlan
+	oldExec := newExecutor
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		panelDomain = oldPanelDomain
+		panelCert = oldPanelCert
+		panelKey = oldPanelKey
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuild
+		newExecutor = oldExec
+	})
+
+	unattended = true
+	panelDomain = "proxy.example.com"
+	panelCert = "/etc/tgproxy/certs/proxy.example.com/cert.pem"
+	panelKey = "/etc/tgproxy/certs/proxy.example.com/key.pem"
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+
+	var got config.Config
+	buildSinglePlan = func(cfg config.Config, _ config.InstallPaths, _ int, _ install.LocalBinaries) (install.Plan, error) {
+		got = cfg
+		return install.Plan{
+			Creds: install.GeneratedCreds{
+				PanelPath:     "/p-test/",
+				AdminLogin:    "admin",
+				AdminPassword: "password",
+				FirstUser:     secrets.UserSecret{Label: "user1"},
+			},
+		}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+
+	if err := runInstall(&cobra.Command{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got.PanelDomain != panelDomain || got.PanelCertPath != panelCert || got.PanelKeyPath != panelKey {
+		t.Fatalf("panel TLS config not passed to plan: %+v", got)
+	}
+}
+
+func TestRunInstallRejectsPartialPanelTLSFlags(t *testing.T) {
+	oldUnattended := unattended
+	oldPanelDomain := panelDomain
+	oldPanelCert := panelCert
+	oldPanelKey := panelKey
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		panelDomain = oldPanelDomain
+		panelCert = oldPanelCert
+		panelKey = oldPanelKey
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+	})
+
+	unattended = true
+	panelDomain = "proxy.example.com"
+	panelCert = "/etc/tgproxy/certs/proxy.example.com/cert.pem"
+	panelKey = ""
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		t.Fatal("resolveLocalBinaries must not run with partial panel TLS config")
+		return install.LocalBinaries{}, nil
+	}
+
+	err := runInstall(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("expected error for partial panel TLS flags")
+	}
+	if !strings.Contains(err.Error(), "panel-domain, panel-cert, and panel-key") {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestRunInstallFailsPreflight(t *testing.T) {
@@ -45,7 +174,7 @@ func TestRunInstallFailsPreflight(t *testing.T) {
 
 	unattended = true
 	defaultChecker = func() preflightRunner {
-		return stubPreflightRunner{
+		return &stubPreflightRunner{
 			result: install.CheckResult{
 				Errors: []install.CheckError{{
 					Check:       "root",

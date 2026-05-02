@@ -5,19 +5,20 @@ MTProto Proxy Orchestrator manages a Teleproxy-based Telegram MTProto proxy on U
 ## Current Scope
 
 - Installs a Single-mode Teleproxy deployment with nginx stub fallback and systemd units
-- Runs an authenticated admin panel backend on loopback
+- Runs an authenticated admin panel backend on loopback and can wire a public HTTPS nginx proxy when certificate paths are provided
 - Supports user management, Bridge runtime switching, metrics, logs, backups, restore, and verified updates in the codebase
 - Publishes and consumes release assets from `github.com/mtproto-orchestrator/mtproto-orchestrator`
 
 ## Important Current Limitation
 
-The current install path provisions the panel backend on `127.0.0.1:8443` and the nginx stub site, but it does **not** yet wire a public TLS-facing nginx server block for the panel automatically. Remote panel access currently requires an operator-managed reverse proxy in front of the loopback backend.
+The installer can wire a public TLS-facing nginx server block for the panel when `--panel-domain`, `--panel-cert`, and `--panel-key` are provided together. It does not yet obtain or renew panel certificates during install; the operator must provide certificate files or manage ACME separately.
 
 ## Requirements
 
 - Ubuntu 22.04 or later
 - Root privileges
 - Ports `80` and `443` available for nginx/Teleproxy
+- Port `8443` available for the public HTTPS admin panel when panel TLS flags are used
 - Outbound HTTPS access to GitHub Releases
 
 ## Install
@@ -39,6 +40,15 @@ Unattended install:
 sudo tgproxy-cli install --unattended
 ```
 
+Unattended install with a public HTTPS admin panel proxy:
+
+```bash
+sudo tgproxy-cli install --unattended \
+  --panel-domain proxy.example.com \
+  --panel-cert /etc/tgproxy/certs/proxy.example.com/cert.pem \
+  --panel-key /etc/tgproxy/certs/proxy.example.com/key.pem
+```
+
 The installer generates:
 
 - random panel path
@@ -58,12 +68,14 @@ Key paths used by the current implementation:
 - `/etc/systemd/system/teleproxy.service`
 - `/etc/systemd/system/tgproxy-panel.service`
 - `/etc/nginx/sites-available/tgproxy-stub`
+- `/etc/nginx/sites-available/tgproxy-panel` when panel TLS flags are used
 
 ## Admin Panel Backend
 
-- Listen address: `127.0.0.1:8443`
+- Backend listen address: `127.0.0.1:18080`
+- Public HTTPS listen address: `0.0.0.0:8443` when panel TLS flags are used
 - Protocol: plain HTTP on loopback
-- Health endpoint: `http://127.0.0.1:8443/health`
+- Health endpoint: `http://127.0.0.1:18080/health`
 - Authenticated UI: mounted under the generated random path only
 
 ## Common Commands

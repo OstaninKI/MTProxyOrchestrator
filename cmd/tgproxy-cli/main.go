@@ -25,9 +25,10 @@ var rootCmd = &cobra.Command{
 }
 
 var unattended bool
+var panelDomain, panelCert, panelKey string
 
 type preflightRunner interface {
-	Run(panelPort int) install.CheckResult
+	Run(panelPort int, extraPorts ...int) install.CheckResult
 }
 
 var (
@@ -45,6 +46,9 @@ var installCmd = &cobra.Command{
 
 func init() {
 	installCmd.Flags().BoolVar(&unattended, "unattended", false, "skip interactive prompts, use defaults")
+	installCmd.Flags().StringVar(&panelDomain, "panel-domain", "", "domain name for the public HTTPS admin panel")
+	installCmd.Flags().StringVar(&panelCert, "panel-cert", "", "TLS certificate path for the public HTTPS admin panel")
+	installCmd.Flags().StringVar(&panelKey, "panel-key", "", "TLS private key path for the public HTTPS admin panel")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -52,8 +56,14 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	cfg := config.Default()
 	paths := config.DefaultPaths()
 	const panelPort = 8443
+	cfg.PanelDomain = panelDomain
+	cfg.PanelCertPath = panelCert
+	cfg.PanelKeyPath = panelKey
+	if err := validatePanelTLSFlags(cfg); err != nil {
+		return err
+	}
 
-	if result := defaultChecker().Run(panelPort); !result.OK() {
+	if result := defaultChecker().Run(panelPort, install.PanelBackendPort); !result.OK() {
 		return fmt.Errorf("preflight failed:\n%s", formatCheckResult(result))
 	}
 
@@ -93,6 +103,19 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	exec := newExecutor()
 	inst := install.Installer{Executor: exec, Plan: plan}
 	return inst.Run()
+}
+
+func validatePanelTLSFlags(cfg config.Config) error {
+	set := 0
+	for _, value := range []string{cfg.PanelDomain, cfg.PanelCertPath, cfg.PanelKeyPath} {
+		if strings.TrimSpace(value) != "" {
+			set++
+		}
+	}
+	if set != 0 && set != 3 {
+		return fmt.Errorf("panel-domain, panel-cert, and panel-key must be provided together")
+	}
+	return nil
 }
 
 func currentLocalBinaries() (install.LocalBinaries, error) {

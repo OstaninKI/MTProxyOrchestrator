@@ -39,10 +39,11 @@ var stubTmpl = template.Must(template.New("nginx-stub").Parse(`server {
 // PanelProxyConfig holds fields for the TLS reverse proxy nginx server block
 // that fronts the admin panel (tgproxy-panel) on a domain install.
 type PanelProxyConfig struct {
+	ListenPort  int    // public HTTPS panel port, e.g. 8443
 	Domain      string // operator's domain name, e.g. proxy.example.com
 	CertPath    string // path to the TLS certificate, e.g. /etc/lego/certificates/proxy.example.com.crt
 	KeyPath     string // path to the TLS private key, e.g. /etc/lego/certificates/proxy.example.com.key
-	BackendAddr string // panel backend address, e.g. 127.0.0.1:8443
+	BackendAddr string // panel backend address, e.g. 127.0.0.1:18080
 }
 
 // Render returns the nginx TLS reverse proxy server block as bytes.
@@ -59,7 +60,7 @@ func (c PanelProxyConfig) Render() []byte {
 const mozillaIntermediateCiphers = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
 
 var panelProxyTmpl = template.Must(template.New("nginx-panel-proxy").Parse(`server {
-    listen 0.0.0.0:443 ssl;
+    listen 0.0.0.0:{{.ListenPort}} ssl;
     server_name {{.Domain}};
     server_tokens off;
 

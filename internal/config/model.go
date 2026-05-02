@@ -20,6 +20,11 @@ type Config struct {
 	// PanelPath is set at install time to a random value (e.g. "/p-a8f3k2x9/").
 	// It has no static default because it must be unique per installation.
 	PanelPath string
+	// PanelDomain and certificate paths enable the public HTTPS nginx proxy for
+	// the panel. Empty values keep the panel backend loopback-only.
+	PanelDomain   string
+	PanelCertPath string
+	PanelKeyPath  string
 
 	// TelegramBotToken is reserved for v2 and rendered as a commented section.
 	TelegramBotToken string

@@ -14,19 +14,22 @@ import (
 const (
 	teleproxyLinuxAMD64URL    = "https://github.com/teleproxy/teleproxy/releases/download/v4.12.2/teleproxy-linux-amd64"
 	teleproxyLinuxAMD64SHA256 = "02d5e0e4f1f8f44c45eb4c9b3cf6e6bc88c9b4f7f1682622da96eede8f02089f"
+	PanelBackendPort          = 18080
 )
 
 type StepKind string
 
 const (
-	StepAptInstall     StepKind = "apt-install"
-	StepCreateDir      StepKind = "create-dir"
-	StepDownloadBinary StepKind = "download-binary"
-	StepInstallFile    StepKind = "install-file"
-	StepInitPanelDB    StepKind = "init-panel-db"
-	StepWriteFile      StepKind = "write-file"
-	StepEnableService  StepKind = "enable-service"
-	StepStartService   StepKind = "start-service"
+	StepAptInstall      StepKind = "apt-install"
+	StepCreateDir       StepKind = "create-dir"
+	StepDownloadBinary  StepKind = "download-binary"
+	StepInstallFile     StepKind = "install-file"
+	StepInitPanelDB     StepKind = "init-panel-db"
+	StepWriteFile       StepKind = "write-file"
+	StepEnableService   StepKind = "enable-service"
+	StepStartService    StepKind = "start-service"
+	StepReloadService   StepKind = "reload-service"
+	StepEnableNginxSite StepKind = "enable-nginx-site"
 )
 
 type LocalBinaries struct {
@@ -108,6 +111,16 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		StubRoot:   paths.StubDir,
 	}
 	ngData := ngCfg.Render()
+	var panelProxyData []byte
+	if cfg.PanelDomain != "" && cfg.PanelCertPath != "" && cfg.PanelKeyPath != "" {
+		panelProxyData = nginx.PanelProxyConfig{
+			ListenPort:  panelPort,
+			Domain:      cfg.PanelDomain,
+			CertPath:    cfg.PanelCertPath,
+			KeyPath:     cfg.PanelKeyPath,
+			BackendAddr: fmt.Sprintf("127.0.0.1:%d", PanelBackendPort),
+		}.Render()
+	}
 
 	tpUnit := systemd.TeleproxyUnitConfig{
 		BinaryPath: paths.TeleproxyBin,
@@ -120,7 +133,7 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		ConfigPath:  paths.ConfigFile,
 		DBPath:      paths.PanelDB,
 		PanelPath:   panelPath,
-		ListenAddr:  fmt.Sprintf("127.0.0.1:%d", panelPort),
+		ListenAddr:  fmt.Sprintf("127.0.0.1:%d", PanelBackendPort),
 		MTProtoPort: cfg.MTProtoPort,
 		MaskHost:    cfg.MaskHost,
 		StatsPort:   9091,
@@ -158,12 +171,22 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		},
 		{Kind: StepWriteFile, Target: paths.TeleproxyService, Content: tpUnit.Render(), Mode: 0o644},
 		{Kind: StepWriteFile, Target: "/etc/nginx/sites-available/tgproxy-stub", Content: ngData, Mode: 0o644},
+		{Kind: StepEnableNginxSite, Target: "tgproxy-stub"},
 		{Kind: StepWriteFile, Target: paths.StubDir + "/index.html", Content: minimalStubHTML(), Mode: 0o644},
 		{Kind: StepWriteFile, Target: paths.PanelService, Content: panelUnit.Render(), Mode: 0o644},
 		{Kind: StepEnableService, Target: "teleproxy"},
 		{Kind: StepStartService, Target: "teleproxy"},
 		{Kind: StepEnableService, Target: "tgproxy-panel"},
 		{Kind: StepStartService, Target: "tgproxy-panel"},
+	}
+	if len(panelProxyData) > 0 {
+		insertAt := len(steps) - 5
+		extra := []Step{
+			{Kind: StepWriteFile, Target: "/etc/nginx/sites-available/tgproxy-panel", Content: panelProxyData, Mode: 0o644},
+			{Kind: StepEnableNginxSite, Target: "tgproxy-panel"},
+			{Kind: StepReloadService, Target: "nginx"},
+		}
+		steps = append(steps[:insertAt], append(extra, steps[insertAt:]...)...)
 	}
 
 	return Plan{

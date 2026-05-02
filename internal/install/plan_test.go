@@ -29,6 +29,84 @@ func TestSinglePlanNoSingBox(t *testing.T) {
 	}
 }
 
+func TestSinglePlanWritesPanelProxyWhenTLSConfigPresent(t *testing.T) {
+	cfg := config.Default()
+	cfg.PanelDomain = "proxy.example.com"
+	cfg.PanelCertPath = "/etc/tgproxy/certs/proxy.example.com/cert.pem"
+	cfg.PanelKeyPath = "/etc/tgproxy/certs/proxy.example.com/key.pem"
+	paths := config.DefaultPaths()
+
+	plan, err := install.BuildSinglePlan(cfg, paths, 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantTarget := "/etc/nginx/sites-available/tgproxy-panel"
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepWriteFile || s.Target != wantTarget {
+			continue
+		}
+		body := string(s.Content)
+		if !strings.Contains(body, "server_name proxy.example.com") {
+			t.Fatalf("panel proxy must use configured domain:\n%s", body)
+		}
+		if !strings.Contains(body, "ssl_certificate     "+cfg.PanelCertPath) {
+			t.Fatalf("panel proxy must use configured certificate path:\n%s", body)
+		}
+		if !strings.Contains(body, "listen 0.0.0.0:8443 ssl") {
+			t.Fatalf("panel proxy must listen on the public panel TLS port:\n%s", body)
+		}
+		if strings.Contains(body, "listen 0.0.0.0:443 ssl") {
+			t.Fatalf("panel proxy must not bind Teleproxy's public MTProto port:\n%s", body)
+		}
+		if !strings.Contains(body, "proxy_pass http://127.0.0.1:18080") {
+			t.Fatalf("panel proxy must route to loopback panel backend:\n%s", body)
+		}
+		return
+	}
+	t.Fatalf("Single plan must write nginx panel proxy config to %s when TLS config is present", wantTarget)
+}
+
+func TestSinglePlanEnablesAndReloadsNginxForPanelProxy(t *testing.T) {
+	cfg := config.Default()
+	cfg.PanelDomain = "proxy.example.com"
+	cfg.PanelCertPath = "/etc/tgproxy/certs/proxy.example.com/cert.pem"
+	cfg.PanelKeyPath = "/etc/tgproxy/certs/proxy.example.com/key.pem"
+
+	plan, err := install.BuildSinglePlan(cfg, config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var enabledPanel, reloadedNginx bool
+	for _, s := range plan.Steps {
+		if s.Kind == install.StepEnableNginxSite && s.Target == "tgproxy-panel" {
+			enabledPanel = true
+		}
+		if s.Kind == install.StepReloadService && s.Target == "nginx" {
+			reloadedNginx = true
+		}
+	}
+	if !enabledPanel {
+		t.Fatal("Single plan must enable the tgproxy-panel nginx site")
+	}
+	if !reloadedNginx {
+		t.Fatal("Single plan must reload nginx after writing panel proxy config")
+	}
+}
+
+func TestSinglePlanDoesNotWritePanelProxyWithoutTLSConfig(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range plan.Steps {
+		if s.Kind == install.StepWriteFile && strings.Contains(s.Target, "tgproxy-panel") && strings.Contains(string(s.Content), "ssl_certificate") {
+			t.Fatalf("Single plan must not write public panel proxy without domain/cert config: %+v", s)
+		}
+	}
+}
+
 func TestSinglePlanHasTeleproxy(t *testing.T) {
 	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {
@@ -97,8 +175,8 @@ func TestSinglePlanPanelUnitUsesGeneratedPath(t *testing.T) {
 		if !strings.Contains(unit, "--db "+config.DefaultPaths().PanelDB) {
 			t.Fatalf("panel unit must use panel DB path:\n%s", unit)
 		}
-		if !strings.Contains(unit, "--listen 127.0.0.1:8443") {
-			t.Fatalf("panel unit must use requested panel port:\n%s", unit)
+		if !strings.Contains(unit, "--listen 127.0.0.1:18080") {
+			t.Fatalf("panel unit must use loopback backend port:\n%s", unit)
 		}
 		if !strings.Contains(unit, "--mtproto-port 443") || !strings.Contains(unit, "--mask-host www.microsoft.com") || !strings.Contains(unit, "--stats-port 9091") {
 			t.Fatalf("panel unit must pass teleproxy render settings:\n%s", unit)

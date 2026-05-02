@@ -53,10 +53,21 @@ func TestRenderGolden(t *testing.T) {
 // PanelProxyConfig tests
 
 var panelCfg = nginx.PanelProxyConfig{
+	ListenPort:  8443,
 	Domain:      "proxy.example.com",
 	CertPath:    "/etc/lego/certificates/proxy.example.com.crt",
 	KeyPath:     "/etc/lego/certificates/proxy.example.com.key",
-	BackendAddr: "127.0.0.1:8443",
+	BackendAddr: "127.0.0.1:18080",
+}
+
+func TestPanelProxyConfig_UsesConfiguredPublicListenPort(t *testing.T) {
+	out := panelCfg.Render()
+	if !bytes.Contains(out, []byte("listen 0.0.0.0:8443 ssl")) {
+		t.Error("output must listen on configured public panel TLS port")
+	}
+	if bytes.Contains(out, []byte("listen 0.0.0.0:443 ssl")) {
+		t.Error("panel proxy must not bind 443 because Teleproxy owns it")
+	}
 }
 
 func TestPanelProxyConfig_HasTLS12And13(t *testing.T) {
@@ -82,8 +93,8 @@ func TestPanelProxyConfig_ServerTokensOff(t *testing.T) {
 
 func TestPanelProxyConfig_ProxiesToBackend(t *testing.T) {
 	out := panelCfg.Render()
-	if !bytes.Contains(out, []byte("proxy_pass http://127.0.0.1:8443")) {
-		t.Error("output must contain proxy_pass http://127.0.0.1:8443")
+	if !bytes.Contains(out, []byte("proxy_pass http://127.0.0.1:18080")) {
+		t.Error("output must contain proxy_pass http://127.0.0.1:18080")
 	}
 }
 

@@ -76,7 +76,7 @@ func DefaultChecker() Checker {
 }
 
 // Run executes all preflight checks and returns the aggregate result.
-func (c Checker) Run(panelPort int) CheckResult {
+func (c Checker) Run(panelPort int, extraPanelPorts ...int) CheckResult {
 	var result CheckResult
 
 	add := func(check, desc, remediation string) {
@@ -112,6 +112,11 @@ func (c Checker) Run(panelPort int) CheckResult {
 	// panel-port
 	if err := c.CheckPort(panelPort); err != nil {
 		add("panel-port", fmt.Sprintf("port %d is in use", panelPort), fmt.Sprintf("Free port %d before installing", panelPort))
+	}
+	for _, port := range extraPanelPorts {
+		if err := c.CheckPort(port); err != nil {
+			add("panel-backend-port", fmt.Sprintf("port %d is in use", port), fmt.Sprintf("Free port %d before installing", port))
+		}
 	}
 
 	// ram

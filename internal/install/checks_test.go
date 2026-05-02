@@ -119,6 +119,20 @@ func TestPanelPortBusy(t *testing.T) {
 	}
 }
 
+func TestExtraPanelBackendPortBusy(t *testing.T) {
+	c := baseChecker(goodOS2204)
+	c.CheckPort = func(port int) error {
+		if port == 18080 {
+			return errors.New("address already in use")
+		}
+		return nil
+	}
+	result := c.Run(8443, 18080)
+	if !hasCheck(result, "panel-backend-port") {
+		t.Fatal("expected panel-backend-port error")
+	}
+}
+
 func TestLowRAM(t *testing.T) {
 	c := baseChecker(goodOS2204)
 	c.ReadMem = func() ([]byte, error) { return []byte(lowMem), nil }
