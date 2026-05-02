@@ -20,6 +20,8 @@ var sensitiveExtensions = map[string]struct{}{
 	".db":   {},
 }
 
+const secureDirPerm = 0700
+
 // Resource limits for restore operations.
 const (
 	// MaxEncryptedArchiveBytes is the maximum size of the encrypted archive file (100 MB).
@@ -167,7 +169,7 @@ func extractTarGz(data []byte, targetDir string) error {
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(destPath, 0755); err != nil {
+			if err := os.MkdirAll(destPath, secureDirPerm); err != nil {
 				return fmt.Errorf("restore: mkdir %s: %w", destPath, err)
 			}
 		case tar.TypeReg, 0: // regular file (0 is the default for old-style tars)
@@ -208,7 +210,7 @@ func extractTarGz(data []byte, targetDir string) error {
 // It returns the number of bytes written and any error.
 func extractFile(tr *tar.Reader, hdr *tar.Header, destPath string) (int64, error) {
 	// Ensure parent directory exists.
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), secureDirPerm); err != nil {
 		return 0, fmt.Errorf("restore: mkdir parent for %s: %w", destPath, err)
 	}
 

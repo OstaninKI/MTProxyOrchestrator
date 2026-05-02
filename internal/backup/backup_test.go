@@ -220,6 +220,17 @@ func TestRoundTrip(t *testing.T) {
 			t.Errorf("file %s: got %q, want %q", rel, got, want)
 		}
 	}
+
+	for _, rel := range []string{"secrets", "nodes", "stub-templates"} {
+		fi, err := os.Stat(filepath.Join(restoreDir, rel))
+		if err != nil {
+			t.Errorf("missing restored dir %s: %v", rel, err)
+			continue
+		}
+		if got := fi.Mode().Perm(); got != secureDirPerm {
+			t.Errorf("dir %s mode = %o, want %o", rel, got, secureDirPerm)
+		}
+	}
 }
 
 // TestPassphraseMismatch verifies that restore with the wrong passphrase fails.
@@ -447,6 +458,51 @@ func TestRestoreExcessiveTotalSizeRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "total extracted size exceeds limit") {
 		t.Fatalf("expected 'total extracted size exceeds limit' error, got: %v", err)
+	}
+}
+
+func TestRestoreDirectoryEntriesCappedToRootOnly(t *testing.T) {
+	archive := buildEncryptedTarGzEnc(t, func(tw *tar.Writer) {
+		dirHdr := &tar.Header{
+			Name:     "stub-templates",
+			Mode:     0755,
+			Typeflag: tar.TypeDir,
+		}
+		if err := tw.WriteHeader(dirHdr); err != nil {
+			panic(err)
+		}
+
+		body := []byte("<html>stub</html>")
+		fileHdr := &tar.Header{
+			Name:     "stub-templates/index.html",
+			Size:     int64(len(body)),
+			Mode:     0644,
+			Typeflag: tar.TypeReg,
+		}
+		if err := tw.WriteHeader(fileHdr); err != nil {
+			panic(err)
+		}
+		if _, err := tw.Write(body); err != nil {
+			panic(err)
+		}
+	})
+
+	restoreDir := t.TempDir()
+	err := Restore(RestoreOptions{
+		ArchivePath: archive,
+		TargetDir:   restoreDir,
+		Passphrase:  "passphrase",
+	})
+	if err != nil {
+		t.Fatalf("Restore failed: %v", err)
+	}
+
+	fi, err := os.Stat(filepath.Join(restoreDir, "stub-templates"))
+	if err != nil {
+		t.Fatalf("missing restored dir: %v", err)
+	}
+	if got := fi.Mode().Perm(); got != secureDirPerm {
+		t.Fatalf("dir mode = %o, want %o", got, secureDirPerm)
 	}
 }
 

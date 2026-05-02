@@ -12,6 +12,13 @@ import (
 // MaxZipSize is the maximum allowed uncompressed ZIP size in bytes (5 MB).
 const MaxZipSize = 5 * 1024 * 1024
 
+// Limits for extracted custom stub archives.
+const (
+	MaxZipEntries          = 256
+	MaxExtractedFileBytes  = 5 * 1024 * 1024
+	MaxExtractedTotalBytes = 20 * 1024 * 1024
+)
+
 // AllowedExtensions is the set of permitted file extensions in an uploaded ZIP.
 var AllowedExtensions = map[string]bool{
 	".html": true, ".htm": true,
@@ -64,6 +71,15 @@ func Validate(r io.ReaderAt, size int64) []ValidationError {
 		return errs
 	}
 
+	if len(zr.File) > MaxZipEntries {
+		errs = append(errs, ValidationError{
+			File:   "",
+			Reason: fmt.Sprintf("archive contains too many files (max %d)", MaxZipEntries),
+		})
+		return errs
+	}
+
+	var totalExtracted uint64
 	for _, entry := range zr.File {
 		name := entry.Name
 
@@ -89,6 +105,21 @@ func Validate(r io.ReaderAt, size int64) []ValidationError {
 		// Directories are exempt from extension and content checks
 		if entry.FileInfo().IsDir() {
 			continue
+		}
+		if entry.UncompressedSize64 > MaxExtractedFileBytes {
+			errs = append(errs, ValidationError{
+				File:   name,
+				Reason: fmt.Sprintf("file exceeds maximum extracted size of %d bytes", MaxExtractedFileBytes),
+			})
+			continue
+		}
+		totalExtracted += entry.UncompressedSize64
+		if totalExtracted > MaxExtractedTotalBytes {
+			errs = append(errs, ValidationError{
+				File:   "",
+				Reason: fmt.Sprintf("archive exceeds maximum extracted size of %d bytes", MaxExtractedTotalBytes),
+			})
+			return errs
 		}
 
 		// Check 4: extension allowlist

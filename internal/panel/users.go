@@ -186,6 +186,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	userCreatedPage(w, label, secret.Hex())
 }

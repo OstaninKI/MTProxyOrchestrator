@@ -134,10 +134,7 @@ func validateSHA256Hex(sha256hex string) error {
 }
 
 func (d Downloader) downloadVerified(url, sha256hex, tmpDir string, maxSize int64) (string, error) {
-	client := d.Client
-	if client == nil {
-		client = &http.Client{Timeout: DefaultHTTPTimeout}
-	}
+	client := d.httpClient()
 
 	tmp, err := os.CreateTemp(tmpDir, "tgproxy-download-*")
 	if err != nil {
@@ -185,6 +182,19 @@ func (d Downloader) downloadVerified(url, sha256hex, tmpDir string, maxSize int6
 		return "", fmt.Errorf("sha256 mismatch: got %s, want %s", computed, sha256hex)
 	}
 	return tmpPath, nil
+}
+
+func (d Downloader) httpClient() HTTPClient {
+	if d.Client == nil {
+		return &http.Client{Timeout: DefaultHTTPTimeout}
+	}
+	httpClient, ok := d.Client.(*http.Client)
+	if !ok || httpClient.Timeout > 0 {
+		return d.Client
+	}
+	clone := *httpClient
+	clone.Timeout = DefaultHTTPTimeout
+	return &clone
 }
 
 func extractTarGzMember(archivePath, memberName string, dst io.Writer) error {

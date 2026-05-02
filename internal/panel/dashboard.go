@@ -10,6 +10,7 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
 )
 
@@ -58,6 +59,9 @@ func collectComponentVersions() []ComponentVersion {
 // isBridgeMode returns true when Bridge mode is active, determined by the
 // presence of at least one enabled node in outbounds.json.
 func (s *Server) isBridgeMode() bool {
+	if mode, err := teleproxy.DetectMode(s.bridgePaths().TeleproxyTOML); err == nil {
+		return mode == config.ModeBridge
+	}
 	nl, err := bridge.Load(s.nodePath())
 	if err != nil {
 		return false

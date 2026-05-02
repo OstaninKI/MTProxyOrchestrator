@@ -75,6 +75,9 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 `))
 
+// The panel mutates configuration and SQLite state under /etc/tgproxy, which
+// this project keeps as root-owned 0600 files. DynamicUser is incompatible with
+// that storage model unless the on-disk ownership model changes.
 var panelUnitTmpl = template.Must(template.New("panel.service").Parse(`[Unit]
 Description=tgproxy admin panel
 After=network.target
@@ -87,8 +90,8 @@ StandardError=append:{{.LogPath}}
 Restart=on-failure
 RestartSec=5
 
-DynamicUser=yes
 NoNewPrivileges=yes
+UMask=0077
 ProtectHome=yes
 ProtectSystem=strict
 ReadWritePaths={{.ConfigDir}} {{.LogDir}} {{.BinDir}} {{.SystemdDir}}

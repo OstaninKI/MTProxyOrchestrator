@@ -1,63 +1,96 @@
-# MTProto Proxy Orchestrator (tgproxy)
+# MTProto Proxy Orchestrator
 
-Deploys and manages a [Teleproxy](https://github.com/Kkevsterrr/teleproxy)-based Telegram MTProto proxy on Ubuntu 22.04+.
+MTProto Proxy Orchestrator manages a Teleproxy-based Telegram MTProto proxy on Ubuntu 22.04+.
 
-## What it does
+## Current Scope
 
-- Installs and configures Teleproxy, nginx, and (optionally) sing-box on a single server
-- Provides a HTTPS admin panel for managing users, proxy modes, certificates, logs, and updates
-- Handles certificate issuance and renewal via ACME (Let's Encrypt)
-- Supports encrypted backup and restore of all configuration
+- Installs a Single-mode Teleproxy deployment with nginx stub fallback and systemd units
+- Runs an authenticated admin panel backend on loopback
+- Supports user management, Bridge runtime switching, metrics, logs, backups, restore, and verified updates in the codebase
+- Publishes and consumes release assets from `github.com/mtproto-orchestrator/mtproto-orchestrator`
 
-## Modes
+## Important Current Limitation
 
-| Mode | Description |
-|---|---|
-| **Single** (default) | Teleproxy listens on port 443 and connects directly to Telegram data centres. sing-box is not installed. |
-| **Bridge** | Teleproxy forwards traffic through a local sing-box SOCKS5 listener to one or more outbound relay nodes. |
+The current install path provisions the panel backend on `127.0.0.1:8443` and the nginx stub site, but it does **not** yet wire a public TLS-facing nginx server block for the panel automatically. Remote panel access currently requires an operator-managed reverse proxy in front of the loopback backend.
 
 ## Requirements
 
-- Ubuntu 22.04 or later (64-bit)
-- Root access
-- Ports 80 and 443 available
+- Ubuntu 22.04 or later
+- Root privileges
+- Ports `80` and `443` available for nginx/Teleproxy
+- Outbound HTTPS access to GitHub Releases
 
-## Quick Start
+## Install
 
-Download the latest `tgproxy-cli` binary from [GitHub Releases](https://github.com/mtproto-orchestrator/mtproto-orchestrator/releases), then:
+Interactive install:
 
 ```bash
 sudo tgproxy-cli install
 ```
 
-The installer walks through domain, mode, and admin password setup. The admin panel is available at `https://your-domain` once installation completes.
+Current interactive prompts are limited to:
 
-### Unattended install
+- FakeTLS mask host
+- Final confirmation for a Single-mode install
+
+Unattended install:
 
 ```bash
-sudo tgproxy-cli install \
-  --domain proxy.example.com \
-  --mode single \
-  --admin-password 'ChangeMe!'
+sudo tgproxy-cli install --unattended
 ```
 
-## Binaries
+The installer generates:
 
-Pre-built binaries for Linux/amd64 are published on [GitHub Releases](https://github.com/mtproto-orchestrator/mtproto-orchestrator/releases).
+- random panel path
+- random admin login
+- random admin password
+- first MTProto user secret
 
-Each release includes SHA256 checksums. `tgproxy-cli update` verifies checksums automatically before replacing binaries.
+At the end it prints the panel path, admin credentials, and the first `tg://proxy` link.
+
+## Runtime Layout
+
+Key paths used by the current implementation:
+
+- `/etc/tgproxy/teleproxy.toml`
+- `/etc/tgproxy/secrets/users.json`
+- `/etc/tgproxy/panel.db`
+- `/etc/systemd/system/teleproxy.service`
+- `/etc/systemd/system/tgproxy-panel.service`
+- `/etc/nginx/sites-available/tgproxy-stub`
+
+## Admin Panel Backend
+
+- Listen address: `127.0.0.1:8443`
+- Protocol: plain HTTP on loopback
+- Health endpoint: `http://127.0.0.1:8443/health`
+- Authenticated UI: mounted under the generated random path only
 
 ## Common Commands
 
 ```bash
-tgproxy-cli status                  # Show service status
-tgproxy-cli update                  # Update to latest release
-tgproxy-cli backup --dest /path/to/backup.enc --passphrase 'XXX'
-tgproxy-cli restore /path/to/backup.enc --passphrase 'XXX'
-tgproxy-cli reset-admin-password    # Reset the panel admin password
-tgproxy-cli uninstall               # Remove everything
+tgproxy-cli install
+tgproxy-cli install --unattended
+tgproxy-cli status
+tgproxy-cli update
+tgproxy-cli reset-admin-password
+tgproxy-cli backup --dest /path/to/backup.enc --passphrase 'secret'
+tgproxy-cli restore /path/to/backup.enc --passphrase 'secret'
+tgproxy-cli uninstall
 ```
+
+## Updates
+
+- Binary downloads are verified by SHA256 before replacement
+- Failed service restart or health check triggers rollback from the backup binary
+- Release asset selection currently targets the GitHub Releases repository above
+
+## Docs
+
+- [Operations](docs/OPERATIONS.md)
+- [Security](docs/SECURITY.md)
+- [Technical specification](docs/TECHNICAL_SPEC.md)
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).

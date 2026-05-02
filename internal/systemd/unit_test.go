@@ -61,10 +61,10 @@ func TestPanelUnitNoNetBindCap(t *testing.T) {
 	}
 }
 
-func TestPanelUnitHasDynamicUser(t *testing.T) {
+func TestPanelUnitNoDynamicUser(t *testing.T) {
 	got := basePanel.Render()
-	if !bytes.Contains(got, []byte("DynamicUser=yes")) {
-		t.Error("panel unit missing DynamicUser=yes")
+	if bytes.Contains(got, []byte("DynamicUser=yes")) {
+		t.Error("panel unit must not contain DynamicUser=yes because panel writes root-owned state under /etc/tgproxy")
 	}
 }
 
@@ -91,6 +91,13 @@ func TestPanelUnitDropsAllCapabilities(t *testing.T) {
 	got := basePanel.Render()
 	if !bytes.Contains(got, []byte("CapabilityBoundingSet=\n")) {
 		t.Error("panel unit must have empty CapabilityBoundingSet to drop all capabilities")
+	}
+}
+
+func TestPanelUnitHasRestrictedUmask(t *testing.T) {
+	got := basePanel.Render()
+	if !bytes.Contains(got, []byte("UMask=0077")) {
+		t.Error("panel unit must set UMask=0077 so new state under /etc/tgproxy is not group/world accessible")
 	}
 }
 

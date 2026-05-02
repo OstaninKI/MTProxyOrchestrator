@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
@@ -29,10 +30,21 @@ var isSingboxActive = func() bool {
 // bridgeSOCKS5Addr returns the sing-box SOCKS5 address when Bridge mode is active,
 // and an empty string when Single mode is active.
 func (s *Server) bridgeSOCKS5Addr() string {
-	if isSingboxActive() {
+	if s.currentMode() == config.ModeBridge {
 		return fmt.Sprintf("%s:%d", singboxSOCKSHost, singboxSOCKSPort)
 	}
 	return ""
+}
+
+func (s *Server) currentMode() config.Mode {
+	mode, err := teleproxy.DetectMode(s.bridgePaths().TeleproxyTOML)
+	if err == nil {
+		return mode
+	}
+	if isSingboxActive() {
+		return config.ModeBridge
+	}
+	return config.ModeSingle
 }
 
 func (s *Server) handleUserToggle(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +160,7 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	userCreatedPage(w, label, secret.Hex())
 }

@@ -75,8 +75,7 @@ var panelProxyTmpl = template.Must(template.New("nginx-panel-proxy").Parse(`serv
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';" always;
 
     location / {
-        proxy_pass https://{{.BackendAddr}};
-        proxy_ssl_verify off;
+        proxy_pass http://{{.BackendAddr}};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

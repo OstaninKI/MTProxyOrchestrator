@@ -305,6 +305,85 @@ func TestCheckerHistoryRecorded(t *testing.T) {
 	}
 }
 
+func TestCheckerIgnoresNonUpgradesButRecordsHistory(t *testing.T) {
+	tests := []struct {
+		name            string
+		currentVersion  string
+		releaseTag      string
+		wantHistoryVers string
+	}{
+		{
+			name:            "same version",
+			currentVersion:  "3.0.0",
+			releaseTag:      "v3.0.0",
+			wantHistoryVers: "3.0.0",
+		},
+		{
+			name:            "older release",
+			currentVersion:  "3.1.0",
+			releaseTag:      "v3.0.0",
+			wantHistoryVers: "3.0.0",
+		},
+		{
+			name:            "unparseable current version",
+			currentVersion:  "main",
+			releaseTag:      "v3.0.0",
+			wantHistoryVers: "3.0.0",
+		},
+		{
+			name:            "unparseable available version",
+			currentVersion:  "2.9.0",
+			releaseTag:      "latest",
+			wantHistoryVers: "latest",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			baseTime := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+			clk := &fakeClock{current: baseTime}
+
+			body := githubReleaseJSON(tc.releaseTag, []githubAsset{
+				{Name: "teleproxy-linux-amd64", BrowserDownloadURL: "https://example.com/teleproxy"},
+			})
+
+			checker := &Checker{
+				Client: &fakeHTTPClient{
+					responses: map[string]fakeResponse{
+						"teleproxy/teleproxy": {status: http.StatusOK, body: body},
+					},
+				},
+				Store:           store,
+				Clock:           clk,
+				CurrentVersions: map[Component]string{ComponentTeleproxy: tc.currentVersion},
+			}
+
+			info, err := checker.CheckOne(ComponentTeleproxy, true)
+			if err != nil {
+				t.Fatalf("CheckOne: %v", err)
+			}
+			if info != nil {
+				t.Fatalf("expected nil UpdateInfo for non-upgrade, got %+v", info)
+			}
+
+			history, err := store.LoadHistory()
+			if err != nil {
+				t.Fatalf("LoadHistory: %v", err)
+			}
+			if len(history) != 1 {
+				t.Fatalf("expected 1 history record, got %d", len(history))
+			}
+			if history[0].AvailableVersion != tc.wantHistoryVers {
+				t.Fatalf("history available version = %q, want %q", history[0].AvailableVersion, tc.wantHistoryVers)
+			}
+			if got := store.lastChecks[ComponentTeleproxy]; !got.Equal(baseTime) {
+				t.Fatalf("last check = %v, want %v", got, baseTime)
+			}
+		})
+	}
+}
+
 func TestCheckerCheckAllFourComponents(t *testing.T) {
 	mkBody := func(owner, repo, tag string) string {
 		assetName := repo + "-linux-amd64"

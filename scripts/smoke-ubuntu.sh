@@ -85,9 +85,11 @@ echo
 
 # ── 6. Panel health endpoint ──────────────────────────────────────────────────
 echo "[ Panel health endpoint ]"
-http_code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8443/health 2>/dev/null || true)
-if [ -n "$http_code" ] && [ "$http_code" != "000" ]; then
-    ok "Panel health endpoint responded (HTTP $http_code)"
+http_code=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8443/health 2>/dev/null || true)
+if [ "$http_code" = "204" ]; then
+    ok "Panel health endpoint responded on loopback backend (HTTP $http_code)"
+elif [ -n "$http_code" ] && [ "$http_code" != "000" ]; then
+    fail "Panel health endpoint returned unexpected status (HTTP $http_code)"
 else
     fail "Panel health endpoint did not respond (curl returned no HTTP code)"
 fi

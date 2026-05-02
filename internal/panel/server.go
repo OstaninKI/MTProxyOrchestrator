@@ -25,6 +25,10 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	// 404 for everything outside the configured panel path.
 	panelPath := strings.TrimSuffix(s.PanelPath, "/")
 	r.Mount(panelPath, s.panelRouter())
@@ -57,8 +61,17 @@ func (s *Server) panelRouter() http.Handler {
 		r.Post("/bridge/enable", s.handleBridgeEnable)
 		r.Post("/bridge/disable", s.handleBridgeDisable)
 		r.Post("/bridge/nodes/add", s.handleBridgeAddNode)
+		r.Post("/bridge/nodes/add-manual", s.handleBridgeAddNodeManual)
+		r.Get("/bridge/nodes/{id}/edit", s.handleBridgeEditNodeForm)
+		r.Post("/bridge/nodes/{id}/edit", s.handleBridgeEditNode)
+		r.Post("/bridge/nodes/{id}/ping", s.handleBridgePingNode)
 		r.Post("/bridge/nodes/{id}/toggle", s.handleBridgeToggleNode)
 		r.Post("/bridge/nodes/{id}/delete", s.handleBridgeDeleteNode)
+		r.Post("/bridge/strategy", s.handleBridgeSetStrategy)
+		r.Get("/settings/stubs", s.handleSettingsStubList)
+		r.Post("/settings/stubs/apply", s.handleSettingsStubApply)
+		r.Post("/settings/stubs/upload", s.handleSettingsStubUpload)
+		r.Get("/settings/certificates", s.handleSettingsCertificates)
 		r.Get("/logs", s.handleLogsPage)
 		r.Get("/logs/stream", s.handleLogsStream)
 		r.Get("/logs/download", s.handleLogsDownload)

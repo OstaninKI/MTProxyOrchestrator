@@ -82,8 +82,8 @@ func TestPanelProxyConfig_ServerTokensOff(t *testing.T) {
 
 func TestPanelProxyConfig_ProxiesToBackend(t *testing.T) {
 	out := panelCfg.Render()
-	if !bytes.Contains(out, []byte("proxy_pass https://127.0.0.1:8443")) {
-		t.Error("output must contain proxy_pass https://127.0.0.1:8443")
+	if !bytes.Contains(out, []byte("proxy_pass http://127.0.0.1:8443")) {
+		t.Error("output must contain proxy_pass http://127.0.0.1:8443")
 	}
 }
 

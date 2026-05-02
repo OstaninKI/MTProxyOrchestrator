@@ -176,6 +176,10 @@ func (s *Server) nodePath() string {
 // realBridgeExecutor implements bridge.Executor using real OS calls.
 type realBridgeExecutor struct{}
 
+var rerenderSingboxIfActiveFn = func(s *Server, nl bridge.NodeList) error {
+	return s.rerenderSingboxIfActive(nl)
+}
+
 func (realBridgeExecutor) WriteFile(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -218,6 +222,26 @@ func (realBridgeExecutor) DisableService(name string) error {
 func (realBridgeExecutor) ServiceActive(name string) (bool, error) {
 	err := exec.Command("systemctl", "is-active", name).Run()
 	return err == nil, nil
+}
+
+func cloneNodeList(nl bridge.NodeList) bridge.NodeList {
+	clone := nl
+	clone.Nodes = append([]bridge.Node(nil), nl.Nodes...)
+	return clone
+}
+
+func saveNodeListWithRerenderRollback(s *Server, current bridge.NodeList, updated bridge.NodeList) error {
+	nodePath := s.nodePath()
+	if err := updated.Save(nodePath); err != nil {
+		return err
+	}
+	if err := rerenderSingboxIfActiveFn(s, updated); err != nil {
+		if restoreErr := current.Save(nodePath); restoreErr != nil {
+			return fmt.Errorf("%w (rollback failed: %v)", err, restoreErr)
+		}
+		return err
+	}
+	return nil
 }
 
 // --- templates ---
@@ -653,6 +677,7 @@ func (s *Server) handleBridgeEditNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	previous := cloneNodeList(nl)
 
 	var found bool
 	for i := range nl.Nodes {
@@ -673,12 +698,7 @@ func (s *Server) handleBridgeEditNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := nl.Save(nodePath); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.rerenderSingboxIfActive(nl); err != nil {
+	if err := saveNodeListWithRerenderRollback(s, previous, nl); err != nil {
 		http.Error(w, "node updated but sing-box config could not be re-rendered: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -707,6 +727,7 @@ func (s *Server) handleBridgeToggleNode(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	previous := cloneNodeList(nl)
 
 	var tag string
 	found := false
@@ -723,12 +744,7 @@ func (s *Server) handleBridgeToggleNode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := nl.Save(nodePath); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.rerenderSingboxIfActive(nl); err != nil {
+	if err := saveNodeListWithRerenderRollback(s, previous, nl); err != nil {
 		http.Error(w, "node toggled but sing-box config could not be re-rendered: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -756,6 +772,7 @@ func (s *Server) handleBridgeDeleteNode(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	previous := cloneNodeList(nl)
 
 	var tag string
 	filtered := nl.Nodes[:0]
@@ -768,12 +785,7 @@ func (s *Server) handleBridgeDeleteNode(w http.ResponseWriter, r *http.Request) 
 	}
 	nl.Nodes = filtered
 
-	if err := nl.Save(nodePath); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.rerenderSingboxIfActive(nl); err != nil {
+	if err := saveNodeListWithRerenderRollback(s, previous, nl); err != nil {
 		http.Error(w, "node deleted but sing-box config could not be re-rendered: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -864,6 +876,7 @@ func (s *Server) handleBridgeSetStrategy(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	previous := cloneNodeList(nl)
 
 	activeCount := len(nl.Active())
 
@@ -878,12 +891,7 @@ func (s *Server) handleBridgeSetStrategy(w http.ResponseWriter, r *http.Request)
 	}
 
 	nl.Strategy = strategy
-	if err := nl.Save(nodePath); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.rerenderSingboxIfActive(nl); err != nil {
+	if err := saveNodeListWithRerenderRollback(s, previous, nl); err != nil {
 		http.Error(w, "strategy saved but sing-box config could not be updated: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

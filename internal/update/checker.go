@@ -175,7 +175,69 @@ func (c *Checker) CheckOne(comp Component, manual bool) (*UpdateInfo, error) {
 		DownloadURL:      downloadURL,
 		SHA256:           sha256,
 	}
+	if !isUpgrade(current, available) {
+		return nil, nil
+	}
 	return info, nil
+}
+
+func isUpgrade(current, available string) bool {
+	currentParts, ok := parseVersion(current)
+	if !ok {
+		return false
+	}
+	availableParts, ok := parseVersion(available)
+	if !ok {
+		return false
+	}
+	return compareVersionParts(currentParts, availableParts) < 0
+}
+
+func parseVersion(raw string) ([]int, bool) {
+	raw = strings.TrimSpace(strings.TrimPrefix(raw, "v"))
+	if raw == "" {
+		return nil, false
+	}
+
+	parts := strings.Split(raw, ".")
+	version := make([]int, len(parts))
+	for i, part := range parts {
+		if part == "" {
+			return nil, false
+		}
+		value := 0
+		for _, ch := range part {
+			if ch < '0' || ch > '9' {
+				return nil, false
+			}
+			value = value*10 + int(ch-'0')
+		}
+		version[i] = value
+	}
+	return version, true
+}
+
+func compareVersionParts(a, b []int) int {
+	limit := len(a)
+	if len(b) > limit {
+		limit = len(b)
+	}
+	for i := 0; i < limit; i++ {
+		var av, bv int
+		if i < len(a) {
+			av = a[i]
+		}
+		if i < len(b) {
+			bv = b[i]
+		}
+		switch {
+		case av < bv:
+			return -1
+		case av > bv:
+			return 1
+		}
+	}
+	return 0
 }
 
 // githubRelease is the subset of the GitHub Releases API response we use.

@@ -4,12 +4,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +24,13 @@ type fakeHTTPClient struct {
 	statusCode int
 	body       io.ReadCloser
 	err        error
+}
+
+type blockingRoundTripper struct{}
+
+func (blockingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
 }
 
 func (f *fakeHTTPClient) Get(url string) (*http.Response, error) {
@@ -238,24 +245,21 @@ func TestDownloadOversizedRejected(t *testing.T) {
 
 // TestDownloadTimeout verifies that downloads from a slow server are cancelled after the timeout.
 func TestDownloadTimeout(t *testing.T) {
-	// Server that blocks forever until the client disconnects.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.(http.Flusher).Flush()
-		// Block until the request context is done (client disconnected/timed out).
-		<-r.Context().Done()
-	}))
-	defer srv.Close()
-
 	dl := component.Downloader{
-		Client: &http.Client{Timeout: 50 * time.Millisecond},
+		Client: &http.Client{
+			Timeout:   50 * time.Millisecond,
+			Transport: blockingRoundTripper{},
+		},
 		TmpDir: t.TempDir(),
 	}
 
 	destPath := filepath.Join(t.TempDir(), "binary")
-	err := dl.Download(srv.URL+"/binary", strings.Repeat("0", 64), destPath)
+	err := dl.Download("https://example.test/binary", strings.Repeat("0", 64), destPath)
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "Client.Timeout") {
+		t.Fatalf("expected timeout error, got %v", err)
 	}
 
 	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {

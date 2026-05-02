@@ -68,6 +68,9 @@ func TestUserCreateAppliesTeleproxyConfig(t *testing.T) {
 	if !strings.Contains(string(applied), `label = "alice"`) {
 		t.Fatalf("applied config does not include created user: %s", applied)
 	}
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("create user response must disable caching, got %q", cacheControl)
+	}
 }
 
 func withWriteAndReloadError(t *testing.T, err error) {
@@ -442,6 +445,9 @@ func TestUserRotateBridgeModePreservesSocks5(t *testing.T) {
 	const wantSOCKS5 = `socks5 = "127.0.0.1:1080"`
 	if !strings.Contains(got, wantSOCKS5) {
 		t.Fatalf("Bridge mode: rotate did not preserve SOCKS5 upstream.\ngot:\n%s", got)
+	}
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("rotate user response must disable caching, got %q", cacheControl)
 	}
 }
 

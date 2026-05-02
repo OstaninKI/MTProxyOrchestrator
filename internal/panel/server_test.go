@@ -35,6 +35,21 @@ func TestOutsidePanelPathReturns404(t *testing.T) {
 	}
 }
 
+func TestHealthEndpointServedOutsidePanelPath(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	h := srv.Handler()
+
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("GET /health: want 204, got %d", w.Code)
+	}
+	if body := w.Body.String(); body != "" {
+		t.Fatalf("GET /health: want empty body, got %q", body)
+	}
+}
+
 func TestLoginPageServedUnderPanelPath(t *testing.T) {
 	srv := newTestServer(t, "/p-example/")
 	h := srv.Handler()
@@ -56,6 +71,42 @@ func TestDashboardRedirectsUnauthenticated(t *testing.T) {
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusSeeOther {
 		t.Errorf("unauthenticated dashboard: want 303, got %d", w.Code)
+	}
+}
+
+func TestProtectedBridgeAndSettingsRoutesAreMounted(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	h := srv.Handler()
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{name: "bridge manual add", method: http.MethodPost, path: "/p-example/bridge/nodes/add-manual"},
+		{name: "bridge edit form", method: http.MethodGet, path: "/p-example/bridge/nodes/1/edit"},
+		{name: "bridge edit submit", method: http.MethodPost, path: "/p-example/bridge/nodes/1/edit"},
+		{name: "bridge ping", method: http.MethodPost, path: "/p-example/bridge/nodes/1/ping"},
+		{name: "bridge strategy", method: http.MethodPost, path: "/p-example/bridge/strategy"},
+		{name: "settings stubs list", method: http.MethodGet, path: "/p-example/settings/stubs"},
+		{name: "settings stubs apply", method: http.MethodPost, path: "/p-example/settings/stubs/apply"},
+		{name: "settings stubs upload", method: http.MethodPost, path: "/p-example/settings/stubs/upload"},
+		{name: "settings certificates", method: http.MethodGet, path: "/p-example/settings/certificates"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(tc.method, tc.path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+
+			if w.Code != http.StatusSeeOther {
+				t.Fatalf("%s %s: want 303 to login, got %d", tc.method, tc.path, w.Code)
+			}
+			if location := w.Header().Get("Location"); location != "/p-example/login" {
+				t.Fatalf("%s %s: want redirect to /p-example/login, got %q", tc.method, tc.path, location)
+			}
+		})
 	}
 }
 

@@ -88,6 +88,10 @@ var extractZip = func(r io.ReaderAt, size int64, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("open zip: %w", err)
 	}
+	if len(zr.File) > stub.MaxZipEntries {
+		return fmt.Errorf("archive contains too many files (max %d)", stub.MaxZipEntries)
+	}
+	var totalExtracted uint64
 	for _, f := range zr.File {
 		// Sanitise path: reject absolute paths and traversal sequences.
 		rel := filepath.Clean(f.Name)
@@ -101,6 +105,13 @@ var extractZip = func(r io.ReaderAt, size int64, destDir string) error {
 			}
 			continue
 		}
+		if f.UncompressedSize64 > stub.MaxExtractedFileBytes {
+			return fmt.Errorf("zip entry %s exceeds maximum extracted size of %d bytes", f.Name, stub.MaxExtractedFileBytes)
+		}
+		totalExtracted += f.UncompressedSize64
+		if totalExtracted > stub.MaxExtractedTotalBytes {
+			return fmt.Errorf("zip archive exceeds maximum extracted size of %d bytes", stub.MaxExtractedTotalBytes)
+		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			return err
 		}
@@ -108,13 +119,22 @@ var extractZip = func(r io.ReaderAt, size int64, destDir string) error {
 		if err != nil {
 			return err
 		}
-		data, err := io.ReadAll(rc)
+		dst, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		written, err := io.Copy(dst, io.LimitReader(rc, int64(stub.MaxExtractedFileBytes)+1))
 		rc.Close()
+		closeErr := dst.Close()
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(dest, data, 0o600); err != nil {
-			return err
+		if closeErr != nil {
+			return closeErr
+		}
+		if written > int64(stub.MaxExtractedFileBytes) {
+			return fmt.Errorf("zip entry %s exceeds maximum extracted size of %d bytes", f.Name, stub.MaxExtractedFileBytes)
 		}
 	}
 	return nil

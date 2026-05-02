@@ -15,6 +15,7 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/update"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
 	"github.com/spf13/cobra"
@@ -41,13 +42,39 @@ var updateManual bool
 var backupDest, backupPass string
 var restorePass string
 
+var (
+	newPrompter    = func() install.Prompter { return install.NewHuhPrompter() }
+	defaultPaths   = config.DefaultPaths
+	restoreArchive = backup.Restore
+	stopServiceFn  = stopService
+	startServiceFn = startService
+	newChecker     = health.DefaultChecker
+)
+
 // statusCmd prints service health for the current mode.
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show service health",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		checker := health.DefaultChecker()
-		st := checker.CheckSingle()
+		checker := newChecker()
+		mode := currentRuntimeMode(defaultPaths())
+		var st health.Status
+		if mode == config.ModeBridge {
+			bridgeStatus := checker.CheckBridge()
+			st = health.Status{
+				OK:      bridgeStatus.OK,
+				Summary: bridgeStatus.Summary,
+			}
+			for _, step := range bridgeStatus.Steps {
+				st.Services = append(st.Services, health.ServiceState{
+					Name:    step.Name,
+					Active:  step.OK,
+					Message: step.Message,
+				})
+			}
+		} else {
+			st = checker.CheckSingle()
+		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		for _, svc := range st.Services {
@@ -73,7 +100,7 @@ var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Check and apply component updates",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		paths := config.DefaultPaths()
+		paths := defaultPaths()
 
 		currentVersions := map[update.Component]string{
 			update.ComponentCLI:       version.Version,
@@ -127,7 +154,7 @@ var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Remove MTProto proxy and all installed files",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p := install.NewHuhPrompter()
+		p := newPrompter()
 		ok, err := p.AskConfirm("This will stop services and remove all installed files. Continue?", false)
 		if err != nil {
 			return err
@@ -182,7 +209,7 @@ var resetAdminCmd = &cobra.Command{
 	Use:   "reset-admin-password",
 	Short: "Reset the admin panel password",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		paths := config.DefaultPaths()
+		paths := defaultPaths()
 
 		newLogin, err := secrets.GenerateAdminLogin()
 		if err != nil {
@@ -209,6 +236,9 @@ var resetAdminCmd = &cobra.Command{
 			newLogin, hash,
 		); err != nil {
 			return fmt.Errorf("update admin credentials: %w", err)
+		}
+		if _, err := database.Exec(`DELETE FROM sessions`); err != nil {
+			return fmt.Errorf("invalidate sessions: %w", err)
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "New login:    %s\n", newLogin)
@@ -245,9 +275,9 @@ var restoreCmd = &cobra.Command{
 	Short: "Restore /etc/tgproxy from an encrypted backup",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		paths := config.DefaultPaths()
+		paths := defaultPaths()
 
-		p := install.NewHuhPrompter()
+		p := newPrompter()
 		ok, err := p.AskConfirm("This will overwrite /etc/tgproxy. Continue?", false)
 		if err != nil {
 			return err
@@ -257,21 +287,24 @@ var restoreCmd = &cobra.Command{
 			return nil
 		}
 
-		stopService("tgproxy-panel.service")
-		stopService("teleproxy.service")
-		stopService("sing-box.service")
+		stopServiceFn("tgproxy-panel.service")
+		stopServiceFn("teleproxy.service")
+		stopServiceFn("sing-box.service")
 
 		opts := backup.RestoreOptions{
 			ArchivePath: args[0],
 			TargetDir:   paths.ConfigDir,
 			Passphrase:  restorePass,
 		}
-		if err := backup.Restore(opts); err != nil {
+		if err := restoreArchive(opts); err != nil {
 			return fmt.Errorf("restore failed: %w", err)
 		}
 
-		startService("teleproxy.service")
-		startService("tgproxy-panel.service")
+		if restoreNeedsSingbox(paths.TeleproxyTOML) {
+			startServiceFn("sing-box.service")
+		}
+		startServiceFn("teleproxy.service")
+		startServiceFn("tgproxy-panel.service")
 
 		fmt.Fprintln(cmd.OutOrStdout(), "Restore complete. Services restarted.")
 		return nil
@@ -290,6 +323,19 @@ func disableService(svc string) {
 
 func startService(svc string) {
 	_ = exec.Command("systemctl", "start", svc).Run()
+}
+
+func restoreNeedsSingbox(teleproxyConfigPath string) bool {
+	mode, err := teleproxy.DetectMode(teleproxyConfigPath)
+	return err == nil && mode == config.ModeBridge
+}
+
+func currentRuntimeMode(paths config.InstallPaths) config.Mode {
+	mode, err := teleproxy.DetectMode(paths.TeleproxyTOML)
+	if err != nil {
+		return config.ModeSingle
+	}
+	return mode
 }
 
 func installedVersion(binPath string) string {
