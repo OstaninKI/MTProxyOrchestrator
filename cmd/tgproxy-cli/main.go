@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/acme"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
@@ -25,7 +27,7 @@ var rootCmd = &cobra.Command{
 }
 
 var unattended bool
-var panelDomain, panelCert, panelKey string
+var panelDomain, panelCert, panelKey, panelEmail string
 
 type preflightRunner interface {
 	Run(panelPort int, extraPorts ...int) install.CheckResult
@@ -49,6 +51,7 @@ func init() {
 	installCmd.Flags().StringVar(&panelDomain, "panel-domain", "", "domain name for the public HTTPS admin panel")
 	installCmd.Flags().StringVar(&panelCert, "panel-cert", "", "TLS certificate path for the public HTTPS admin panel")
 	installCmd.Flags().StringVar(&panelKey, "panel-key", "", "TLS private key path for the public HTTPS admin panel")
+	installCmd.Flags().StringVar(&panelEmail, "panel-email", "", "email for Let's Encrypt; requires --panel-domain, mutually exclusive with --panel-cert/key")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -59,7 +62,8 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	cfg.PanelDomain = panelDomain
 	cfg.PanelCertPath = panelCert
 	cfg.PanelKeyPath = panelKey
-	if err := validatePanelTLSFlags(cfg); err != nil {
+	cfg.ACMEEmail = panelEmail
+	if err := validatePanelSetup(cfg); err != nil {
 		return err
 	}
 
@@ -75,6 +79,21 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 		cfg.MaskHost = maskHost
 
+		if cfg.PanelDomain == "" && cfg.PanelCertPath == "" {
+			domain, err := p.AskString("Panel domain for Let's Encrypt (leave empty to skip)", "")
+			if err != nil {
+				return err
+			}
+			if domain != "" {
+				email, err := p.AskString("Email for Let's Encrypt notifications", "")
+				if err != nil {
+					return err
+				}
+				cfg.PanelDomain = domain
+				cfg.ACMEEmail = email
+			}
+		}
+
 		ok, err := p.AskConfirm("Proceed with Single mode install?", true)
 		if err != nil {
 			return err
@@ -83,6 +102,21 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
 			return nil
 		}
+	}
+
+	// Obtain Let's Encrypt certificate before building the plan.
+	// Uses a standalone HTTP server on port 80 (nginx not yet started).
+	if cfg.PanelDomain != "" && cfg.ACMEEmail != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Obtaining Let's Encrypt certificate for %s...\n", cfg.PanelDomain)
+		mgr := acme.DefaultManager(nil, paths.CertDir, "")
+		runner := acme.DefaultRunner(mgr, paths.CertDir+"/.well-known-webroot")
+		certPath, keyPath, err := obtainACMECert(context.Background(), runner, cfg.PanelDomain, cfg.ACMEEmail)
+		if err != nil {
+			return fmt.Errorf("obtain Let's Encrypt certificate: %w", err)
+		}
+		cfg.PanelCertPath = certPath
+		cfg.PanelKeyPath = keyPath
+		fmt.Fprintf(cmd.OutOrStdout(), "Certificate obtained: %s\n", certPath)
 	}
 
 	binaries, err := resolveLocalBinaries()
@@ -95,7 +129,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("build plan: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Panel URL:  https://<your-domain>%s\n", plan.Creds.PanelPath)
+	fmt.Fprintf(cmd.OutOrStdout(), "Panel URL:  https://%s:%d%s\n", cfg.PanelDomain, panelPort, plan.Creds.PanelPath)
 	fmt.Fprintf(cmd.OutOrStdout(), "Login:      %s\n", plan.Creds.AdminLogin)
 	fmt.Fprintf(cmd.OutOrStdout(), "Password:   %s\n", plan.Creds.AdminPassword)
 	fmt.Fprintf(cmd.OutOrStdout(), "First user: tg://proxy?server=<your-ip>&port=443&secret=%s\n", plan.Creds.FirstUser.Secret.Hex())
@@ -105,17 +139,39 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	return inst.Run()
 }
 
-func validatePanelTLSFlags(cfg config.Config) error {
-	set := 0
-	for _, value := range []string{cfg.PanelDomain, cfg.PanelCertPath, cfg.PanelKeyPath} {
-		if strings.TrimSpace(value) != "" {
-			set++
+// validatePanelSetup ensures the panel TLS/ACME flags are used correctly:
+//   - manual mode: --panel-domain, --panel-cert, --panel-key all together
+//   - ACME mode:   --panel-domain + --panel-email, no --panel-cert/key
+//   - no panel:    all flags empty
+func validatePanelSetup(cfg config.Config) error {
+	hasManual := strings.TrimSpace(cfg.PanelCertPath) != "" || strings.TrimSpace(cfg.PanelKeyPath) != ""
+	hasACME := strings.TrimSpace(cfg.ACMEEmail) != ""
+	hasDomain := strings.TrimSpace(cfg.PanelDomain) != ""
+
+	if hasManual && hasACME {
+		return fmt.Errorf("--panel-email and --panel-cert/key are mutually exclusive")
+	}
+	if hasManual {
+		// All three manual flags required together.
+		set := 0
+		for _, v := range []string{cfg.PanelDomain, cfg.PanelCertPath, cfg.PanelKeyPath} {
+			if strings.TrimSpace(v) != "" {
+				set++
+			}
+		}
+		if set != 3 {
+			return fmt.Errorf("panel-domain, panel-cert, and panel-key must be provided together")
 		}
 	}
-	if set != 0 && set != 3 {
-		return fmt.Errorf("panel-domain, panel-cert, and panel-key must be provided together")
+	if hasACME && !hasDomain {
+		return fmt.Errorf("--panel-email requires --panel-domain")
 	}
 	return nil
+}
+
+// obtainACMECert is a variable so tests can replace it without a real ACME server.
+var obtainACMECert = func(ctx context.Context, runner acme.Runner, domain, email string) (certPath, keyPath string, err error) {
+	return runner.ObtainCert(ctx, domain, email)
 }
 
 func currentLocalBinaries() (install.LocalBinaries, error) {

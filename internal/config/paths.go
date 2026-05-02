@@ -3,11 +3,13 @@ package config
 // InstallPaths holds all filesystem paths used by tgproxy components.
 type InstallPaths struct {
 	// Directories
-	ConfigDir  string
-	LogDir     string
-	BinDir     string
-	SystemdDir string
-	StubDir    string
+	ConfigDir       string
+	LogDir          string
+	BinDir          string
+	SystemdDir      string
+	StubDir         string
+	CertDir         string // /etc/tgproxy/certs
+	NginxSnippetDir string // /etc/nginx/snippets
 
 	// Config files
 	ConfigFile    string
@@ -38,11 +40,13 @@ type InstallPaths struct {
 // DefaultPaths returns InstallPaths with the spec-defined locations.
 func DefaultPaths() InstallPaths {
 	return InstallPaths{
-		ConfigDir:  "/etc/tgproxy",
-		LogDir:     "/var/log/tgproxy",
-		BinDir:     "/usr/local/bin",
-		SystemdDir: "/etc/systemd/system",
-		StubDir:    "/var/www/tgproxy-stub",
+		ConfigDir:       "/etc/tgproxy",
+		LogDir:          "/var/log/tgproxy",
+		BinDir:          "/usr/local/bin",
+		SystemdDir:      "/etc/systemd/system",
+		StubDir:         "/var/www/tgproxy-stub",
+		CertDir:         "/etc/tgproxy/certs",
+		NginxSnippetDir: "/etc/nginx/snippets",
 
 		ConfigFile:    "/etc/tgproxy/config.toml",
 		TeleproxyTOML: "/etc/tgproxy/teleproxy.toml",

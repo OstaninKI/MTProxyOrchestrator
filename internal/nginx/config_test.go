@@ -118,6 +118,61 @@ func TestPanelProxyConfig_HasCSP(t *testing.T) {
 	}
 }
 
+// ACMEChallengeConfig tests
+
+var acmeCfg = nginx.ACMEChallengeConfig{
+	WebRootDir: "/etc/tgproxy/certs/.well-known-webroot",
+}
+
+func TestACMEChallengeConfig_ContainsLocation(t *testing.T) {
+	out := acmeCfg.Render()
+	if !bytes.Contains(out, []byte("location /.well-known/acme-challenge/")) {
+		t.Error("snippet must contain ACME challenge location block")
+	}
+	if !bytes.Contains(out, []byte("root /etc/tgproxy/certs/.well-known-webroot")) {
+		t.Error("snippet must set root to the configured webroot dir")
+	}
+}
+
+func TestACMEChallengeConfig_Golden(t *testing.T) {
+	got := acmeCfg.Render()
+	path := filepath.Join("testdata", "acme-challenge.conf")
+	if updateGolden {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatalf("write golden %s: %v", path, err)
+		}
+		t.Logf("updated golden file %s", path)
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden %s: %v (set updateGolden=true to generate)", path, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("render mismatch for %s:\n--- want ---\n%s\n--- got ---\n%s", path, want, got)
+	}
+}
+
+func TestStubConfig_IncludesACMESnippetWhenSet(t *testing.T) {
+	cfg := nginx.StubConfig{
+		ListenPort:      80,
+		ServerName:      "_",
+		StubRoot:        "/var/www/tgproxy-stub",
+		ACMESnippetPath: "/etc/nginx/snippets/acme-challenge.conf",
+	}
+	out := cfg.Render()
+	if !bytes.Contains(out, []byte("include /etc/nginx/snippets/acme-challenge.conf")) {
+		t.Error("stub config must include ACME snippet path when set")
+	}
+}
+
+func TestStubConfig_NoACMESnippetWhenEmpty(t *testing.T) {
+	out := baseCfg.Render() // baseCfg has no ACMESnippetPath
+	if bytes.Contains(out, []byte("include")) {
+		t.Error("stub config must not contain include directive when ACMESnippetPath is empty")
+	}
+}
+
 func TestPanelProxyConfig_Golden(t *testing.T) {
 	got := panelCfg.Render()
 	path := filepath.Join("testdata", "panel-proxy.conf")

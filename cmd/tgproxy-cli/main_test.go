@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/acme"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
@@ -228,5 +230,123 @@ func TestResolveLocalBinariesRequiresSiblingPanelBinary(t *testing.T) {
 	}
 	if bins.CLI != cliPath || bins.Panel != panelPath {
 		t.Fatalf("resolved bins mismatch: %+v", bins)
+	}
+}
+
+func TestRunInstallRejectsEmailWithoutDomain(t *testing.T) {
+	oldUnattended := unattended
+	oldPanelDomain := panelDomain
+	oldPanelEmail := panelEmail
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		panelDomain = oldPanelDomain
+		panelEmail = oldPanelEmail
+	})
+
+	unattended = true
+	panelDomain = ""
+	panelEmail = "admin@example.com"
+
+	err := runInstall(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("expected error when --panel-email given without --panel-domain")
+	}
+	if !strings.Contains(err.Error(), "--panel-email requires --panel-domain") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunInstallRejectsEmailAndManualCertTogether(t *testing.T) {
+	oldUnattended := unattended
+	oldPanelDomain := panelDomain
+	oldPanelCert := panelCert
+	oldPanelKey := panelKey
+	oldPanelEmail := panelEmail
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		panelDomain = oldPanelDomain
+		panelCert = oldPanelCert
+		panelKey = oldPanelKey
+		panelEmail = oldPanelEmail
+	})
+
+	unattended = true
+	panelDomain = "proxy.example.com"
+	panelCert = "/etc/tgproxy/certs/cert.pem"
+	panelKey = "/etc/tgproxy/certs/key.pem"
+	panelEmail = "admin@example.com"
+
+	err := runInstall(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("expected error when --panel-email and --panel-cert/key both provided")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunInstallCallsObtainACMEWhenEmailSet(t *testing.T) {
+	oldUnattended := unattended
+	oldPanelDomain := panelDomain
+	oldPanelEmail := panelEmail
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuild := buildSinglePlan
+	oldExec := newExecutor
+	oldObtain := obtainACMECert
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		panelDomain = oldPanelDomain
+		panelEmail = oldPanelEmail
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuild
+		newExecutor = oldExec
+		obtainACMECert = oldObtain
+	})
+
+	unattended = true
+	panelDomain = "proxy.example.com"
+	panelEmail = "admin@example.com"
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+
+	var gotDomain, gotEmail string
+	obtainACMECert = func(_ context.Context, _ acme.Runner, domain, email string) (string, string, error) {
+		gotDomain = domain
+		gotEmail = email
+		return "/etc/tgproxy/certs/proxy.example.com/cert.pem", "/etc/tgproxy/certs/proxy.example.com/key.pem", nil
+	}
+
+	var gotCfg config.Config
+	buildSinglePlan = func(cfg config.Config, _ config.InstallPaths, _ int, _ install.LocalBinaries) (install.Plan, error) {
+		gotCfg = cfg
+		return install.Plan{
+			Creds: install.GeneratedCreds{
+				PanelPath:     "/p-test/",
+				AdminLogin:    "admin",
+				AdminPassword: "password",
+				FirstUser:     secrets.UserSecret{Label: "user1"},
+			},
+		}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+
+	if err := runInstall(&cobra.Command{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotDomain != "proxy.example.com" {
+		t.Errorf("ObtainCert domain = %s, want proxy.example.com", gotDomain)
+	}
+	if gotEmail != "admin@example.com" {
+		t.Errorf("ObtainCert email = %s, want admin@example.com", gotEmail)
+	}
+	if gotCfg.PanelCertPath == "" || gotCfg.PanelKeyPath == "" {
+		t.Error("cert paths must be set in config after ACME obtain")
+	}
+	if gotCfg.ACMEEmail != "admin@example.com" {
+		t.Errorf("ACMEEmail in config = %s, want admin@example.com", gotCfg.ACMEEmail)
 	}
 }

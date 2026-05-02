@@ -8,9 +8,10 @@ import (
 
 // StubConfig holds fields for the loopback stub nginx server block.
 type StubConfig struct {
-	ListenPort int    // typically 80, since 443 is taken by Teleproxy
-	ServerName string // use "_" for catch-all
-	StubRoot   string // e.g. /var/www/tgproxy-stub
+	ListenPort      int    // typically 80, since 443 is taken by Teleproxy
+	ServerName      string // use "_" for catch-all
+	StubRoot        string // e.g. /var/www/tgproxy-stub
+	ACMESnippetPath string // when non-empty, include this snippet for HTTP-01 renewal
 }
 
 // Render returns the nginx server block as bytes.
@@ -29,7 +30,9 @@ var stubTmpl = template.Must(template.New("nginx-stub").Parse(`server {
 
     root {{.StubRoot}};
     index index.html;
-
+{{if .ACMESnippetPath}}
+    include {{.ACMESnippetPath}};
+{{end}}
     location / {
         try_files $uri $uri/ =404;
     }
@@ -58,6 +61,26 @@ func (c PanelProxyConfig) Render() []byte {
 // mozillaIntermediateCiphers is the Mozilla Intermediate compatibility cipher list
 // for nginx 1.18.0 on Ubuntu 22.04 (TLS 1.2 + 1.3).
 const mozillaIntermediateCiphers = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
+
+// ACMEChallengeConfig renders a nginx snippet that serves HTTP-01 challenge tokens
+// from WebRootDir. Include it in the port-80 stub server block for automated renewal.
+type ACMEChallengeConfig struct {
+	WebRootDir string // e.g. /etc/tgproxy/certs/.well-known-webroot
+}
+
+// Render returns the nginx location snippet as bytes.
+func (c ACMEChallengeConfig) Render() []byte {
+	var buf bytes.Buffer
+	if err := acmeChallengeTmpl.Execute(&buf, c); err != nil {
+		panic(fmt.Sprintf("nginx acme challenge snippet render: %v", err))
+	}
+	return buf.Bytes()
+}
+
+var acmeChallengeTmpl = template.Must(template.New("nginx-acme-challenge").Parse(`location /.well-known/acme-challenge/ {
+    root {{.WebRootDir}};
+}
+`))
 
 var panelProxyTmpl = template.Must(template.New("nginx-panel-proxy").Parse(`server {
     listen 0.0.0.0:{{.ListenPort}} ssl;

@@ -28,6 +28,10 @@ type PanelUnitConfig struct {
 	LogDir      string // /var/log/tgproxy
 	BinDir      string // /usr/local/bin
 	SystemdDir  string // /etc/systemd/system
+	// Optional ACME fields — when non-empty the panel starts the renewal loop.
+	CertDir   string // /etc/tgproxy/certs
+	Domain    string // proxy.example.com
+	ACMEEmail string // admin@example.com
 }
 
 func (c TeleproxyUnitConfig) Render() []byte {
@@ -84,7 +88,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={{.BinaryPath}} serve --db {{.DBPath}} --path {{.PanelPath}} --listen {{.ListenAddr}} --mtproto-port {{.MTProtoPort}} --mask-host {{.MaskHost}} --stats-port {{.StatsPort}}
+ExecStart={{.BinaryPath}} serve --db {{.DBPath}} --path {{.PanelPath}} --listen {{.ListenAddr}} --mtproto-port {{.MTProtoPort}} --mask-host {{.MaskHost}} --stats-port {{.StatsPort}}{{if .CertDir}} --cert-dir {{.CertDir}}{{end}}{{if .Domain}} --domain {{.Domain}}{{end}}{{if .ACMEEmail}} --acme-email {{.ACMEEmail}}{{end}}
 StandardOutput=append:{{.LogPath}}
 StandardError=append:{{.LogPath}}
 Restart=on-failure
@@ -94,7 +98,7 @@ NoNewPrivileges=yes
 UMask=0077
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths={{.ConfigDir}} {{.LogDir}} {{.BinDir}} {{.SystemdDir}}
+ReadWritePaths={{.ConfigDir}} {{.LogDir}} {{.BinDir}} {{.SystemdDir}}{{if .CertDir}} {{.CertDir}}{{end}}
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes

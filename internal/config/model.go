@@ -25,6 +25,9 @@ type Config struct {
 	PanelDomain   string
 	PanelCertPath string
 	PanelKeyPath  string
+	// ACMEEmail enables Let's Encrypt for the panel certificate when non-empty.
+	// The cert is obtained during install and renewed by tgproxy-panel automatically.
+	ACMEEmail string
 
 	// TelegramBotToken is reserved for v2 and rendered as a commented section.
 	TelegramBotToken string

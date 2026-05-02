@@ -105,10 +105,20 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 	}
 	tpData := tpCfg.Render()
 
+	acmeSnippetPath := ""
+	var acmeSnippetData []byte
+	if cfg.ACMEEmail != "" && cfg.PanelDomain != "" {
+		acmeSnippetPath = paths.NginxSnippetDir + "/acme-challenge.conf"
+		acmeSnippetData = nginx.ACMEChallengeConfig{
+			WebRootDir: paths.CertDir + "/.well-known-webroot",
+		}.Render()
+	}
+
 	ngCfg := nginx.StubConfig{
-		ListenPort: 80,
-		ServerName: "_",
-		StubRoot:   paths.StubDir,
+		ListenPort:      80,
+		ServerName:      "_",
+		StubRoot:        paths.StubDir,
+		ACMESnippetPath: acmeSnippetPath,
 	}
 	ngData := ngCfg.Render()
 	var panelProxyData []byte
@@ -142,6 +152,9 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		LogDir:      paths.LogDir,
 		BinDir:      paths.BinDir,
 		SystemdDir:  paths.SystemdDir,
+		CertDir:     paths.CertDir,
+		Domain:      cfg.PanelDomain,
+		ACMEEmail:   cfg.ACMEEmail,
 	}
 
 	steps := []Step{
@@ -153,6 +166,7 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepCreateDir, Target: paths.ConfigDir + "/nodes", Mode: 0o700},
 		{Kind: StepCreateDir, Target: paths.LogDir, Mode: 0o755},
 		{Kind: StepCreateDir, Target: paths.StubDir, Mode: 0o755},
+		{Kind: StepCreateDir, Target: paths.CertDir, Mode: 0o700},
 		{Kind: StepInstallFile, Source: binaries.CLI, Target: paths.CLIBin, Mode: 0o755},
 		{Kind: StepInstallFile, Source: binaries.Panel, Target: paths.PanelBin, Mode: 0o755},
 		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: teleproxyDownloadSHA256(), Mode: 0o755},
@@ -178,6 +192,15 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepStartService, Target: "teleproxy"},
 		{Kind: StepEnableService, Target: "tgproxy-panel"},
 		{Kind: StepStartService, Target: "tgproxy-panel"},
+	}
+	if len(acmeSnippetData) > 0 {
+		// Insert snippet write before the stub site config so the include is valid.
+		stubIdx := indexOfWriteTarget(steps, "/etc/nginx/sites-available/tgproxy-stub")
+		extra := []Step{
+			{Kind: StepCreateDir, Target: paths.NginxSnippetDir, Mode: 0o755},
+			{Kind: StepWriteFile, Target: acmeSnippetPath, Content: acmeSnippetData, Mode: 0o644},
+		}
+		steps = append(steps[:stubIdx], append(extra, steps[stubIdx:]...)...)
 	}
 	if len(panelProxyData) > 0 {
 		insertAt := len(steps) - 5
@@ -211,6 +234,17 @@ func minimalStubHTML() []byte {
 <body><h1>Welcome</h1></body>
 </html>
 `)
+}
+
+// indexOfWriteTarget returns the index of the first StepWriteFile step whose
+// Target matches target, or len(steps) if not found.
+func indexOfWriteTarget(steps []Step, target string) int {
+	for i, s := range steps {
+		if s.Kind == StepWriteFile && s.Target == target {
+			return i
+		}
+	}
+	return len(steps)
 }
 
 // usersJSONContent returns the initial users.json content with the first user's secret.

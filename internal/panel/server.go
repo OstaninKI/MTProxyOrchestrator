@@ -72,6 +72,7 @@ func (s *Server) panelRouter() http.Handler {
 		r.Post("/settings/stubs/apply", s.handleSettingsStubApply)
 		r.Post("/settings/stubs/upload", s.handleSettingsStubUpload)
 		r.Get("/settings/certificates", s.handleSettingsCertificates)
+		r.Post("/settings/certificates/renew", s.handleSettingsCertRenew)
 		r.Get("/logs", s.handleLogsPage)
 		r.Get("/logs/stream", s.handleLogsStream)
 		r.Get("/logs/download", s.handleLogsDownload)

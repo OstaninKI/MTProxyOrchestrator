@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/acme"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
@@ -35,6 +37,9 @@ var (
 	mtprotoPort int
 	maskHost    string
 	statsPort   int
+	certDir     string
+	domain      string
+	acmeEmail   string
 )
 
 var serveCmd = &cobra.Command{
@@ -46,10 +51,13 @@ var serveCmd = &cobra.Command{
 func init() {
 	serveCmd.Flags().StringVar(&dbPath, "db", "/etc/tgproxy/panel.db", "path to SQLite database")
 	serveCmd.Flags().StringVar(&panelPath, "path", "/p-changeme/", "panel URL path prefix")
-	serveCmd.Flags().StringVar(&listenAddr, "listen", "127.0.0.1:8443", "listen address")
+	serveCmd.Flags().StringVar(&listenAddr, "listen", "127.0.0.1:18080", "listen address")
 	serveCmd.Flags().IntVar(&mtprotoPort, "mtproto-port", 443, "MTProto listen port used when rendering Teleproxy config")
 	serveCmd.Flags().StringVar(&maskHost, "mask-host", "www.microsoft.com", "FakeTLS mask host used when rendering Teleproxy config")
 	serveCmd.Flags().IntVar(&statsPort, "stats-port", 9091, "Teleproxy stats port used when rendering Teleproxy config")
+	serveCmd.Flags().StringVar(&certDir, "cert-dir", "/etc/tgproxy/certs", "directory for TLS certificates")
+	serveCmd.Flags().StringVar(&domain, "domain", "", "panel domain; enables ACME renewal loop when set with --acme-email")
+	serveCmd.Flags().StringVar(&acmeEmail, "acme-email", "", "email for Let's Encrypt renewal notifications")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -111,6 +119,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	// Start ACME renewal loop when domain and email are configured.
+	if domain != "" && acmeEmail != "" {
+		mgr := acme.DefaultManager(d, certDir, "")
+		webRootDir := filepath.Join(certDir, ".well-known-webroot")
+		runner := acme.DefaultRunner(mgr, webRootDir)
+		certPath := filepath.Join(certDir, domain, "cert.pem")
+		runner.StartRenewalLoop(ctx, domain, acmeEmail, certPath, 12*time.Hour)
+	}
+
 	srv := &panel.Server{
 		DB:          d,
 		PanelPath:   panelPath,
@@ -120,6 +137,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 			MTProtoPort: mtprotoPort,
 			MaskHost:    maskHost,
 			StatsPort:   statsPort,
+		},
+		SettingsCfg: &panel.SettingsConfig{
+			CertDir:   certDir,
+			Domain:    domain,
+			ACMEEmail: acmeEmail,
 		},
 	}
 

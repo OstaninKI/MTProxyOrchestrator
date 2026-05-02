@@ -34,6 +34,7 @@ type SettingsConfig struct {
 	CertDir          string // directory where certs are stored
 	ServerIP         string // public IP of the server
 	Domain           string // configured domain (empty for IP installs)
+	ACMEEmail        string // email used for Let's Encrypt; empty if ACME not configured
 }
 
 // settingsConfig returns SettingsConfig from Server.SettingsCfg if set, or zero values.
@@ -440,4 +441,22 @@ func loadRecentRenewals(s *Server, domain string) []RenewalAttempt {
 		out = append(out, ra)
 	}
 	return out
+}
+
+// handleSettingsCertRenew forces a Let's Encrypt renewal regardless of expiry.
+// Only available when ACME is configured (domain + email present).
+func (s *Server) handleSettingsCertRenew(w http.ResponseWriter, r *http.Request) {
+	cfg := s.settingsConfig()
+	if cfg.Domain == "" || cfg.ACMEEmail == "" {
+		http.Error(w, "ACME not configured", http.StatusBadRequest)
+		return
+	}
+	mgr := acme.DefaultManager(s.DB, cfg.CertDir, "")
+	webRootDir := filepath.Join(cfg.CertDir, ".well-known-webroot")
+	runner := acme.DefaultRunner(mgr, webRootDir)
+	if err := runner.Renew(r.Context(), cfg.Domain, cfg.ACMEEmail); err != nil {
+		http.Error(w, "renewal failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, s.PanelPath+"settings/certificates", http.StatusSeeOther)
 }

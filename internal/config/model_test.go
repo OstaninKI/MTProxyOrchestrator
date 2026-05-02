@@ -32,11 +32,13 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestDefaultPaths(t *testing.T) {
 	want := config.InstallPaths{
-		ConfigDir:  "/etc/tgproxy",
-		LogDir:     "/var/log/tgproxy",
-		BinDir:     "/usr/local/bin",
-		SystemdDir: "/etc/systemd/system",
-		StubDir:    "/var/www/tgproxy-stub",
+		ConfigDir:       "/etc/tgproxy",
+		LogDir:          "/var/log/tgproxy",
+		BinDir:          "/usr/local/bin",
+		SystemdDir:      "/etc/systemd/system",
+		StubDir:         "/var/www/tgproxy-stub",
+		CertDir:         "/etc/tgproxy/certs",
+		NginxSnippetDir: "/etc/nginx/snippets",
 
 		ConfigFile:    "/etc/tgproxy/config.toml",
 		TeleproxyTOML: "/etc/tgproxy/teleproxy.toml",

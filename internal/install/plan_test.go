@@ -402,3 +402,119 @@ func TestSinglePlanInitializesPanelDB(t *testing.T) {
 
 	t.Fatal("Single plan must include panel DB bootstrap step")
 }
+
+func TestSinglePlanWritesACMESnippetWhenEmailConfigured(t *testing.T) {
+	cfg := config.Default()
+	cfg.PanelDomain = "proxy.example.com"
+	cfg.ACMEEmail = "admin@example.com"
+	paths := config.DefaultPaths()
+
+	plan, err := install.BuildSinglePlan(cfg, paths, 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantSnippet := "/etc/nginx/snippets/acme-challenge.conf"
+	var foundSnippet, foundSnippetDir, foundStubWithInclude bool
+	for _, s := range plan.Steps {
+		if s.Kind == install.StepWriteFile && s.Target == wantSnippet {
+			foundSnippet = true
+			body := string(s.Content)
+			if !strings.Contains(body, "location /.well-known/acme-challenge/") {
+				t.Fatalf("ACME snippet must contain challenge location block:\n%s", body)
+			}
+			if !strings.Contains(body, paths.CertDir) {
+				t.Fatalf("ACME snippet must reference cert dir webroot:\n%s", body)
+			}
+		}
+		if s.Kind == install.StepCreateDir && s.Target == "/etc/nginx/snippets" {
+			foundSnippetDir = true
+		}
+		if s.Kind == install.StepWriteFile && s.Target == "/etc/nginx/sites-available/tgproxy-stub" {
+			if strings.Contains(string(s.Content), wantSnippet) {
+				foundStubWithInclude = true
+			}
+		}
+	}
+	if !foundSnippetDir {
+		t.Error("Single plan must create /etc/nginx/snippets dir when ACME email is set")
+	}
+	if !foundSnippet {
+		t.Errorf("Single plan must write ACME challenge snippet to %s", wantSnippet)
+	}
+	if !foundStubWithInclude {
+		t.Error("Single plan must include ACME snippet path in stub nginx config")
+	}
+}
+
+func TestSinglePlanACMESnippetAppearsBeforeStubConfig(t *testing.T) {
+	cfg := config.Default()
+	cfg.PanelDomain = "proxy.example.com"
+	cfg.ACMEEmail = "admin@example.com"
+
+	plan, err := install.BuildSinglePlan(cfg, config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snippetIdx, stubIdx := -1, -1
+	for i, s := range plan.Steps {
+		if s.Kind == install.StepWriteFile && s.Target == "/etc/nginx/snippets/acme-challenge.conf" {
+			snippetIdx = i
+		}
+		if s.Kind == install.StepWriteFile && s.Target == "/etc/nginx/sites-available/tgproxy-stub" {
+			stubIdx = i
+		}
+	}
+	if snippetIdx == -1 {
+		t.Fatal("ACME snippet write step not found")
+	}
+	if stubIdx == -1 {
+		t.Fatal("stub config write step not found")
+	}
+	if snippetIdx >= stubIdx {
+		t.Errorf("ACME snippet step (idx %d) must come before stub config step (idx %d)", snippetIdx, stubIdx)
+	}
+}
+
+func TestSinglePlanPanelUnitHasACMEFlagsWhenConfigured(t *testing.T) {
+	cfg := config.Default()
+	cfg.PanelDomain = "proxy.example.com"
+	cfg.ACMEEmail = "admin@example.com"
+	paths := config.DefaultPaths()
+
+	plan, err := install.BuildSinglePlan(cfg, paths, 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepWriteFile || s.Target != paths.PanelService {
+			continue
+		}
+		unit := string(s.Content)
+		if !strings.Contains(unit, "--cert-dir "+paths.CertDir) {
+			t.Fatalf("panel unit must pass --cert-dir when ACME is configured:\n%s", unit)
+		}
+		if !strings.Contains(unit, "--domain proxy.example.com") {
+			t.Fatalf("panel unit must pass --domain when ACME is configured:\n%s", unit)
+		}
+		if !strings.Contains(unit, "--acme-email admin@example.com") {
+			t.Fatalf("panel unit must pass --acme-email when ACME is configured:\n%s", unit)
+		}
+		return
+	}
+	t.Fatalf("panel service unit step not found at %s", paths.PanelService)
+}
+
+func TestSinglePlanNoACMESnippetWithoutEmail(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range plan.Steps {
+		if s.Kind == install.StepWriteFile && strings.Contains(s.Target, "acme-challenge") {
+			t.Fatalf("Single plan must not write ACME snippet when ACMEEmail is empty: %+v", s)
+		}
+	}
+}
