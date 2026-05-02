@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -76,6 +77,30 @@ func newPanelHTTPServer(addr string, handler http.Handler) *http.Server {
 	}
 }
 
+// applyDBSettings overwrites CLI flag values with any values stored in the DB,
+// and populates the retainer's configurable retention fields.
+// Errors reading individual settings are silently ignored — flags keep their defaults.
+func applyDBSettings(d *db.DB, ret *metrics.Retainer, mtprotoPort *int, maskHost *string) {
+	if v := d.GetSetting("mask_host", ""); v != "" {
+		*maskHost = v
+	}
+	if v := d.GetSetting("mtproto_port", ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 65535 {
+			*mtprotoPort = n
+		}
+	}
+	if v := d.GetSetting("retention_minutes_days", ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			ret.MinuteRetentionDays = n
+		}
+	}
+	if v := d.GetSetting("retention_hourly_days", ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			ret.HourlyRetentionDays = n
+		}
+	}
+}
+
 func runServe(cmd *cobra.Command, args []string) error {
 	d, err := db.Open(dbPath)
 	if err != nil {
@@ -91,6 +116,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Now:    func() int64 { return time.Now().Unix() },
 	}
 	retainer := metrics.Retainer{DB: d}
+	applyDBSettings(d, &retainer, &mtprotoPort, &maskHost)
 
 	// Context that is cancelled on SIGINT/SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

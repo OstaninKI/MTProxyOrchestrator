@@ -15,8 +15,10 @@ const (
 
 // Retainer handles data retention and aggregation.
 type Retainer struct {
-	DB  *db.DB
-	Now func() int64 // returns current Unix timestamp; defaults to time.Now().Unix()
+	DB                  *db.DB
+	Now                 func() int64 // returns current Unix timestamp; defaults to time.Now().Unix()
+	MinuteRetentionDays int          // 0 → use package constant (7)
+	HourlyRetentionDays int          // 0 → use package constant (30)
 }
 
 func (r Retainer) now() int64 {
@@ -24,6 +26,20 @@ func (r Retainer) now() int64 {
 		return r.Now()
 	}
 	return time.Now().Unix()
+}
+
+func (r Retainer) minuteDays() int {
+	if r.MinuteRetentionDays > 0 {
+		return r.MinuteRetentionDays
+	}
+	return MinuteRetentionDays
+}
+
+func (r Retainer) hourlyDays() int {
+	if r.HourlyRetentionDays > 0 {
+		return r.HourlyRetentionDays
+	}
+	return HourlyRetentionDays
 }
 
 // Run executes the full retention cycle:
@@ -34,8 +50,8 @@ func (r Retainer) now() int64 {
 // Each step runs in its own transaction. Run returns the first error encountered.
 func (r Retainer) Run() error {
 	now := r.now()
-	minuteCutoff := now - int64(MinuteRetentionDays)*86400
-	hourlyCutoff := now - int64(HourlyRetentionDays)*86400
+	minuteCutoff := now - int64(r.minuteDays())*86400
+	hourlyCutoff := now - int64(r.hourlyDays())*86400
 
 	if err := r.AggregateOldSamples(minuteCutoff); err != nil {
 		return fmt.Errorf("aggregate old samples: %w", err)
