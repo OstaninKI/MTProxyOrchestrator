@@ -33,12 +33,12 @@ func newInternalTestServer(t *testing.T) *Server {
 
 func withWriteAndReloadHook(t *testing.T, hook func([]byte)) {
 	t.Helper()
-	old := writeAndReload
-	writeAndReload = func(_ string, data []byte) error {
+	old := WriteAndReloadHook
+	WriteAndReloadHook = func(_ string, data []byte) error {
 		hook(data)
 		return nil
 	}
-	t.Cleanup(func() { writeAndReload = old })
+	t.Cleanup(func() { WriteAndReloadHook = old })
 }
 
 func TestUserCreateAppliesTeleproxyConfig(t *testing.T) {
@@ -75,11 +75,11 @@ func TestUserCreateAppliesTeleproxyConfig(t *testing.T) {
 
 func withWriteAndReloadError(t *testing.T, err error) {
 	t.Helper()
-	old := writeAndReload
-	writeAndReload = func(_ string, _ []byte) error {
+	old := WriteAndReloadHook
+	WriteAndReloadHook = func(_ string, _ []byte) error {
 		return err
 	}
-	t.Cleanup(func() { writeAndReload = old })
+	t.Cleanup(func() { WriteAndReloadHook = old })
 }
 
 func TestReloadTeleproxyAppliesOnlyEnabledNonDeletedUsers(t *testing.T) {

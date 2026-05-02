@@ -33,8 +33,19 @@ func (s *Server) isAuthenticated(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	exp, err := time.Parse("2006-01-02 15:04:05", expiresAt)
-	if err != nil {
+	// modernc.org/sqlite returns DATETIME values in RFC3339 form
+	// ("2006-01-02T15:04:05Z") even though they were inserted with the
+	// space-separated layout.  Try both formats so the code works in all
+	// environments.
+	var exp time.Time
+	var parseErr error
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05"} {
+		exp, parseErr = time.Parse(layout, expiresAt)
+		if parseErr == nil {
+			break
+		}
+	}
+	if parseErr != nil {
 		return false
 	}
 	return time.Now().Before(exp)
@@ -92,7 +103,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	exp := SessionExpiry()
 	_, err = s.DB.Exec(
 		`INSERT INTO sessions(id, admin_id, expires_at, ip) VALUES(?,?,?,?)`,
-		sessionID, adminID, exp.UTC().Format("2006-01-02 15:04:05"), ip,
+		sessionID, adminID, exp.UTC().Format(time.RFC3339), ip,
 	)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)

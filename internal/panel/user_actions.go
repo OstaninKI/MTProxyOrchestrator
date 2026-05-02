@@ -186,11 +186,11 @@ func (s *Server) reloadTeleproxy() error {
 		Users:      entries,
 	}
 	data := cfg.Render()
-	return writeAndReload(s.bridgePaths().TeleproxyTOML, data)
+	return WriteAndReloadHook(s.bridgePaths().TeleproxyTOML, data)
 }
 
-// writeAndReload is a hook for tests; production writes to the real path.
-var writeAndReload = func(path string, data []byte) error {
+// WriteAndReloadHook is a hook for tests; production writes to the real path.
+var WriteAndReloadHook = func(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
