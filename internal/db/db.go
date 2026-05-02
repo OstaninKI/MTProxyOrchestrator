@@ -29,3 +29,22 @@ func Open(path string) (*DB, error) {
 	}
 	return d, nil
 }
+
+// GetSetting returns the stored value for key, or defaultVal if absent.
+func (d *DB) GetSetting(key, defaultVal string) string {
+	var v string
+	if err := d.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&v); err != nil {
+		return defaultVal
+	}
+	return v
+}
+
+// SetSetting upserts key=value in the settings table.
+func (d *DB) SetSetting(key, value string) error {
+	_, err := d.Exec(
+		`INSERT INTO settings(key,value,updated_at) VALUES(?,?,datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+		key, value,
+	)
+	return err
+}

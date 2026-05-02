@@ -11,6 +11,7 @@ var migrations = []migration{
 	{"001_create_schema", sqlSchema},
 	{"002_traffic_schema", sqlTrafficSchema},
 	{"003_cert_schema", sqlCertSchema},
+	{"004_settings", sqlSettingsSchema},
 }
 
 func migrate(d *DB) error {
@@ -77,6 +78,14 @@ CREATE TABLE IF NOT EXISTS cert_renewals (
     success     INTEGER NOT NULL DEFAULT 0,
     error_msg   TEXT    NOT NULL DEFAULT '',
     attempted_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+`
+
+const sqlSettingsSchema = `
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL DEFAULT '',
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 `
 
