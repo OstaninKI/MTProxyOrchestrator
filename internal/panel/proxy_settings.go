@@ -161,6 +161,9 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Capture admin ID before invalidating sessions.
+	adminID := s.sessionAdminID(r)
+
 	// Update password in DB.
 	if _, err := s.DB.Exec(`UPDATE admin SET password_hash = ? WHERE id = 1`, newHash); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -173,7 +176,7 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 		return
 	}
 
-	audit.Log(s.DB, s.sessionAdminID(r), "admin.password_changed", "", "", clientIP(r)) //nolint:errcheck
+	audit.Log(s.DB, adminID, "admin.password_changed", "", "", clientIP(r)) //nolint:errcheck
 
 	tok, _ := NewCSRFToken()
 	SetCSRFCookie(w, tok, s.Secure)
@@ -324,13 +327,17 @@ func validateNewPassword(pw string) error {
 	return nil
 }
 
-// validatePanelPath checks that path starts and ends with / and is ≥6 chars.
+// validatePanelPath checks that path starts and ends with /, is ≥6 chars, and
+// contains no traversal sequences.
 func validatePanelPath(p string) error {
 	if !strings.HasPrefix(p, "/") || !strings.HasSuffix(p, "/") {
 		return fmt.Errorf("panel path must start and end with /")
 	}
 	if len(p) < 6 {
 		return fmt.Errorf("panel path must be at least 6 characters")
+	}
+	if strings.Contains(p, "..") || strings.Contains(p, "//") {
+		return fmt.Errorf("panel path must not contain .. or //")
 	}
 	return nil
 }

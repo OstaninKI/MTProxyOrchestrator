@@ -92,6 +92,12 @@ func TestProtectedBridgeAndSettingsRoutesAreMounted(t *testing.T) {
 		{name: "settings stubs apply", method: http.MethodPost, path: "/p-example/settings/stubs/apply"},
 		{name: "settings stubs upload", method: http.MethodPost, path: "/p-example/settings/stubs/upload"},
 		{name: "settings certificates", method: http.MethodGet, path: "/p-example/settings/certificates"},
+		{name: "settings proxy get", method: http.MethodGet, path: "/p-example/settings/proxy"},
+		{name: "settings proxy post", method: http.MethodPost, path: "/p-example/settings/proxy"},
+		{name: "settings admin-password get", method: http.MethodGet, path: "/p-example/settings/admin-password"},
+		{name: "settings admin-password post", method: http.MethodPost, path: "/p-example/settings/admin-password"},
+		{name: "settings system get", method: http.MethodGet, path: "/p-example/settings/system"},
+		{name: "settings system post", method: http.MethodPost, path: "/p-example/settings/system"},
 	}
 
 	for _, tc := range tests {

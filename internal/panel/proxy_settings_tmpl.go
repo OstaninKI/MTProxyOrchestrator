@@ -52,7 +52,7 @@ a{color:#2563eb;margin-right:1rem}</style>
 <h1>Proxy Settings</h1>
 <p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="admin-password">Admin Password →</a> &nbsp;|&nbsp; <a href="system">System →</a></p>
 
-{{if .Success}}<p class="success">Settings saved successfully.</p>{{end}}
+{{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
 <form method="post">
@@ -88,7 +88,7 @@ a{color:#2563eb;margin-right:1rem}</style>
 <h1>Change Admin Password</h1>
 <p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="proxy">Proxy Settings →</a> &nbsp;|&nbsp; <a href="system">System →</a></p>
 
-{{if .Success}}<p class="success">Password changed successfully.</p>{{end}}
+{{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
 <form method="post">
@@ -128,7 +128,7 @@ a{color:#2563eb;margin-right:1rem}</style>
 <h1>System Settings</h1>
 <p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="proxy">Proxy Settings →</a> &nbsp;|&nbsp; <a href="admin-password">Admin Password →</a></p>
 
-{{if .Success}}<p class="success">Settings saved successfully.</p>{{end}}
+{{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
 <div class="warn-box">

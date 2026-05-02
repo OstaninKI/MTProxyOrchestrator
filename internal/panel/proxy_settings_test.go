@@ -254,6 +254,15 @@ func TestAdminPasswordChangeSuccess(t *testing.T) {
 		t.Fatalf("want success message, got: %s", body)
 	}
 
+	// Old session cookie must be invalidated — authenticated request must redirect to login.
+	dashReq := httptest.NewRequest(http.MethodGet, "/p-example/dashboard", nil)
+	dashReq.AddCookie(sessionCookie)
+	dashW := httptest.NewRecorder()
+	h.ServeHTTP(dashW, dashReq)
+	if dashW.Code != http.StatusSeeOther {
+		t.Fatalf("old session must be invalidated after password change, got %d", dashW.Code)
+	}
+
 	// Old password must not work.
 	w2 := postLoginForm(h, "admin", "correcthorsebatterystaple")
 	if w2.Code == http.StatusSeeOther {
