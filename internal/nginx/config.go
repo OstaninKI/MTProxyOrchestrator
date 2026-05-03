@@ -102,7 +102,7 @@ var panelProxyTmpl = template.Must(template.New("nginx-panel-proxy").Parse(`serv
         proxy_pass http://{{.BackendAddr}};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
     }
 }

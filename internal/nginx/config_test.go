@@ -98,6 +98,16 @@ func TestPanelProxyConfig_ProxiesToBackend(t *testing.T) {
 	}
 }
 
+func TestPanelProxyConfig_ReplacesForwardedForWithRemoteAddr(t *testing.T) {
+	out := panelCfg.Render()
+	if !bytes.Contains(out, []byte("proxy_set_header X-Forwarded-For $remote_addr")) {
+		t.Error("X-Forwarded-For must be replaced with the nginx peer address to prevent spoofing")
+	}
+	if bytes.Contains(out, []byte("$proxy_add_x_forwarded_for")) {
+		t.Error("X-Forwarded-For must not append client-supplied values")
+	}
+}
+
 func TestPanelProxyConfig_HasSecurityHeaders(t *testing.T) {
 	out := panelCfg.Render()
 	if !bytes.Contains(out, []byte("X-Frame-Options DENY")) {
