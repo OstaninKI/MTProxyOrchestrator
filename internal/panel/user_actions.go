@@ -117,6 +117,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	audit.Log(s.DB, s.sessionAdminID(r), "user.delete", label, "", clientIP(r)) //nolint:errcheck
 	if err := s.reloadTeleproxy(); err != nil {
 		_ = repo.Restore(id)
+		audit.Log(s.DB, s.sessionAdminID(r), "user.delete_rollback", label, "user restored after reload failure", clientIP(r)) //nolint:errcheck
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
 	}

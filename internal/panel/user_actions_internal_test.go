@@ -526,6 +526,44 @@ func TestUserToggleRestoresDBWhenTeleproxyApplyFails(t *testing.T) {
 	}
 }
 
+func TestUserDeleteAuditsRollback(t *testing.T) {
+	srv := newInternalTestServer(t)
+	repo := UserRepo{DB: srv.DB}
+	id, err := repo.Create("alice", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withWriteAndReloadError(t, errApplyFailed)
+
+	req := httptest.NewRequest(http.MethodPost, "/users/1/delete", strings.NewReader(url.Values{
+		CSRFField(): {"token"},
+	}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "token"})
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
+		URLParams: chi.RouteParams{
+			Keys:   []string{"id"},
+			Values: []string{strconv.FormatInt(id, 10)},
+		},
+	}))
+	rec := httptest.NewRecorder()
+
+	srv.handleUserDelete(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("delete status = %d, want 500", rec.Code)
+	}
+
+	// Check that user.delete_rollback audit entry exists
+	var count int
+	if err := srv.DB.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action='user.delete_rollback' AND target='alice'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 audit rollback entry, got %d", count)
+	}
+}
+
 func TestUserRotateAuditsRollback(t *testing.T) {
 	srv := newInternalTestServer(t)
 	repo := UserRepo{DB: srv.DB}
