@@ -82,6 +82,7 @@ func (s *Server) panelRouter() http.Handler {
 		r.Get("/logs", s.handleLogsPage)
 		r.Get("/logs/stream", s.handleLogsStream)
 		r.Get("/logs/download", s.handleLogsDownload)
+		r.Get("/audit", s.handleAuditLog)
 	})
 
 	return r
