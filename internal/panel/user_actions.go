@@ -156,6 +156,7 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 	if err := s.reloadTeleproxy(); err != nil {
 		if oldSecret != "" {
 			_ = repo.UpdateSecret(id, oldSecret)
+			audit.Log(s.DB, s.sessionAdminID(r), "user.rotate_rollback", label, "secret restored after reload failure", clientIP(r)) //nolint:errcheck
 		}
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
