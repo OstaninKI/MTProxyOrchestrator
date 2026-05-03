@@ -219,6 +219,10 @@ func (realBridgeExecutor) DisableService(name string) error {
 	return exec.Command("systemctl", "disable", name).Run()
 }
 
+func (realBridgeExecutor) ReloadService(name string) error {
+	return teleproxy.ExecCommand("systemctl", "reload-or-restart", name)
+}
+
 func (realBridgeExecutor) ServiceActive(name string) (bool, error) {
 	err := exec.Command("systemctl", "is-active", name).Run()
 	return err == nil, nil

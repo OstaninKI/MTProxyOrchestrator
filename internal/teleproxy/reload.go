@@ -2,6 +2,11 @@ package teleproxy
 
 import "os/exec"
 
+// ExecCommand is injectable for tests. It defaults to running the command via exec.Command.
+var ExecCommand = func(name string, args ...string) error {
+	return exec.Command(name, args...).Run()
+}
+
 // ServiceController manages the teleproxy systemd service.
 type ServiceController interface {
 	Reload() error  // reload config without dropping connections (SIGHUP if supported, else restart)
@@ -20,15 +25,16 @@ func DefaultController() *SystemdController {
 }
 
 func (c *SystemdController) Reload() error {
-	// teleproxy does not support SIGHUP reload; use restart
-	return exec.Command("systemctl", "restart", c.ServiceName).Run()
+	// reload-or-restart: sends SIGHUP if ExecReload defined, otherwise restarts.
+	// This minimizes connection drops by attempting graceful reload first.
+	return ExecCommand("systemctl", "reload-or-restart", c.ServiceName)
 }
 
 func (c *SystemdController) Restart() error {
-	return exec.Command("systemctl", "restart", c.ServiceName).Run()
+	return ExecCommand("systemctl", "restart", c.ServiceName)
 }
 
 func (c *SystemdController) Status() (bool, error) {
-	err := exec.Command("systemctl", "is-active", c.ServiceName).Run()
+	err := ExecCommand("systemctl", "is-active", c.ServiceName)
 	return err == nil, nil
 }

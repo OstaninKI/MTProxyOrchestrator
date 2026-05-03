@@ -70,6 +70,14 @@ func (f *fakeExecutor) DisableService(name string) error {
 	return f.record("DisableService:" + name)
 }
 
+func (f *fakeExecutor) ReloadService(name string) error {
+	if err := f.record("ReloadService:" + name); err != nil {
+		return err
+	}
+	f.services[name] = true
+	return nil
+}
+
 func (f *fakeExecutor) ServiceActive(name string) (bool, error) {
 	f.record("ServiceActive:" + name) //nolint:errcheck
 	return f.services[name], nil

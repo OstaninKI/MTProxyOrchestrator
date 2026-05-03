@@ -62,3 +62,21 @@ func TestDefaultControllerServiceName(t *testing.T) {
 		t.Errorf("ServiceName = %q, want teleproxy.service", c.ServiceName)
 	}
 }
+
+func TestSystemdControllerUsesReloadOrRestart(t *testing.T) {
+	var captured []string
+	orig := teleproxy.ExecCommand
+	defer func() { teleproxy.ExecCommand = orig }()
+	teleproxy.ExecCommand = func(name string, args ...string) error {
+		captured = append([]string{name}, args...)
+		return nil
+	}
+
+	c := &teleproxy.SystemdController{ServiceName: "teleproxy.service"}
+	if err := c.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if len(captured) < 2 || captured[1] != "reload-or-restart" {
+		t.Errorf("expected systemctl reload-or-restart, got: %v", captured)
+	}
+}
