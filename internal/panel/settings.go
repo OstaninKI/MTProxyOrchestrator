@@ -235,15 +235,16 @@ func (s *Server) handleSettingsStubApply(w http.ResponseWriter, r *http.Request)
 // handleSettingsStubUpload accepts a custom ZIP upload, validates it, and applies it.
 // Multipart field: stub_zip (required).
 func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request) {
+	// Limit overall request size before any FormValue/ParseMultipartForm call,
+	// including CSRF validation, because those helpers can parse multipart bodies.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+4096)
+
 	if !ValidateCSRF(r) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
 
 	cfg := s.settingsConfig()
-
-	// Limit overall request size to prevent large uploads before parsing multipart.
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+4096)
 
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		tok, _ := NewCSRFToken()
@@ -446,6 +447,11 @@ func loadRecentRenewals(s *Server, domain string) []RenewalAttempt {
 // handleSettingsCertRenew forces a Let's Encrypt renewal regardless of expiry.
 // Only available when ACME is configured (domain + email present).
 func (s *Server) handleSettingsCertRenew(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
 	cfg := s.settingsConfig()
 	if cfg.Domain == "" || cfg.ACMEEmail == "" {
 		http.Error(w, "ACME not configured", http.StatusBadRequest)

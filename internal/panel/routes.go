@@ -2,6 +2,7 @@ package panel
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -165,11 +166,14 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // addresses use RemoteAddr so an attacker cannot spoof their IP via the header.
 func clientIP(r *http.Request) string {
 	remoteHost := r.RemoteAddr
-	if i := strings.LastIndex(remoteHost, ":"); i >= 0 {
-		remoteHost = remoteHost[:i]
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		remoteHost = host
 	}
 	if isLoopback(remoteHost) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+			return realIP
+		}
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
 			return strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])
 		}
 	}

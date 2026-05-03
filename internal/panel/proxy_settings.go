@@ -53,8 +53,8 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 		renderProxySettingsError(w, r, s.Secure, maskHost, s.bridgeMTProtoPort(), "mask host is required")
 		return
 	}
-	if strings.ContainsAny(maskHost, " /") || len(maskHost) > 253 {
-		renderProxySettingsError(w, r, s.Secure, maskHost, s.bridgeMTProtoPort(), "mask host must not contain spaces or slashes, max 253 characters")
+	if !isValidMaskHost(maskHost) {
+		renderProxySettingsError(w, r, s.Secure, maskHost, s.bridgeMTProtoPort(), "mask host must be a valid hostname")
 		return
 	}
 
@@ -345,6 +345,34 @@ func validatePanelPath(p string) error {
 // isValidLogLevel checks if the log level is one of the allowed values.
 func isValidLogLevel(level string) bool {
 	return level == "debug" || level == "info" || level == "warn" || level == "error"
+}
+
+func isValidMaskHost(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	if strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") {
+		return false
+	}
+	labels := strings.Split(host, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
 }
 
 // --- render error helpers ---

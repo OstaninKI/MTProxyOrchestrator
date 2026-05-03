@@ -117,6 +117,34 @@ func TestProxySettingsRejectsEmptyMaskHost(t *testing.T) {
 	}
 }
 
+func TestProxySettingsRejectsMaskHostWithTOMLBreakingCharacters(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	form := url.Values{
+		"_csrf":        {"tok"},
+		"mask_host":    {"www.example.com\"\nstats_port = 1"},
+		"mtproto_port": {"443"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/settings/proxy", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookie)
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "tok"})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 with error page, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "mask host") {
+		t.Fatalf("want mask host validation error in body, got: %s", w.Body.String())
+	}
+	if got := srv.DB.GetSetting("mask_host", ""); got != "" {
+		t.Fatalf("invalid mask host must not be saved, got %q", got)
+	}
+}
+
 func TestProxySettingsSavesToDB(t *testing.T) {
 	srv := newTestServer(t, "/p-example/")
 	orig := panel.WriteAndReloadHook

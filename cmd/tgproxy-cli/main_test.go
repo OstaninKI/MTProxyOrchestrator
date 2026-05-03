@@ -116,7 +116,7 @@ func TestRunInstallPassesPanelTLSFlagsToPlan(t *testing.T) {
 	resolveLocalBinaries = func() (install.LocalBinaries, error) {
 		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
 	}
-	statFile = func(string) error { return nil } // cert and key files exist
+	statFile = func(string) error { return nil }                 // cert and key files exist
 	statConfigDir = func(string) error { return os.ErrNotExist } // config dir doesn't exist
 
 	var got config.Config
