@@ -11,7 +11,7 @@ MTProto Proxy Orchestrator manages a Teleproxy-based Telegram MTProto proxy on U
 
 ## Important Current Limitation
 
-The installer can wire a public TLS-facing nginx server block for the panel when `--panel-domain`, `--panel-cert`, and `--panel-key` are provided together. It does not yet obtain or renew panel certificates during install; the operator must provide certificate files or manage ACME separately.
+The installer provisions Single mode first. Bridge mode is enabled later from the authenticated panel. The installer can publish the admin panel through nginx either with operator-provided certificate files or by obtaining a Let's Encrypt certificate when `--panel-domain` and `--panel-email` are provided.
 
 ## Requirements
 
@@ -49,6 +49,14 @@ sudo tgproxy-cli install --unattended \
   --panel-key /etc/tgproxy/certs/proxy.example.com/key.pem
 ```
 
+Unattended install with Let's Encrypt for the public HTTPS admin panel proxy:
+
+```bash
+sudo tgproxy-cli install --unattended \
+  --panel-domain proxy.example.com \
+  --panel-email admin@example.com
+```
+
 The installer generates:
 
 - random panel path
@@ -75,7 +83,7 @@ Key paths used by the current implementation:
 - Backend listen address: `127.0.0.1:18080`
 - Public HTTPS listen address: `0.0.0.0:8443` when panel TLS flags are used
 - Protocol: plain HTTP on loopback
-- Health endpoint: `http://127.0.0.1:18080/health`
+- Health endpoint: `http://127.0.0.1:18080/<generated-panel-path>/health`
 - Authenticated UI: mounted under the generated random path only
 
 ## Common Commands
