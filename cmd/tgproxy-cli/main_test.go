@@ -92,6 +92,8 @@ func TestRunInstallPassesPanelTLSFlagsToPlan(t *testing.T) {
 	oldBuild := buildSinglePlan
 	oldExec := newExecutor
 	oldPostInstall := runPostInstallCheck
+	oldStatFile := statFile
+	oldStatConfigDir := statConfigDir
 	t.Cleanup(func() {
 		unattended = oldUnattended
 		panelDomain = oldPanelDomain
@@ -102,6 +104,8 @@ func TestRunInstallPassesPanelTLSFlagsToPlan(t *testing.T) {
 		buildSinglePlan = oldBuild
 		newExecutor = oldExec
 		runPostInstallCheck = oldPostInstall
+		statFile = oldStatFile
+		statConfigDir = oldStatConfigDir
 	})
 
 	unattended = true
@@ -112,6 +116,8 @@ func TestRunInstallPassesPanelTLSFlagsToPlan(t *testing.T) {
 	resolveLocalBinaries = func() (install.LocalBinaries, error) {
 		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
 	}
+	statFile = func(string) error { return nil } // cert and key files exist
+	statConfigDir = func(string) error { return os.ErrNotExist } // config dir doesn't exist
 
 	var got config.Config
 	buildSinglePlan = func(cfg config.Config, _ config.InstallPaths, _ int, _ install.LocalBinaries) (install.Plan, error) {
@@ -400,6 +406,112 @@ func TestRunInstallStopsServicesOnHealthCheckFailure(t *testing.T) {
 	}
 	if !found("tgproxy-panel.service") {
 		t.Errorf("expected tgproxy-panel.service to be stopped, got: %v", stopped)
+	}
+}
+
+func TestRunInstallAbortsIfAlreadyInstalled(t *testing.T) {
+	orig := statConfigDir
+	statConfigDir = func(string) error { return nil } // dir exists
+	t.Cleanup(func() { statConfigDir = orig })
+
+	unattended = true
+	t.Cleanup(func() { unattended = false })
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := runInstall(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error when config dir exists")
+	}
+	if !strings.Contains(err.Error(), "already installed") {
+		t.Fatalf("expected 'already installed' in error, got: %v", err)
+	}
+}
+
+func TestValidatePanelSetupRejectsMissingCertFile(t *testing.T) {
+	orig := statFile
+	statFile = func(path string) error {
+		_, err := os.Stat(path)
+		return err
+	}
+	t.Cleanup(func() { statFile = orig })
+
+	cfg := config.Config{
+		PanelDomain:   "example.com",
+		PanelCertPath: "/nonexistent/cert.pem",
+		PanelKeyPath:  "/nonexistent/key.pem",
+	}
+	err := validatePanelSetup(cfg)
+	if err == nil {
+		t.Fatal("expected error for missing cert file")
+	}
+	if !strings.Contains(err.Error(), "cert") {
+		t.Fatalf("expected 'cert' in error, got: %v", err)
+	}
+}
+
+func TestValidatePanelSetupRejectsMissingKeyFile(t *testing.T) {
+	orig := statFile
+	// Use a temp file for cert but not for key
+	tmpfile, err := os.CreateTemp("", "cert")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpfile.Close()
+	defer os.Remove(tmpfile.Name())
+
+	statFile = func(path string) error {
+		_, err := os.Stat(path)
+		return err
+	}
+	t.Cleanup(func() { statFile = orig })
+
+	cfg := config.Config{
+		PanelDomain:   "example.com",
+		PanelCertPath: tmpfile.Name(),
+		PanelKeyPath:  "/nonexistent/key.pem",
+	}
+	err = validatePanelSetup(cfg)
+	if err == nil {
+		t.Fatal("expected error for missing key file")
+	}
+	if !strings.Contains(err.Error(), "key") {
+		t.Fatalf("expected 'key' in error, got: %v", err)
+	}
+}
+
+func TestValidatePanelSetupAcceptsCertAndKeyWhenBothExist(t *testing.T) {
+	orig := statFile
+	// Create temporary cert and key files
+	certFile, err := os.CreateTemp("", "cert")
+	if err != nil {
+		t.Fatal(err)
+	}
+	certFile.Close()
+	defer os.Remove(certFile.Name())
+
+	keyFile, err := os.CreateTemp("", "key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyFile.Close()
+	defer os.Remove(keyFile.Name())
+
+	statFile = func(path string) error {
+		_, err := os.Stat(path)
+		return err
+	}
+	t.Cleanup(func() { statFile = orig })
+
+	cfg := config.Config{
+		PanelDomain:   "example.com",
+		PanelCertPath: certFile.Name(),
+		PanelKeyPath:  keyFile.Name(),
+	}
+	err = validatePanelSetup(cfg)
+	if err != nil {
+		t.Fatalf("expected no error when cert and key exist, got: %v", err)
 	}
 }
 

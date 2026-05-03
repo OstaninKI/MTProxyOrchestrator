@@ -50,6 +50,14 @@ var (
 		}
 		return nil
 	}
+	statConfigDir = func(path string) error {
+		_, err := os.Stat(path)
+		return err
+	}
+	statFile = func(path string) error {
+		_, err := os.Stat(path)
+		return err
+	}
 )
 
 var installCmd = &cobra.Command{
@@ -77,6 +85,11 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	cfg.ACMEEmail = panelEmail
 	if err := validatePanelSetup(cfg); err != nil {
 		return err
+	}
+
+	cfgPaths := config.DefaultPaths()
+	if err := statConfigDir(cfgPaths.ConfigDir); err == nil {
+		return fmt.Errorf("already installed: %s exists — run 'tgproxy-cli uninstall' first", cfgPaths.ConfigDir)
 	}
 
 	if result := defaultChecker().Run(panelPort, install.PanelBackendPort); !result.OK() {
@@ -185,6 +198,12 @@ func validatePanelSetup(cfg config.Config) error {
 		}
 		if set != 3 {
 			return fmt.Errorf("panel-domain, panel-cert, and panel-key must be provided together")
+		}
+		if err := statFile(cfg.PanelCertPath); err != nil {
+			return fmt.Errorf("panel-cert file not found: %s", cfg.PanelCertPath)
+		}
+		if err := statFile(cfg.PanelKeyPath); err != nil {
+			return fmt.Errorf("panel-key file not found: %s", cfg.PanelKeyPath)
 		}
 	}
 	if hasACME && !hasDomain {
