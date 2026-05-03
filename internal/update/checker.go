@@ -81,6 +81,7 @@ type StateStore interface {
 }
 
 const checkInterval = 18 * time.Hour
+const defaultHTTPTimeout = 30 * time.Second
 
 // Checker queries GitHub Releases for available versions.
 type Checker struct {
@@ -99,7 +100,7 @@ func NewChecker(stateDir string, currentVersions map[Component]string) (*Checker
 		return nil, fmt.Errorf("open state store: %w", err)
 	}
 	return &Checker{
-		Client:          http.DefaultClient,
+		Client:          &http.Client{Timeout: defaultHTTPTimeout},
 		Store:           store,
 		Clock:           realClock{},
 		CurrentVersions: currentVersions,
@@ -263,7 +264,7 @@ func (c *Checker) fetchLatestRelease(comp Component) (tagName, downloadURL, asse
 
 	client := c.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", repo[0], repo[1])

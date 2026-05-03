@@ -164,6 +164,20 @@ func TestCheckerFetchesLatestVersion(t *testing.T) {
 	}
 }
 
+func TestNewCheckerUsesHTTPClientWithTimeout(t *testing.T) {
+	checker, err := NewChecker(t.TempDir(), map[Component]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, ok := checker.Client.(*http.Client)
+	if !ok {
+		t.Fatalf("NewChecker Client type = %T, want *http.Client", checker.Client)
+	}
+	if client.Timeout <= 0 {
+		t.Fatal("NewChecker HTTP client must set a timeout")
+	}
+}
+
 func TestCheckerRateLimitAutomatic(t *testing.T) {
 	store := newFakeStore()
 	baseTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
