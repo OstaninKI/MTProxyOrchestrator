@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
 	"github.com/spf13/cobra"
 )
@@ -163,5 +166,75 @@ func TestCurrentRuntimeModeReadsTeleproxyConfig(t *testing.T) {
 	mode := currentRuntimeMode(config.InstallPaths{TeleproxyTOML: teleproxyPath})
 	if mode != config.ModeBridge {
 		t.Fatalf("mode = %q, want %q", mode, config.ModeBridge)
+	}
+}
+
+type stubPrompter struct {
+	confirmResult bool
+}
+
+func (s *stubPrompter) AskString(label, defaultVal string) (string, error) {
+	return defaultVal, nil
+}
+
+func (s *stubPrompter) AskSelect(label string, options []string) (string, error) {
+	if len(options) > 0 {
+		return options[0], nil
+	}
+	return "", nil
+}
+
+func (s *stubPrompter) AskConfirm(prompt string, defaultVal bool) (bool, error) {
+	return s.confirmResult, nil
+}
+
+func TestUninstallWarnsOnRemoveFailure(t *testing.T) {
+	// Create a temp file, then make its parent dir read-only so removal fails
+	tmp := t.TempDir()
+	targetFile := filepath.Join(tmp, "tgproxy-cli")
+	if err := os.WriteFile(targetFile, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make the directory read-only so os.Remove fails with permission error
+	if err := os.Chmod(tmp, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(tmp, 0755) })
+
+	// Replace defaultPaths to return our test file
+	orig := defaultPaths
+	defaultPaths = func() config.InstallPaths {
+		p := config.DefaultPaths()
+		p.CLIBin = targetFile
+		p.ConfigDir = filepath.Join(tmp, "etc", "tgproxy")
+		p.LogDir = filepath.Join(tmp, "var", "log", "tgproxy")
+		p.StubDir = filepath.Join(tmp, "var", "www", "stub")
+		return p
+	}
+	t.Cleanup(func() { defaultPaths = orig })
+
+	// Stub service stop and disable
+	origStop := stopServiceFn
+	stopServiceFn = func(string) {}
+	t.Cleanup(func() { stopServiceFn = origStop })
+
+	// Stub prompter to always confirm
+	origPrompter := newPrompter
+	newPrompter = func() install.Prompter { return &stubPrompter{confirmResult: true} }
+	t.Cleanup(func() { newPrompter = origPrompter })
+
+	var stderr strings.Builder
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(&stderr)
+	err := uninstallCmd.RunE(cmd, nil)
+	if err != nil {
+		t.Fatalf("uninstall must succeed even on remove errors, got %v", err)
+	}
+
+	output := stderr.String()
+	if !strings.Contains(output, "warning:") {
+		t.Fatalf("expected warning in stderr, got %q", output)
 	}
 }

@@ -184,7 +184,9 @@ var uninstallCmd = &cobra.Command{
 			"/etc/nginx/sites-available/tgproxy-stub",
 		}
 		for _, f := range removeFiles {
-			_ = os.Remove(f)
+			if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: remove %s: %v\n", f, err)
+			}
 		}
 
 		removeDirs := []string{
@@ -193,11 +195,17 @@ var uninstallCmd = &cobra.Command{
 			paths.StubDir,
 		}
 		for _, d := range removeDirs {
-			_ = os.RemoveAll(d)
+			if err := os.RemoveAll(d); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: remove %s: %v\n", d, err)
+			}
 		}
 
-		_ = exec.Command("systemctl", "daemon-reload").Run()
-		_ = exec.Command("nginx", "-s", "reload").Run()
+		if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: daemon-reload: %v\n", err)
+		}
+		if err := exec.Command("nginx", "-s", "reload").Run(); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: nginx reload: %v\n", err)
+		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "Uninstall complete.")
 		return nil
