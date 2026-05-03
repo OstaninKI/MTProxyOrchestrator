@@ -216,3 +216,96 @@ func TestHandleBridgeSetStrategyRollsBackNodeFileOnRerenderFailure(t *testing.T)
 type assertErr string
 
 func (e assertErr) Error() string { return string(e) }
+
+func TestDeleteLastActiveBridgeNodeIsRejected(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	writeNodeList(t, nodePath, bridge.NodeList{
+		Nodes: []bridge.Node{{ID: 1, Tag: "only-node", Host: "host", Port: 443, Enabled: true}},
+	})
+	srv := newBridgeTestServer(t, nodePath)
+	srv.SingboxActive = func() bool { return true } // Stub sing-box as active
+	sessionCookie := addAuthSession(t, srv)
+
+	form := url.Values{CSRFField(): {"token"}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/nodes/1/delete", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	req = withRouteID(req, "1")
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeDeleteNode(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+
+	// Verify the node was NOT deleted.
+	got := readNodeList(t, nodePath)
+	if len(got.Nodes) != 1 || got.Nodes[0].ID != 1 {
+		t.Fatalf("node was deleted despite being the last active: %+v", got.Nodes)
+	}
+}
+
+func TestDeleteLastActiveBridgeNodeAllowedWhenSingboxInactive(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	writeNodeList(t, nodePath, bridge.NodeList{
+		Nodes: []bridge.Node{{ID: 1, Tag: "only-node", Host: "host", Port: 443, Enabled: true}},
+	})
+	srv := newBridgeTestServer(t, nodePath)
+	srv.SingboxActive = func() bool { return false } // Stub sing-box as inactive
+	sessionCookie := addAuthSession(t, srv)
+
+	form := url.Values{CSRFField(): {"token"}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/nodes/1/delete", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	req = withRouteID(req, "1")
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeDeleteNode(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rec.Code)
+	}
+
+	// Verify the node WAS deleted (since sing-box is not active).
+	got := readNodeList(t, nodePath)
+	if len(got.Nodes) != 0 {
+		t.Fatalf("node was not deleted even though sing-box is inactive: %+v", got.Nodes)
+	}
+}
+
+func TestDeleteLastActiveBridgeNodeAllowedWhenMultipleActive(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	writeNodeList(t, nodePath, bridge.NodeList{
+		Nodes: []bridge.Node{
+			{ID: 1, Tag: "node1", Host: "host1", Port: 443, Enabled: true},
+			{ID: 2, Tag: "node2", Host: "host2", Port: 443, Enabled: true},
+		},
+	})
+	srv := newBridgeTestServer(t, nodePath)
+	srv.SingboxActive = func() bool { return true } // Stub sing-box as active
+	sessionCookie := addAuthSession(t, srv)
+
+	form := url.Values{CSRFField(): {"token"}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/nodes/1/delete", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	req = withRouteID(req, "1")
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeDeleteNode(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rec.Code)
+	}
+
+	// Verify the first node WAS deleted (still have one active).
+	got := readNodeList(t, nodePath)
+	if len(got.Nodes) != 1 || got.Nodes[0].ID != 2 {
+		t.Fatalf("deletion failed when there are multiple nodes: %+v", got.Nodes)
+	}
+}

@@ -173,6 +173,16 @@ func (s *Server) nodePath() string {
 	return filepath.Join(s.bridgePaths().OutboundsJSON)
 }
 
+// singboxIsActive checks if the sing-box service is running.
+// Uses the injected SingboxActive func if set (for tests), otherwise checks systemd.
+func (s *Server) singboxIsActive() bool {
+	if s.SingboxActive != nil {
+		return s.SingboxActive()
+	}
+	err := exec.Command("systemctl", "is-active", "sing-box.service").Run()
+	return err == nil
+}
+
 // realBridgeExecutor implements bridge.Executor using real OS calls.
 type realBridgeExecutor struct{}
 
@@ -776,6 +786,21 @@ func (s *Server) handleBridgeDeleteNode(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	// Guard: prevent deleting the last active node while Bridge mode is enabled.
+	if s.singboxIsActive() {
+		remaining := 0
+		for _, n := range nl.Nodes {
+			if n.ID != id && n.Enabled {
+				remaining++
+			}
+		}
+		if remaining == 0 {
+			http.Error(w, "cannot delete the last active node while Bridge mode is enabled", http.StatusConflict)
+			return
+		}
+	}
+
 	previous := cloneNodeList(nl)
 
 	var tag string

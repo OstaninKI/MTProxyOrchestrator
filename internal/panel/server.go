@@ -11,12 +11,13 @@ import (
 
 // Server holds the HTTP server and its dependencies.
 type Server struct {
-	DB          *db.DB
-	PanelPath   string // e.g. "/p-a8f3k2x9/"
-	RateLimiter *RateLimiter
-	Secure      bool            // set false in tests; true in production (HTTPS)
-	BridgeCfg   *BridgeConfig   // nil → use DefaultPaths and default ports
-	SettingsCfg *SettingsConfig // nil → empty stub/cert config
+	DB            *db.DB
+	PanelPath     string // e.g. "/p-a8f3k2x9/"
+	RateLimiter   *RateLimiter
+	Secure        bool            // set false in tests; true in production (HTTPS)
+	BridgeCfg     *BridgeConfig   // nil → use DefaultPaths and default ports
+	SettingsCfg   *SettingsConfig // nil → empty stub/cert config
+	SingboxActive func() bool     // lets tests stub the sing-box running check; nil = use real systemd
 }
 
 // Handler returns the root http.Handler. All requests outside PanelPath return 404.
