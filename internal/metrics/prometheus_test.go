@@ -1,9 +1,11 @@
 package metrics_test
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
@@ -77,6 +79,34 @@ func TestScrapeParsesSamples(t *testing.T) {
 	}
 	if bob.Connections != 5 {
 		t.Errorf("bob Connections: want 5, got %d", bob.Connections)
+	}
+}
+
+func TestDefaultScraperUsesHTTPClientWithTimeout(t *testing.T) {
+	s := metrics.DefaultScraper("http://127.0.0.1:9091")
+	client, ok := s.Client.(*http.Client)
+	if !ok {
+		t.Fatalf("DefaultScraper Client type = %T, want *http.Client", s.Client)
+	}
+	if client.Timeout <= 0 {
+		t.Fatal("DefaultScraper HTTP client must set a timeout")
+	}
+}
+
+func TestScrapeRejectsOversizedMetricsResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, strings.Repeat("A", 2*1024*1024))
+	}))
+	defer srv.Close()
+
+	_, err := newScraper(srv).Scrape()
+	if err == nil {
+		t.Fatal("expected oversized metrics response to be rejected")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("expected size limit error, got %v", err)
 	}
 }
 

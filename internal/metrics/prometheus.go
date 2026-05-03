@@ -1,20 +1,26 @@
 package metrics
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 )
 
 const (
-	metricBytesIn     = "mtproto_secret_traffic_bytes_in"
-	metricBytesOut    = "mtproto_secret_traffic_bytes_out"
-	metricConnections = "mtproto_secret_connections_total"
-	labelKey          = "label"
+	metricBytesIn      = "mtproto_secret_traffic_bytes_in"
+	metricBytesOut     = "mtproto_secret_traffic_bytes_out"
+	metricConnections  = "mtproto_secret_connections_total"
+	labelKey           = "label"
+	defaultHTTPTimeout = 10 * time.Second
 )
+
+// MaxResponseBytes caps a single Prometheus scrape response.
+const MaxResponseBytes = 1024 * 1024
 
 // Sample holds one point-in-time measurement for a single user.
 type Sample struct {
@@ -38,7 +44,7 @@ type Scraper struct {
 // DefaultScraper returns a Scraper wired to the real HTTP client.
 func DefaultScraper(statsAddr string) Scraper {
 	return Scraper{
-		Client:    http.DefaultClient,
+		Client:    &http.Client{Timeout: defaultHTTPTimeout},
 		StatsAddr: statsAddr,
 	}
 }
@@ -56,7 +62,15 @@ func (s Scraper) Scrape() ([]Sample, error) {
 		return nil, fmt.Errorf("metrics scrape: unexpected status %d", resp.StatusCode)
 	}
 
-	samples, err := parseMetrics(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("metrics read: %w", err)
+	}
+	if len(body) > MaxResponseBytes {
+		return nil, fmt.Errorf("metrics response too large")
+	}
+
+	samples, err := parseMetrics(bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("metrics parse: %w", err)
 	}
