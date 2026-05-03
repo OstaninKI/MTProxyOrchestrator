@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
@@ -308,5 +309,52 @@ func TestAuditLogoutNoSessionToken(t *testing.T) {
 		if strings.Contains(field, sessionTokenVal) {
 			t.Errorf("audit field %q must not contain session token", field)
 		}
+	}
+}
+
+func TestIdleSessionIsRejected(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	login, password := seedAdmin(t, srv.DB)
+	h := srv.Handler()
+
+	// Log in to create a valid session
+	loginResp := postLoginForm(h, login, password)
+	if loginResp.Code != http.StatusSeeOther {
+		t.Fatalf("login: want 303, got %d", loginResp.Code)
+	}
+
+	// Extract session cookie
+	var sessionCookie *http.Cookie
+	for _, c := range loginResp.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("expected session_id cookie after login")
+	}
+
+	// Manually update last_seen_at to 3 hours ago to simulate idle
+	old := time.Now().Add(-3 * time.Hour).UTC().Format(time.RFC3339)
+	_, err := srv.DB.Exec(
+		`UPDATE sessions SET last_seen_at=? WHERE id=?`,
+		old, sessionCookie.Value,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Try to access a protected route with the idle session
+	req := httptest.NewRequest(http.MethodGet, "/p-example/", nil)
+	req.AddCookie(sessionCookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("idle session: want 303 redirect to login, got %d", w.Code)
+	}
+	if location := w.Header().Get("Location"); !strings.Contains(location, "/login") {
+		t.Fatalf("want redirect to login, got %q", location)
 	}
 }

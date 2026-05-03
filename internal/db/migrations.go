@@ -12,6 +12,7 @@ var migrations = []migration{
 	{"002_traffic_schema", sqlTrafficSchema},
 	{"003_cert_schema", sqlCertSchema},
 	{"004_settings", sqlSettingsSchema},
+	{"005_sessions_idle_timeout", `ALTER TABLE sessions ADD COLUMN last_seen_at DATETIME;`},
 }
 
 func migrate(d *DB) error {

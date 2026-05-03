@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +10,19 @@ import (
 )
 
 const sessionCookieName = "session_id"
+const idleTimeout = 2 * time.Hour
+
+// parseSessionTime parses a session timestamp in RFC3339 or space-separated layout.
+// modernc.org/sqlite returns DATETIME values in RFC3339 form even though they were
+// inserted with space-separated layout. This function handles both formats.
+func parseSessionTime(s string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognised time: %q", s)
+}
 
 // requireAuth is a middleware that redirects unauthenticated requests to login.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
@@ -16,6 +30,13 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		if !s.isAuthenticated(r) {
 			http.Redirect(w, r, strings.TrimSuffix(s.PanelPath, "/")+"/login", http.StatusSeeOther)
 			return
+		}
+		// Update last_seen_at on each authenticated request
+		if cookie, err := r.Cookie(sessionCookieName); err == nil {
+			s.DB.Exec( //nolint:errcheck
+				`UPDATE sessions SET last_seen_at=? WHERE id=?`,
+				time.Now().UTC().Format(time.RFC3339), cookie.Value,
+			)
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -26,29 +47,23 @@ func (s *Server) isAuthenticated(r *http.Request) bool {
 	if err != nil || cookie.Value == "" {
 		return false
 	}
-	var expiresAt string
+	var expiresAt, lastSeenAt string
 	err = s.DB.QueryRow(
-		`SELECT expires_at FROM sessions WHERE id=?`, cookie.Value,
-	).Scan(&expiresAt)
+		`SELECT expires_at, COALESCE(last_seen_at, expires_at) FROM sessions WHERE id=?`,
+		cookie.Value,
+	).Scan(&expiresAt, &lastSeenAt)
 	if err != nil {
 		return false
 	}
-	// modernc.org/sqlite returns DATETIME values in RFC3339 form
-	// ("2006-01-02T15:04:05Z") even though they were inserted with the
-	// space-separated layout.  Try both formats so the code works in all
-	// environments.
-	var exp time.Time
-	var parseErr error
-	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05"} {
-		exp, parseErr = time.Parse(layout, expiresAt)
-		if parseErr == nil {
-			break
-		}
-	}
-	if parseErr != nil {
+	exp, err := parseSessionTime(expiresAt)
+	if err != nil || time.Now().After(exp) {
 		return false
 	}
-	return time.Now().Before(exp)
+	seen, err := parseSessionTime(lastSeenAt)
+	if err != nil || time.Now().After(seen.Add(idleTimeout)) {
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
@@ -102,8 +117,8 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	exp := SessionExpiry()
 	_, err = s.DB.Exec(
-		`INSERT INTO sessions(id, admin_id, expires_at, ip) VALUES(?,?,?,?)`,
-		sessionID, adminID, exp.UTC().Format(time.RFC3339), ip,
+		`INSERT INTO sessions(id, admin_id, expires_at, last_seen_at, ip) VALUES(?,?,?,?,?)`,
+		sessionID, adminID, exp.UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339), ip,
 	)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
