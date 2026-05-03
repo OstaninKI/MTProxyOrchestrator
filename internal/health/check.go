@@ -127,7 +127,8 @@ func DefaultSOCKSProber(socksAddr, target string) (time.Duration, error) {
 
 // CheckSingle checks Single mode health:
 //  1. teleproxy.service is active (via Systemd)
-//  2. nginx loopback is reachable: HTTP GET http://127.0.0.1:80/ (via HTTP)
+//  2. tgproxy-panel.service is active (via Systemd)
+//  3. nginx loopback is reachable: HTTP GET http://127.0.0.1:80/ (via HTTP)
 //
 // Status.OK is true only when all checks pass.
 func (c Checker) CheckSingle() Status {
@@ -147,6 +148,20 @@ func (c Checker) CheckSingle() Status {
 		ok = false
 	}
 	services = append(services, tpState)
+
+	panelActive, panelErr := c.Systemd("tgproxy-panel.service")
+	panelState := ServiceState{Name: "tgproxy-panel.service", Active: panelActive && panelErr == nil}
+	if panelErr != nil {
+		panelState.Message = "systemd query failed: " + panelErr.Error()
+	} else if !panelActive {
+		panelState.Message = "service is not active"
+	} else {
+		panelState.Message = "running"
+	}
+	if !panelState.Active {
+		ok = false
+	}
+	services = append(services, panelState)
 
 	ngErr := c.HTTP("http://127.0.0.1:80/")
 	ngState := ServiceState{Name: "nginx-stub", Active: ngErr == nil}

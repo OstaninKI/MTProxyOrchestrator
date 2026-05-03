@@ -41,6 +41,33 @@ func TestCheckSingleNginxDown(t *testing.T) {
 	}
 }
 
+func TestCheckSinglePanelDown(t *testing.T) {
+	c := health.Checker{
+		Systemd: func(name string) (bool, error) {
+			if name == "tgproxy-panel.service" {
+				return false, nil
+			}
+			return true, nil
+		},
+		HTTP: func(url string) error { return nil },
+	}
+	s := c.CheckSingle()
+	if s.OK {
+		t.Error("expected not OK when tgproxy-panel is down")
+	}
+}
+
+func TestCheckSingleReturnsThreeServices(t *testing.T) {
+	c := health.Checker{
+		Systemd: func(name string) (bool, error) { return true, nil },
+		HTTP:    func(url string) error { return nil },
+	}
+	s := c.CheckSingle()
+	if len(s.Services) != 3 {
+		t.Errorf("expected 3 services, got %d: %v", len(s.Services), s.Services)
+	}
+}
+
 // --- Bridge health checks ---
 
 func okSOCKS(_, _ string) (time.Duration, error)   { return 5 * time.Millisecond, nil }
