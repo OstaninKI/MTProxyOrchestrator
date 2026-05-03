@@ -38,8 +38,22 @@ func (s *Server) Handler() http.Handler {
 	return r
 }
 
+// secureHeaders sets security-related response headers on every panel response.
+// These mirror the headers already set by the nginx reverse proxy so they are
+// present even when the panel is accessed directly (development, direct TCP).
+func secureHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) panelRouter() http.Handler {
 	r := chi.NewRouter()
+	r.Use(secureHeaders)
 
 	r.Get("/login", s.handleLoginForm)
 	r.Post("/login", s.handleLoginSubmit)

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,36 @@ func newTestServer(t *testing.T, panelPath string) *panel.Server {
 		PanelPath:   panelPath,
 		RateLimiter: panel.NewRateLimiter(),
 		Secure:      false,
+	}
+}
+
+func TestSecurityHeadersPresent(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	h := srv.Handler()
+
+	for _, path := range []string{"/p-example/login", "/p-example/health"} {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+
+		if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+			t.Errorf("GET %s: X-Frame-Options = %q, want DENY", path, got)
+		}
+		if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("GET %s: X-Content-Type-Options = %q, want nosniff", path, got)
+		}
+		if got := w.Header().Get("Content-Security-Policy"); got == "" {
+			t.Errorf("GET %s: Content-Security-Policy header missing", path)
+		}
+	}
+
+	// Routes outside the panel path must NOT expose the security headers
+	// (stealth: don't leak server identity via headers).
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if got := w.Header().Get("X-Frame-Options"); got != "" {
+		t.Errorf("GET /health (outside panel): X-Frame-Options should be absent, got %q", got)
 	}
 }
 
@@ -99,6 +130,7 @@ func TestProtectedBridgeAndSettingsRoutesAreMounted(t *testing.T) {
 		{name: "settings stubs apply", method: http.MethodPost, path: "/p-example/settings/stubs/apply"},
 		{name: "settings stubs upload", method: http.MethodPost, path: "/p-example/settings/stubs/upload"},
 		{name: "settings certificates", method: http.MethodGet, path: "/p-example/settings/certificates"},
+		{name: "settings certificate renew", method: http.MethodPost, path: "/p-example/settings/certificates/renew"},
 		{name: "settings proxy get", method: http.MethodGet, path: "/p-example/settings/proxy"},
 		{name: "settings proxy post", method: http.MethodPost, path: "/p-example/settings/proxy"},
 		{name: "settings admin-password get", method: http.MethodGet, path: "/p-example/settings/admin-password"},
@@ -120,6 +152,26 @@ func TestProtectedBridgeAndSettingsRoutesAreMounted(t *testing.T) {
 				t.Fatalf("%s %s: want redirect to /p-example/login, got %q", tc.method, tc.path, location)
 			}
 		})
+	}
+}
+
+func TestCertificateRenewRequiresCSRF(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	srv.SettingsCfg = &panel.SettingsConfig{
+		CertDir:   t.TempDir(),
+		Domain:    "proxy.example.com",
+		ACMEEmail: "admin@example.com",
+	}
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	req := httptest.NewRequest(http.MethodPost, "/p-example/settings/certificates/renew", nil)
+	req.AddCookie(sessionCookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("want 403 without CSRF, got %d body: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -257,6 +309,54 @@ func TestAuditRateLimitedNoPassword(t *testing.T) {
 		if strings.Contains(field, password) || strings.Contains(field, "wrongpassword") {
 			t.Errorf("audit field %q must not contain a password", field)
 		}
+	}
+}
+
+func TestLoginRateLimitUsesProxyRemoteAddrNotSpoofedForwardedFor(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	login, _ := seedAdmin(t, srv.DB)
+	h := srv.Handler()
+
+	for i := 0; i < 5; i++ {
+		csrfToken := "test-csrf-token"
+		form := url.Values{
+			"_csrf":    {csrfToken},
+			"login":    {login},
+			"password": {"wrongpassword"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/p-example/login", strings.NewReader(form.Encode()))
+		req.RemoteAddr = "127.0.0.1:4444"
+		req.Host = "proxy.example.com"
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i+1))
+		req.Header.Set("X-Real-IP", "203.0.113.10")
+		req.AddCookie(&http.Cookie{Name: "csrf_token", Value: csrfToken})
+
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d was blocked too early", i+1)
+		}
+	}
+
+	csrfToken := "test-csrf-token"
+	form := url.Values{
+		"_csrf":    {csrfToken},
+		"login":    {login},
+		"password": {"wrongpassword"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/login", strings.NewReader(form.Encode()))
+	req.RemoteAddr = "127.0.0.1:4444"
+	req.Host = "proxy.example.com"
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-For", "198.51.100.99")
+	req.Header.Set("X-Real-IP", "203.0.113.10")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: csrfToken})
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("want rate limit by trusted proxy client IP, got %d", w.Code)
 	}
 }
 
