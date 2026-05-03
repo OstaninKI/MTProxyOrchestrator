@@ -26,10 +26,6 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-
 	// 404 for everything outside the configured panel path.
 	panelPath := strings.TrimSuffix(s.PanelPath, "/")
 	r.Mount(panelPath, s.panelRouter())
@@ -48,6 +44,9 @@ func (s *Server) panelRouter() http.Handler {
 	r.Get("/login", s.handleLoginForm)
 	r.Post("/login", s.handleLoginSubmit)
 	r.Post("/logout", s.handleLogout)
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireAuth)
