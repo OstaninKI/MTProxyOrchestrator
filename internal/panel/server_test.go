@@ -36,18 +36,24 @@ func TestOutsidePanelPathReturns404(t *testing.T) {
 	}
 }
 
-func TestHealthEndpointServedOutsidePanelPath(t *testing.T) {
+func TestHealthEndpointUnderPanelPath(t *testing.T) {
 	srv := newTestServer(t, "/p-example/")
 	h := srv.Handler()
 
+	// /health outside panel path must return 404 (no server fingerprint).
 	r := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("GET /health: want 204, got %d", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("GET /health at root: want 404, got %d", w.Code)
 	}
-	if body := w.Body.String(); body != "" {
-		t.Fatalf("GET /health: want empty body, got %q", body)
+
+	// /health under panel path must return 204.
+	r2 := httptest.NewRequest(http.MethodGet, "/p-example/health", nil)
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, r2)
+	if w2.Code != http.StatusNoContent {
+		t.Fatalf("GET /p-example/health: want 204, got %d", w2.Code)
 	}
 }
 
