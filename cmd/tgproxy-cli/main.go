@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/acme"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
 	"github.com/spf13/cobra"
@@ -38,6 +40,15 @@ var (
 	resolveLocalBinaries = currentLocalBinaries
 	buildSinglePlan      = install.BuildSinglePlan
 	newExecutor          = func() install.Executor { return install.NewSystemExecutor() }
+	runPostInstallCheck  = func() error {
+		time.Sleep(3 * time.Second)
+		checker := health.DefaultChecker()
+		result := checker.CheckSingle()
+		if !result.OK {
+			return fmt.Errorf("health check failed after install:\n%s", formatHealthStatus(result))
+		}
+		return nil
+	}
 )
 
 var installCmd = &cobra.Command{
@@ -136,7 +147,18 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	exec := newExecutor()
 	inst := install.Installer{Executor: exec, Plan: plan}
-	return inst.Run()
+	if err := inst.Run(); err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "Installation complete. Verifying services...")
+	if err := runPostInstallCheck(); err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Install succeeded but health check failed. Stopping services.")
+		stopServiceFn("tgproxy-panel.service")
+		stopServiceFn("teleproxy.service")
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "Services healthy.")
+	return nil
 }
 
 // validatePanelSetup ensures the panel TLS/ACME flags are used correctly:
@@ -197,6 +219,18 @@ func formatCheckResult(result install.CheckResult) string {
 	lines := make([]string, 0, len(result.Errors))
 	for _, checkErr := range result.Errors {
 		lines = append(lines, fmt.Sprintf("- %s: %s (%s)", checkErr.Check, checkErr.Description, checkErr.Remediation))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatHealthStatus(result health.Status) string {
+	lines := make([]string, 0, len(result.Services))
+	for _, svc := range result.Services {
+		state := "ok"
+		if !svc.Active {
+			state = "down"
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s (%s)", svc.Name, state, svc.Message))
 	}
 	return strings.Join(lines, "\n")
 }

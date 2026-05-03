@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -44,12 +46,14 @@ func TestRunInstallChecksPanelBackendPort(t *testing.T) {
 	oldResolve := resolveLocalBinaries
 	oldBuild := buildSinglePlan
 	oldExec := newExecutor
+	oldPostInstall := runPostInstallCheck
 	t.Cleanup(func() {
 		unattended = oldUnattended
 		defaultChecker = oldChecker
 		resolveLocalBinaries = oldResolve
 		buildSinglePlan = oldBuild
 		newExecutor = oldExec
+		runPostInstallCheck = oldPostInstall
 	})
 
 	unattended = true
@@ -62,8 +66,12 @@ func TestRunInstallChecksPanelBackendPort(t *testing.T) {
 		return install.Plan{}, nil
 	}
 	newExecutor = func() install.Executor { return stubExecutor{} }
+	runPostInstallCheck = func() error { return nil }
 
-	if err := runInstall(&cobra.Command{}, nil); err != nil {
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := runInstall(cmd, nil); err != nil {
 		t.Fatal(err)
 	}
 	if runner.panelPort != 8443 {
@@ -83,6 +91,7 @@ func TestRunInstallPassesPanelTLSFlagsToPlan(t *testing.T) {
 	oldResolve := resolveLocalBinaries
 	oldBuild := buildSinglePlan
 	oldExec := newExecutor
+	oldPostInstall := runPostInstallCheck
 	t.Cleanup(func() {
 		unattended = oldUnattended
 		panelDomain = oldPanelDomain
@@ -92,6 +101,7 @@ func TestRunInstallPassesPanelTLSFlagsToPlan(t *testing.T) {
 		resolveLocalBinaries = oldResolve
 		buildSinglePlan = oldBuild
 		newExecutor = oldExec
+		runPostInstallCheck = oldPostInstall
 	})
 
 	unattended = true
@@ -116,8 +126,12 @@ func TestRunInstallPassesPanelTLSFlagsToPlan(t *testing.T) {
 		}, nil
 	}
 	newExecutor = func() install.Executor { return stubExecutor{} }
+	runPostInstallCheck = func() error { return nil }
 
-	if err := runInstall(&cobra.Command{}, nil); err != nil {
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := runInstall(cmd, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got.PanelDomain != panelDomain || got.PanelCertPath != panelCert || got.PanelKeyPath != panelKey {
@@ -285,6 +299,110 @@ func TestRunInstallRejectsEmailAndManualCertTogether(t *testing.T) {
 	}
 }
 
+func TestRunInstallCallsHealthCheckOnSuccess(t *testing.T) {
+	oldUnattended := unattended
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuild := buildSinglePlan
+	oldExec := newExecutor
+	oldPostInstall := runPostInstallCheck
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuild
+		newExecutor = oldExec
+		runPostInstallCheck = oldPostInstall
+	})
+
+	unattended = true
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+	buildSinglePlan = func(config.Config, config.InstallPaths, int, install.LocalBinaries) (install.Plan, error) {
+		return install.Plan{}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+
+	called := false
+	runPostInstallCheck = func() error { called = true; return nil }
+
+	var out strings.Builder
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	err := runInstall(cmd, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("runPostInstallCheck was not called")
+	}
+	if !strings.Contains(out.String(), "Services healthy") {
+		t.Fatalf("expected 'Services healthy' in output, got: %s", out.String())
+	}
+}
+
+func TestRunInstallStopsServicesOnHealthCheckFailure(t *testing.T) {
+	oldUnattended := unattended
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuild := buildSinglePlan
+	oldExec := newExecutor
+	oldPostInstall := runPostInstallCheck
+	oldStop := stopServiceFn
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuild
+		newExecutor = oldExec
+		runPostInstallCheck = oldPostInstall
+		stopServiceFn = oldStop
+	})
+
+	unattended = true
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+	buildSinglePlan = func(config.Config, config.InstallPaths, int, install.LocalBinaries) (install.Plan, error) {
+		return install.Plan{}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+
+	stopped := []string{}
+	stopServiceFn = func(name string) { stopped = append(stopped, name) }
+	runPostInstallCheck = func() error { return fmt.Errorf("not healthy") }
+
+	var stderr strings.Builder
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(&stderr)
+	err := runInstall(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error from health check failure")
+	}
+	if !strings.Contains(err.Error(), "not healthy") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := func(name string) bool {
+		for _, s := range stopped {
+			if s == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !found("teleproxy.service") {
+		t.Errorf("expected teleproxy.service to be stopped, got: %v", stopped)
+	}
+	if !found("tgproxy-panel.service") {
+		t.Errorf("expected tgproxy-panel.service to be stopped, got: %v", stopped)
+	}
+}
+
 func TestRunInstallCallsObtainACMEWhenEmailSet(t *testing.T) {
 	oldUnattended := unattended
 	oldPanelDomain := panelDomain
@@ -294,6 +412,7 @@ func TestRunInstallCallsObtainACMEWhenEmailSet(t *testing.T) {
 	oldBuild := buildSinglePlan
 	oldExec := newExecutor
 	oldObtain := obtainACMECert
+	oldPostInstall := runPostInstallCheck
 	t.Cleanup(func() {
 		unattended = oldUnattended
 		panelDomain = oldPanelDomain
@@ -303,6 +422,7 @@ func TestRunInstallCallsObtainACMEWhenEmailSet(t *testing.T) {
 		buildSinglePlan = oldBuild
 		newExecutor = oldExec
 		obtainACMECert = oldObtain
+		runPostInstallCheck = oldPostInstall
 	})
 
 	unattended = true
@@ -333,8 +453,12 @@ func TestRunInstallCallsObtainACMEWhenEmailSet(t *testing.T) {
 		}, nil
 	}
 	newExecutor = func() install.Executor { return stubExecutor{} }
+	runPostInstallCheck = func() error { return nil }
 
-	if err := runInstall(&cobra.Command{}, nil); err != nil {
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := runInstall(cmd, nil); err != nil {
 		t.Fatal(err)
 	}
 	if gotDomain != "proxy.example.com" {
