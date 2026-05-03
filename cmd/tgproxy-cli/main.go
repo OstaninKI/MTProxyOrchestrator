@@ -41,6 +41,7 @@ var (
 	buildSinglePlan      = install.BuildSinglePlan
 	newExecutor          = func() install.Executor { return install.NewSystemExecutor() }
 	runPostInstallCheck  = func() error {
+		// Allow systemd time to transition services to active state before probing.
 		time.Sleep(3 * time.Second)
 		checker := health.DefaultChecker()
 		result := checker.CheckSingle()
@@ -153,6 +154,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(cmd.OutOrStdout(), "Installation complete. Verifying services...")
 	if err := runPostInstallCheck(); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Install succeeded but health check failed. Stopping services.")
+		// Stop panel before teleproxy: panel depends on teleproxy being available.
 		stopServiceFn("tgproxy-panel.service")
 		stopServiceFn("teleproxy.service")
 		return err
