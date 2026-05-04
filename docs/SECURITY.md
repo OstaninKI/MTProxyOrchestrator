@@ -1,0 +1,81 @@
+# Security
+
+## Threat Model Summary
+
+MTProto Proxy Orchestrator is a single-host, single-admin system intended for trusted operators. The current implementation primarily defends against:
+
+- unauthorized access to the admin panel backend
+- accidental disclosure of MTProto secrets, admin credentials, and backup material
+- unsafe restore input that attempts path traversal or oversized extraction
+- unverified binary replacement during updates
+- service compromise through overly broad systemd privileges
+
+Out of scope for v1:
+
+- public multi-tenant administration
+- panel 2FA
+- public HTTP API
+- host compromise outside this application boundary
+- network-layer DDoS mitigation
+
+## Secret Handling
+
+### Stored secrets and sensitive state
+
+| Item | Current storage |
+| --- | --- |
+| Admin login + bcrypt hash | `/etc/tgproxy/panel.db` |
+| MTProto user secrets | `/etc/tgproxy/secrets/users.json` and panel DB user records |
+| Teleproxy runtime config | `/etc/tgproxy/teleproxy.toml` |
+| Bridge node config | `/etc/tgproxy/nodes/outbounds.json` and `/etc/tgproxy/sing-box.json` when Bridge is active |
+| TLS private keys | under the configured certificate directory, written with `0600` |
+| Update checker state | files under `/etc/tgproxy/` |
+
+### File permissions
+
+- Sensitive files under `/etc/tgproxy/` are expected to be owned by `root` and written with mode `0600`.
+- The config directory and its private subdirectories are created with root-only permissions.
+- `tgproxy-panel.service` does **not** use `DynamicUser=yes` because the current storage model requires writes to root-owned state in `/etc/tgproxy/`.
+- The panel systemd unit now sets `UMask=0077` so new state files are not created group/world-readable.
+
+## Authentication and Session Controls
+
+- Password hashing uses bcrypt with cost `12`.
+- Session cookies are `HttpOnly`, `Secure`, and `SameSite=Strict`.
+- Every POST form is protected by CSRF validation.
+- Failed login attempts are rate-limited to 5 per IP per 5 minutes, then blocked for 1 hour.
+- When the panel is behind local nginx, the app trusts the loopback proxy's `X-Real-IP` value instead of a client-appended `X-Forwarded-For` chain.
+- Audit rows record admin actions without raw secrets or session tokens.
+
+## Backup Handling
+
+- Backups include configuration/state needed to restore `/etc/tgproxy/`.
+- Backup archives are encrypted before being written to disk.
+- Backup output files are created with mode `0600`.
+- Restore validates archive entry paths and rejects absolute paths, `..`, and other escape attempts.
+- Restore enforces limits on archive size, file count, and per-file extraction size.
+- Custom stub ZIP uploads are size-limited before multipart form parsing and enforce file count, per-file, total extracted-size, path traversal, and symlink checks.
+
+## Update Verification and Rollback
+
+1. Update metadata is selected from GitHub Releases.
+2. The exact selected asset must have a matching SHA256 entry from the release checksum data.
+3. The candidate binary is downloaded to a temporary path and verified before replacement.
+4. The existing binary is backed up.
+5. The new binary replaces the old one only after checksum verification succeeds.
+6. The affected service is restarted and health-checked.
+7. If restart or health check fails, the backup binary is restored.
+
+## Logging and Audit Expectations
+
+- Raw admin passwords must not be written to logs or audit rows.
+- Raw MTProto secrets must not be written to logs or audit rows.
+- Session identifiers must not be written to audit rows.
+- Operator-visible logs are component-scoped (`panel`, `teleproxy`, `sing-box`, `nginx`) and should be treated as potentially sensitive operational data.
+- Teleproxy metric scraping and GitHub update metadata checks use explicit HTTP client timeouts; metric responses are size-capped before parsing.
+
+## Known Non-Goals
+
+- No v1 2FA for the admin panel
+- No multi-tenant admin roles
+- No public API
