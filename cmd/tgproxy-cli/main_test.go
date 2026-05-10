@@ -23,6 +23,7 @@ func (stubExecutor) Download(string, string, string) error            { return n
 func (stubExecutor) InstallFile(string, string, os.FileMode) error    { return nil }
 func (stubExecutor) InitPanelDB(string, install.PanelBootstrap) error { return nil }
 func (stubExecutor) AptInstall(...string) error                       { return nil }
+func (stubExecutor) EnsureSystemUser(string) error                    { return nil }
 func (stubExecutor) EnableService(string) error                       { return nil }
 func (stubExecutor) StartService(string) error                        { return nil }
 func (stubExecutor) ReloadService(string) error                       { return nil }
@@ -44,6 +45,12 @@ type installPromptStub struct {
 	strings  []string
 	selects  []string
 	confirms []bool
+}
+
+func TestInstallCmdDoesNotPrintUsageForRuntimeErrors(t *testing.T) {
+	if !installCmd.SilenceUsage {
+		t.Fatal("install command must suppress usage output for runtime failures")
+	}
 }
 
 func (s *installPromptStub) AskString(string, string) (string, error) {
@@ -527,6 +534,9 @@ func TestRunInstallCallsHealthCheckOnSuccess(t *testing.T) {
 	if !strings.Contains(out.String(), "Services healthy") {
 		t.Fatalf("expected 'Services healthy' in output, got: %s", out.String())
 	}
+	if strings.Index(out.String(), "Panel URL:") < strings.Index(out.String(), "Services healthy") {
+		t.Fatalf("credentials must be printed after final health status, got:\n%s", out.String())
+	}
 }
 
 func TestRunInstallStopsServicesOnHealthCheckFailure(t *testing.T) {
@@ -585,6 +595,63 @@ func TestRunInstallStopsServicesOnHealthCheckFailure(t *testing.T) {
 	}
 	if !found("tgproxy-panel.service") {
 		t.Errorf("expected tgproxy-panel.service to be stopped, got: %v", stopped)
+	}
+}
+
+func TestRunInstallPrintsCredentialsAtEndOnHealthCheckFailure(t *testing.T) {
+	oldUnattended := unattended
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuild := buildSinglePlan
+	oldExec := newExecutor
+	oldPostInstall := runPostInstallCheck
+	oldStop := stopServiceFn
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuild
+		newExecutor = oldExec
+		runPostInstallCheck = oldPostInstall
+		stopServiceFn = oldStop
+	})
+
+	unattended = true
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+	buildSinglePlan = func(config.Config, config.InstallPaths, int, install.LocalBinaries) (install.Plan, error) {
+		return install.Plan{
+			Creds: install.GeneratedCreds{
+				PanelPath:     "/p-test/",
+				AdminLogin:    "admin",
+				AdminPassword: "password",
+				FirstUser:     secrets.UserSecret{Label: "user1"},
+			},
+		}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+	stopServiceFn = func(string) {}
+	runPostInstallCheck = func() error { return fmt.Errorf("teleproxy down") }
+
+	var out strings.Builder
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	err := runInstall(cmd, nil)
+	if err == nil {
+		t.Fatal("expected health check error")
+	}
+
+	output := out.String()
+	verifyIdx := strings.Index(output, "Installation complete. Verifying services")
+	credsIdx := strings.Index(output, "Panel URL:")
+	if verifyIdx < 0 || credsIdx < 0 {
+		t.Fatalf("expected verification message and final credentials, got:\n%s", output)
+	}
+	if credsIdx < verifyIdx {
+		t.Fatalf("credentials must be printed after installation output, got:\n%s", output)
 	}
 }
 

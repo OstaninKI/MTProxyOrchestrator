@@ -34,6 +34,7 @@ Out of scope for v1:
 
 - Sensitive files under `/etc/tgproxy/` are expected to be owned by `root` and written with mode `0600`.
 - The config directory and its private subdirectories are created with root-only permissions.
+- `teleproxy.service` runs with a dedicated `teleproxy` system user created during install. The unit keeps only the capabilities needed to bind port 443 and let Teleproxy perform its internal user/group switch.
 - `tgproxy-panel.service` does **not** use `DynamicUser=yes` because the current storage model requires writes to root-owned state in `/etc/tgproxy/`.
 - The panel systemd unit now sets `UMask=0077` so new state files are not created group/world-readable.
 

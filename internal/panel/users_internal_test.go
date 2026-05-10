@@ -1,6 +1,8 @@
 package panel
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -87,5 +89,19 @@ func TestNextResetIn(t *testing.T) {
 	startMin := now.Add(-23*time.Hour - 30*time.Minute).Unix()
 	if got := nextResetIn(startMin, "daily", now); got != "resets in 30m" {
 		t.Errorf("minutes only: got %q", got)
+	}
+}
+
+func TestUserListDashboardLinkUsesPanelPath(t *testing.T) {
+	var buf bytes.Buffer
+
+	userListPage(&buf, nil, "csrf", "", "/p-example/")
+
+	html := buf.String()
+	if !strings.Contains(html, `href="/p-example/dashboard"`) {
+		t.Fatalf("users page must link back inside panel path:\n%s", html)
+	}
+	if strings.Contains(html, `href="../"`) {
+		t.Fatalf("users page must not use parent-relative dashboard link:\n%s", html)
 	}
 }

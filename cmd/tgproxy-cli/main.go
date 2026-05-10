@@ -62,9 +62,10 @@ var (
 )
 
 var installCmd = &cobra.Command{
-	Use:   "install",
-	Short: "Install MTProto proxy (Single or Bridge mode)",
-	RunE:  runInstall,
+	Use:          "install",
+	Short:        "Install MTProto proxy (Single or Bridge mode)",
+	SilenceUsage: true,
+	RunE:         runInstall,
 }
 
 func init() {
@@ -183,11 +184,6 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("build plan: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Panel URL:  https://%s:%d%s\n", displayPanelHost(cfg.PanelDomain), panelPort, plan.Creds.PanelPath)
-	fmt.Fprintf(cmd.OutOrStdout(), "Login:      %s\n", plan.Creds.AdminLogin)
-	fmt.Fprintf(cmd.OutOrStdout(), "Password:   %s\n", plan.Creds.AdminPassword)
-	fmt.Fprintf(cmd.OutOrStdout(), "First user: tg://proxy?server=<your-ip>&port=443&secret=%s\n", plan.Creds.FirstUser.Secret.Hex())
-
 	exec := newExecutor()
 	inst := install.Installer{Executor: exec, Plan: plan}
 	if err := inst.Run(); err != nil {
@@ -199,10 +195,22 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		// Stop panel before teleproxy: panel depends on teleproxy being available.
 		stopServiceFn("tgproxy-panel.service")
 		stopServiceFn("teleproxy.service")
+		fmt.Fprintln(cmd.OutOrStdout(), "\nGenerated access details (valid after services are fixed):")
+		printInstallAccess(cmd, cfg, panelPort, plan)
+		fmt.Fprintln(cmd.ErrOrStderr(), "Inspect teleproxy with: journalctl -u teleproxy.service -n 120 --no-pager")
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Services healthy.")
+	fmt.Fprintln(cmd.OutOrStdout(), "\nGenerated access details:")
+	printInstallAccess(cmd, cfg, panelPort, plan)
 	return nil
+}
+
+func printInstallAccess(cmd *cobra.Command, cfg config.Config, panelPort int, plan install.Plan) {
+	fmt.Fprintf(cmd.OutOrStdout(), "Panel URL:  https://%s:%d%s\n", displayPanelHost(cfg.PanelDomain), panelPort, plan.Creds.PanelPath)
+	fmt.Fprintf(cmd.OutOrStdout(), "Login:      %s\n", plan.Creds.AdminLogin)
+	fmt.Fprintf(cmd.OutOrStdout(), "Password:   %s\n", plan.Creds.AdminPassword)
+	fmt.Fprintf(cmd.OutOrStdout(), "First user: tg://proxy?server=<your-ip>&port=443&secret=%s\n", plan.Creds.FirstUser.Secret.Hex())
 }
 
 func displayPanelHost(domain string) string {

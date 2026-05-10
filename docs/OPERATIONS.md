@@ -39,12 +39,16 @@ It then installs:
 - `tgproxy-cli`
 - `tgproxy-panel`
 - `teleproxy`
+- `teleproxy` system user
 - nginx stub site configuration
+- nginx loopback TLS stub site configuration when public panel TLS is configured
 - `teleproxy.service`
 - `tgproxy-panel.service`
 - `/etc/tgproxy/teleproxy.toml`
 - `/etc/tgproxy/secrets/users.json`
 - `/etc/tgproxy/panel.db`
+
+Generated panel credentials and the first user link are printed after the install health check result. If the final health check fails, the generated access details are still printed for recovery, and the CLI points the operator at the Teleproxy journal for diagnosis.
 
 ## Current Runtime Model
 
@@ -56,6 +60,8 @@ Current install flow provisions Single mode only.
 Telegram client -> Teleproxy :443 -> Telegram DC
 Unknown probes/browser traffic -> nginx stub on loopback
 ```
+
+When the public panel TLS flags are used, Teleproxy's FakeTLS fallback points at a loopback HTTPS stub on `127.0.0.1:9443` using the panel certificate. This keeps the public mask host and the fallback certificate aligned for domain installs.
 
 ### Bridge mode
 
@@ -80,6 +86,7 @@ The current panel process listens on loopback only:
 - health endpoint: `http://127.0.0.1:18080/<generated-panel-path>/health`
 
 The authenticated UI is mounted under the generated random path printed during install.
+Dashboard navigation and subpage "Dashboard" links are generated from that path, so deployments mounted under `/p-.../` do not leak users back to the site root.
 
 ### Remote access
 

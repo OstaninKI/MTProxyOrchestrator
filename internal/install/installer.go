@@ -21,6 +21,7 @@ type Executor interface {
 	InstallFile(sourcePath, destPath string, mode os.FileMode) error
 	InitPanelDB(path string, bootstrap PanelBootstrap) error
 	AptInstall(packages ...string) error
+	EnsureSystemUser(name string) error
 	EnableService(name string) error
 	StartService(name string) error
 	ReloadService(name string) error
@@ -86,6 +87,8 @@ func (i Installer) applyStep(step Step) error {
 			pkgs = []string{step.Target}
 		}
 		return i.Executor.AptInstall(pkgs...)
+	case StepEnsureSystemUser:
+		return i.Executor.EnsureSystemUser(step.Target)
 	case StepEnableService:
 		return i.Executor.EnableService(step.Target)
 	case StepStartService:
@@ -147,7 +150,7 @@ func (i Installer) rollbackJournal(journal []Step) {
 			err = rb.RemoveService(step.Target)
 		case StepEnableNginxSite:
 			err = rb.RemoveNginxSite(step.Target)
-		case StepAptInstall, StepReloadService:
+		case StepAptInstall, StepEnsureSystemUser, StepReloadService:
 			i.logger().Printf("rollback: skipping %s (no-op)", step.Kind)
 			continue
 		default:
@@ -226,6 +229,19 @@ func (e *SystemExecutor) InitPanelDB(path string, bootstrap PanelBootstrap) erro
 func (e *SystemExecutor) AptInstall(packages ...string) error {
 	args := append([]string{"apt-get", "install", "-y"}, packages...)
 	cmd := exec.Command("sudo", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func (e *SystemExecutor) EnsureSystemUser(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("system user name is required")
+	}
+	if err := exec.Command("id", "-u", name).Run(); err == nil {
+		return nil
+	}
+	cmd := exec.Command("useradd", "--system", "--user-group", "--no-create-home", "--shell", "/usr/sbin/nologin", name)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

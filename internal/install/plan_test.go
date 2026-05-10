@@ -193,6 +193,68 @@ func TestSinglePlanWritesPanelProxyWhenTLSConfigPresent(t *testing.T) {
 	t.Fatalf("Single plan must write nginx panel proxy config to %s when TLS config is present", wantTarget)
 }
 
+func TestSinglePlanWritesTLSStubBackendWhenTLSConfigPresent(t *testing.T) {
+	cfg := config.Default()
+	cfg.MaskHost = "habr.com"
+	cfg.PanelDomain = "proxy.example.com"
+	cfg.PanelCertPath = "/etc/tgproxy/certs/proxy.example.com/cert.pem"
+	cfg.PanelKeyPath = "/etc/tgproxy/certs/proxy.example.com/key.pem"
+
+	plan, err := install.BuildSinglePlan(cfg, config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepWriteFile || s.Target != "/etc/nginx/sites-available/tgproxy-stub-tls" {
+			continue
+		}
+		body := string(s.Content)
+		for _, want := range []string{
+			"listen 127.0.0.1:9443 ssl",
+			"server_name proxy.example.com",
+			"ssl_certificate     " + cfg.PanelCertPath,
+			"root /var/www/tgproxy-stub",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("TLS stub config missing %q:\n%s", want, body)
+			}
+		}
+		return
+	}
+	t.Fatal("Single plan must write a loopback TLS stub backend when certificate config is present")
+}
+
+func TestSinglePlanUsesPanelDomainAsTeleproxyFallbackWhenTLSConfigPresent(t *testing.T) {
+	cfg := config.Default()
+	cfg.MaskHost = "habr.com"
+	cfg.PanelDomain = "proxy.example.com"
+	cfg.PanelCertPath = "/etc/tgproxy/certs/proxy.example.com/cert.pem"
+	cfg.PanelKeyPath = "/etc/tgproxy/certs/proxy.example.com/key.pem"
+	paths := config.DefaultPaths()
+
+	plan, err := install.BuildSinglePlan(cfg, paths, 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var teleproxyUsesLocalFallback, panelUnitUsesClientMask bool
+	for _, s := range plan.Steps {
+		if s.Kind == install.StepWriteFile && s.Target == paths.TeleproxyTOML {
+			teleproxyUsesLocalFallback = strings.Contains(string(s.Content), `domain = "proxy.example.com:9443"`)
+		}
+		if s.Kind == install.StepWriteFile && s.Target == paths.PanelService {
+			panelUnitUsesClientMask = strings.Contains(string(s.Content), "--mask-host proxy.example.com")
+		}
+	}
+	if !teleproxyUsesLocalFallback {
+		t.Fatal("Teleproxy config must point probe fallback at the loopback TLS stub backend")
+	}
+	if !panelUnitUsesClientMask {
+		t.Fatal("panel-generated user links must use the same public domain as Teleproxy expects")
+	}
+}
+
 func TestSinglePlanEnablesAndReloadsNginxForPanelProxy(t *testing.T) {
 	cfg := config.Default()
 	cfg.PanelDomain = "proxy.example.com"
@@ -244,6 +306,33 @@ func TestSinglePlanHasTeleproxy(t *testing.T) {
 		}
 	}
 	t.Error("Single plan must include a download-binary step for teleproxy")
+}
+
+func TestSinglePlanEnsuresTeleproxyUserBeforeStartingService(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userIdx := -1
+	startIdx := -1
+	for idx, s := range plan.Steps {
+		if s.Kind == install.StepEnsureSystemUser && s.Target == "teleproxy" {
+			userIdx = idx
+		}
+		if s.Kind == install.StepStartService && s.Target == "teleproxy" {
+			startIdx = idx
+		}
+	}
+	if userIdx < 0 {
+		t.Fatal("Single plan must ensure the teleproxy system user exists")
+	}
+	if startIdx < 0 {
+		t.Fatal("Single plan must start teleproxy")
+	}
+	if userIdx > startIdx {
+		t.Fatalf("teleproxy user must be created before service start: user step %d, start step %d", userIdx, startIdx)
+	}
 }
 
 func TestSinglePlanTeleproxyDownloadHasSHA256(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 
 const (
 	PanelBackendPort       = 18080
+	stubTLSBackendPort     = 9443
 	bridgeSOCKS5Addr       = "127.0.0.1:1080"
 	bridgeSOCKS5ListenAddr = "127.0.0.1"
 	bridgeSOCKS5ListenPort = 1080
@@ -26,16 +27,17 @@ const (
 type StepKind string
 
 const (
-	StepAptInstall      StepKind = "apt-install"
-	StepCreateDir       StepKind = "create-dir"
-	StepDownloadBinary  StepKind = "download-binary"
-	StepInstallFile     StepKind = "install-file"
-	StepInitPanelDB     StepKind = "init-panel-db"
-	StepWriteFile       StepKind = "write-file"
-	StepEnableService   StepKind = "enable-service"
-	StepStartService    StepKind = "start-service"
-	StepReloadService   StepKind = "reload-service"
-	StepEnableNginxSite StepKind = "enable-nginx-site"
+	StepAptInstall       StepKind = "apt-install"
+	StepCreateDir        StepKind = "create-dir"
+	StepDownloadBinary   StepKind = "download-binary"
+	StepInstallFile      StepKind = "install-file"
+	StepInitPanelDB      StepKind = "init-panel-db"
+	StepWriteFile        StepKind = "write-file"
+	StepEnsureSystemUser StepKind = "ensure-system-user"
+	StepEnableService    StepKind = "enable-service"
+	StepStartService     StepKind = "start-service"
+	StepReloadService    StepKind = "reload-service"
+	StepEnableNginxSite  StepKind = "enable-nginx-site"
 )
 
 type LocalBinaries struct {
@@ -169,13 +171,21 @@ type bridgeData struct {
 }
 
 func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, binaries LocalBinaries, creds GeneratedCreds, bridgeMode *bridgeData) (Plan, error) {
+	effectiveMaskHost := cfg.MaskHost
+	teleproxyDomain := cfg.MaskHost
+	hasTLSStubBackend := cfg.PanelDomain != "" && cfg.PanelCertPath != "" && cfg.PanelKeyPath != ""
+	if hasTLSStubBackend {
+		effectiveMaskHost = cfg.PanelDomain
+		teleproxyDomain = fmt.Sprintf("%s:%d", cfg.PanelDomain, stubTLSBackendPort)
+		cfg.MaskHost = effectiveMaskHost
+	}
 	socks5Addr := ""
 	if bridgeMode != nil {
 		socks5Addr = bridgeSOCKS5Addr
 	}
 	tpCfg := teleproxy.Config{
 		Port:       cfg.MTProtoPort,
-		MaskHost:   cfg.MaskHost,
+		MaskHost:   teleproxyDomain,
 		StatsPort:  9091,
 		SOCKS5Addr: socks5Addr,
 		Users: []teleproxy.UserEntry{
@@ -200,6 +210,16 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 		ACMESnippetPath: acmeSnippetPath,
 	}
 	ngData := ngCfg.Render()
+	var tlsStubData []byte
+	if hasTLSStubBackend {
+		tlsStubData = nginx.TLSStubConfig{
+			ListenPort: stubTLSBackendPort,
+			ServerName: cfg.PanelDomain,
+			StubRoot:   paths.StubDir,
+			CertPath:   cfg.PanelCertPath,
+			KeyPath:    cfg.PanelKeyPath,
+		}.Render()
+	}
 	var panelProxyData []byte
 	if cfg.PanelDomain != "" && cfg.PanelCertPath != "" && cfg.PanelKeyPath != "" {
 		panelProxyData = nginx.PanelProxyConfig{
@@ -224,7 +244,7 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 		PanelPath:   creds.PanelPath,
 		ListenAddr:  fmt.Sprintf("127.0.0.1:%d", PanelBackendPort),
 		MTProtoPort: cfg.MTProtoPort,
-		MaskHost:    cfg.MaskHost,
+		MaskHost:    effectiveMaskHost,
 		StatsPort:   9091,
 		LogPath:     paths.PanelLog,
 		ConfigDir:   paths.ConfigDir,
@@ -252,6 +272,7 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 		{Kind: StepWriteFile, Target: paths.ConfigFile, Content: renderRootConfig(cfg), Mode: 0o600},
 		{Kind: StepWriteFile, Target: paths.TeleproxyTOML, Content: tpData, Mode: 0o600},
 		{Kind: StepWriteFile, Target: paths.UsersJSON, Content: usersJSONContent(creds.FirstUser), Mode: 0o600},
+		{Kind: StepEnsureSystemUser, Target: "teleproxy"},
 		{
 			Kind:   StepInitPanelDB,
 			Target: paths.PanelDB,
@@ -306,6 +327,15 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 			{Kind: StepReloadService, Target: "nginx"},
 		}
 		steps = append(steps[:insertAt], append(extra, steps[insertAt:]...)...)
+	}
+	if len(tlsStubData) > 0 {
+		stubIdx := indexOfWriteTarget(steps, paths.StubDir+"/index.html")
+		extra := []Step{
+			{Kind: StepWriteFile, Target: "/etc/nginx/sites-available/tgproxy-stub-tls", Content: tlsStubData, Mode: 0o644},
+			{Kind: StepEnableNginxSite, Target: "tgproxy-stub-tls"},
+			{Kind: StepReloadService, Target: "nginx"},
+		}
+		steps = append(steps[:stubIdx+1], append(extra, steps[stubIdx+1:]...)...)
 	}
 
 	return Plan{

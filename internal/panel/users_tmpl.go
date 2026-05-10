@@ -46,7 +46,7 @@ a{color:#2563eb}
 </head>
 <body>
 <h1>Users</h1>
-<a href="../">← Dashboard</a>
+<a href="{{.PanelPath}}dashboard">← Dashboard</a>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <form method="post" action="users/create">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
@@ -152,6 +152,7 @@ type userListData struct {
 	CSRFField string
 	CSRFToken string
 	Error     string
+	PanelPath string
 }
 
 type userCreatedData struct {
@@ -159,12 +160,13 @@ type userCreatedData struct {
 	TelegramURL string
 }
 
-func userListPage(w io.Writer, users []UserRow, csrfToken, errMsg string) {
+func userListPage(w io.Writer, users []UserRow, csrfToken, errMsg, panelPath string) {
 	userListTmpl.Execute(w, userListData{ //nolint:errcheck
 		Users:     users,
 		CSRFField: CSRFField(),
 		CSRFToken: csrfToken,
 		Error:     errMsg,
+		PanelPath: panelPath,
 	})
 }
 

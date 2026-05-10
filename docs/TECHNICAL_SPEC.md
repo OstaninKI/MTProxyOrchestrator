@@ -102,9 +102,9 @@ Backups include only configuration and state required to restore `/etc/tgproxy/`
 8. For `Bridge`, ask for at least one outbound node and routing strategy.
 9. Generate a random panel path, admin login, and admin password.
 10. Download Teleproxy binaries and, when required, sing-box binaries from GitHub Releases with SHA256 verification.
-11. Create configs, directories, permissions, and systemd units.
+11. Create configs, directories, permissions, required system users, and systemd units.
 12. Start services and run a health check.
-13. Print the panel URL, login, password, and first `tg://` link.
+13. Print the panel URL, login, password, and first `tg://` link after the health result. If the health check fails, still print the generated access details for recovery and point the operator at component logs.
 
 ### Defaults
 
@@ -193,6 +193,8 @@ Backups include only configuration and state required to restore `/etc/tgproxy/`
 - Component versions and available update indicator.
 - Top 5 users by traffic.
 - Periods: 1 hour, 24 hours, 7 days, 30 days.
+- Modern server-rendered operational layout using card, badge, button, and table patterns.
+- Dashboard navigation and subpage back links must be generated from the active panel path, never from site-root or parent-relative URLs.
 
 #### Users
 
@@ -341,7 +343,7 @@ Retention:
 ## 9. Security
 
 - Configs and secrets: owner `root`, mode `600`.
-- systemd: `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `DynamicUser=yes` where applicable.
+- systemd: `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, narrowly scoped capabilities, `DynamicUser=yes` where applicable. Teleproxy is installed with a dedicated system user and retains `CAP_NET_BIND_SERVICE`, `CAP_SETUID`, and `CAP_SETGID` so the process can bind port 443 and perform its internal privilege drop.
 - nginx: TLS 1.2/1.3, strong cipher suites, HSTS, `server_tokens off`.
 - Logs: daily logrotate, 14-day retention, no secret logging.
 - The panel does not execute arbitrary shell commands based on user input.

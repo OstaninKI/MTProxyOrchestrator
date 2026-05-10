@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ type fakeExecutor struct {
 	downloads []string
 	installs  []string
 	apts      []string
+	users     []string
 	enables   []string
 	starts    []string
 	reloads   []string
@@ -53,6 +55,11 @@ func (f *fakeExecutor) InitPanelDB(path string, bootstrap install.PanelBootstrap
 
 func (f *fakeExecutor) AptInstall(packages ...string) error {
 	f.apts = append(f.apts, packages...)
+	return nil
+}
+
+func (f *fakeExecutor) EnsureSystemUser(name string) error {
+	f.users = append(f.users, name)
 	return nil
 }
 
@@ -154,6 +161,23 @@ func TestInstallSeedsPanelDB(t *testing.T) {
 	}
 }
 
+func TestInstallerEnsuresTeleproxySystemUser(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fe := &fakeExecutor{}
+	inst := install.Installer{Executor: fe, Plan: plan}
+	if err := inst.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.Contains(fe.users, "teleproxy") {
+		t.Fatalf("installer must ensure teleproxy system user, got %v", fe.users)
+	}
+}
+
 func TestInstallCopiesLocalBinaries(t *testing.T) {
 	paths := config.DefaultPaths()
 	plan, err := install.BuildSinglePlan(config.Default(), paths, 8443, testLocalBinaries())
@@ -210,6 +234,8 @@ func (r *rollbackExecutor) InitPanelDB(_ string, _ install.PanelBootstrap) error
 }
 
 func (r *rollbackExecutor) AptInstall(_ ...string) error { return r.record() }
+
+func (r *rollbackExecutor) EnsureSystemUser(_ string) error { return r.record() }
 
 func (r *rollbackExecutor) EnableService(_ string) error { return r.record() }
 

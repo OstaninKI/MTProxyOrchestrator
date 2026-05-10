@@ -51,6 +51,7 @@ func (s *Server) handleBridgePage(w http.ResponseWriter, r *http.Request) {
 		CSRFToken: csrfToken,
 		Nodes:     nl.Nodes,
 		Strategy:  nl.Strategy,
+		PanelPath: s.PanelPath,
 	})
 }
 
@@ -367,6 +368,7 @@ type bridgePageData struct {
 	Nodes     []bridge.Node
 	Strategy  string
 	Flash     string // optional informational message
+	PanelPath string
 }
 
 var bridgeTmpl = template.Must(template.New("bridge").Parse(`<!DOCTYPE html>
@@ -496,7 +498,7 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 </form>
 {{end}}
 
-<p style="margin-top:2rem"><a href="../dashboard">← Dashboard</a></p>
+<p style="margin-top:2rem"><a href="{{.PanelPath}}dashboard">← Dashboard</a></p>
 </body>
 </html>
 `))

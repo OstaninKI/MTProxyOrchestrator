@@ -39,6 +39,43 @@ var stubTmpl = template.Must(template.New("nginx-stub").Parse(`server {
 }
 `))
 
+// TLSStubConfig holds fields for the loopback HTTPS stub backend that Teleproxy
+// forwards invalid probes to when a site certificate is available.
+type TLSStubConfig struct {
+	ListenPort int
+	ServerName string
+	StubRoot   string
+	CertPath   string
+	KeyPath    string
+}
+
+func (c TLSStubConfig) Render() []byte {
+	var buf bytes.Buffer
+	if err := tlsStubTmpl.Execute(&buf, c); err != nil {
+		panic(fmt.Sprintf("nginx TLS stub config render: %v", err))
+	}
+	return buf.Bytes()
+}
+
+var tlsStubTmpl = template.Must(template.New("nginx-tls-stub").Parse(`server {
+    listen 127.0.0.1:{{.ListenPort}} ssl;
+    server_name {{.ServerName}};
+    server_tokens off;
+
+    ssl_certificate     {{.CertPath}};
+    ssl_certificate_key {{.KeyPath}};
+    ssl_protocols TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    root {{.StubRoot}};
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+`))
+
 // PanelProxyConfig holds fields for the TLS reverse proxy nginx server block
 // that fronts the admin panel (tgproxy-panel) on a domain install.
 type PanelProxyConfig struct {

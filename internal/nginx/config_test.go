@@ -31,6 +31,29 @@ func TestStubRenderLoopbackOnly(t *testing.T) {
 	}
 }
 
+func TestTLSStubRenderLoopbackOnlyWithCertificate(t *testing.T) {
+	cfg := nginx.TLSStubConfig{
+		ListenPort: 9443,
+		ServerName: "proxy.example.com",
+		StubRoot:   "/var/www/tgproxy-stub",
+		CertPath:   "/etc/tgproxy/certs/proxy.example.com/cert.pem",
+		KeyPath:    "/etc/tgproxy/certs/proxy.example.com/key.pem",
+	}
+	out := cfg.Render()
+	for _, want := range []string{
+		"listen 127.0.0.1:9443 ssl",
+		"server_name proxy.example.com",
+		"ssl_certificate     /etc/tgproxy/certs/proxy.example.com/cert.pem",
+		"ssl_certificate_key /etc/tgproxy/certs/proxy.example.com/key.pem",
+		"ssl_protocols TLSv1.3",
+		"root /var/www/tgproxy-stub",
+	} {
+		if !bytes.Contains(out, []byte(want)) {
+			t.Fatalf("TLS stub config missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderGolden(t *testing.T) {
 	got := baseCfg.Render()
 	path := filepath.Join("testdata", "stub.conf")

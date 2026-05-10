@@ -40,6 +40,12 @@ func TestStatusCmd_RegistratedInRoot(t *testing.T) {
 	}
 }
 
+func TestStatusCmdDoesNotPrintUsageForRuntimeErrors(t *testing.T) {
+	if !statusCmd.SilenceUsage {
+		t.Fatal("status command must suppress usage output for runtime failures")
+	}
+}
+
 func TestUpdateCmd_RegistratedInRoot(t *testing.T) {
 	found := false
 	for _, c := range rootCmd.Commands() {

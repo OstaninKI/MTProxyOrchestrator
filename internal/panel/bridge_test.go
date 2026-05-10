@@ -24,6 +24,24 @@ func TestBridgePageFormsUseValidateCSRFField(t *testing.T) {
 	}
 }
 
+func TestBridgePageDashboardLinkUsesPanelPath(t *testing.T) {
+	var buf bytes.Buffer
+
+	bridgePage(&buf, bridgePageData{
+		CSRFField: CSRFField(),
+		CSRFToken: "test-token",
+		PanelPath: "/p-example/",
+	})
+
+	html := buf.String()
+	if !strings.Contains(html, `href="/p-example/dashboard"`) {
+		t.Fatalf("bridge page must link back inside panel path:\n%s", html)
+	}
+	if strings.Contains(html, `href="../dashboard"`) {
+		t.Fatalf("bridge page must not use parent-relative dashboard link:\n%s", html)
+	}
+}
+
 func TestSingboxDownloadIsVerifiedReleaseAsset(t *testing.T) {
 	if !strings.Contains(singboxDownloadURL(), "/releases/download/") {
 		t.Fatalf("sing-box URL must use a pinned release asset, got %q", singboxDownloadURL())

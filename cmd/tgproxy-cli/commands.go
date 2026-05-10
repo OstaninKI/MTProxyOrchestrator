@@ -57,8 +57,9 @@ var (
 
 // statusCmd prints service health for the current mode.
 var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show service health",
+	Use:          "status",
+	Short:        "Show service health",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		checker := newChecker()
 		mode := currentRuntimeMode(defaultPaths())

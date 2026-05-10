@@ -47,6 +47,15 @@ func TestTeleproxyUnitHasNetBindCap(t *testing.T) {
 	}
 }
 
+func TestTeleproxyUnitAllowsInternalPrivilegeDrop(t *testing.T) {
+	got := baseTeleproxy.Render()
+	for _, capName := range []string{"CAP_SETUID", "CAP_SETGID"} {
+		if !bytes.Contains(got, []byte(capName)) {
+			t.Errorf("teleproxy unit missing %s required for teleproxy's internal user switch:\n%s", capName, got)
+		}
+	}
+}
+
 func TestPanelUnitHasNoNewPrivileges(t *testing.T) {
 	got := basePanel.Render()
 	if !bytes.Contains(got, []byte("NoNewPrivileges=yes")) {

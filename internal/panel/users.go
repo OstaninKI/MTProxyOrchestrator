@@ -341,7 +341,7 @@ func (s *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 	}
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	userListPage(w, users, tok, "")
+	userListPage(w, users, tok, "", s.PanelPath)
 }
 
 func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
@@ -356,7 +356,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		tok, _ := NewCSRFToken()
 		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		userListPage(w, users, tok, "Invalid label: "+err.Error())
+		userListPage(w, users, tok, "Invalid label: "+err.Error(), s.PanelPath)
 		return
 	}
 
@@ -373,7 +373,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		tok, _ := NewCSRFToken()
 		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		userListPage(w, users, tok, err.Error())
+		userListPage(w, users, tok, err.Error(), s.PanelPath)
 		return
 	}
 

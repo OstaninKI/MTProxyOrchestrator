@@ -78,6 +78,7 @@ Key paths used by the current implementation:
 - `/etc/systemd/system/teleproxy.service`
 - `/etc/systemd/system/tgproxy-panel.service`
 - `/etc/nginx/sites-available/tgproxy-stub`
+- `/etc/nginx/sites-available/tgproxy-stub-tls` when panel TLS flags are used
 - `/etc/nginx/sites-available/tgproxy-panel` when panel TLS flags are used
 
 ## Admin Panel Backend
@@ -87,6 +88,7 @@ Key paths used by the current implementation:
 - Protocol: plain HTTP on loopback
 - Health endpoint: `http://127.0.0.1:18080/<generated-panel-path>/health`
 - Authenticated UI: mounted under the generated random path only
+- Dashboard navigation and subpage back links preserve the generated panel path.
 
 ## Common Commands
 

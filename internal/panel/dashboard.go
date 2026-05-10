@@ -25,6 +25,7 @@ type DashboardData struct {
 	Services        []health.ServiceState
 	BridgeSteps     []health.BridgeStepStatus // populated in Bridge mode
 	IsBridge        bool
+	PanelPath       string
 	Period          metrics.Period
 	TopUsers        []metrics.UserTraffic
 	LiveConnections []metrics.Sample // latest per-user active connection counts
@@ -111,6 +112,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Services:        services,
 		BridgeSteps:     bridgeSteps,
 		IsBridge:        isBridge,
+		PanelPath:       s.PanelPath,
 		Period:          period,
 		TopUsers:        topUsers,
 		LiveConnections: liveConns,
