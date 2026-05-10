@@ -41,7 +41,7 @@ form.inline{display:inline}
 <h1>Users</h1>
 <a href="{{.PanelPath}}dashboard">← Dashboard</a>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="post" action="users/create">
+<form method="post" action="{{.PanelPath}}users/create">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <input type="text" name="label" placeholder="label (a-z0-9_)" required>
 <button type="submit">Add user</button>
@@ -79,23 +79,23 @@ form.inline{display:inline}
   </td>
   <td>{{.CreatedAt.Format "2006-01-02"}}</td>
   <td>
-    <form method="post" action="users/{{.ID}}/toggle" class="inline">
+    <form method="post" action="{{$.PanelPath}}users/{{.ID}}/toggle" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
     </form>
-    <form method="post" action="users/{{.ID}}/rotate" class="inline">
+    <form method="post" action="{{$.PanelPath}}users/{{.ID}}/rotate" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">Rotate</button>
     </form>
-    <form method="post" action="users/{{.ID}}/suspend" class="inline">
+    <form method="post" action="{{$.PanelPath}}users/{{.ID}}/suspend" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">{{if .QuotaSuspended}}Unsuspend{{else}}Suspend{{end}}</button>
     </form>
-    <form method="post" action="users/{{.ID}}/quota/reset" class="inline">
+    <form method="post" action="{{$.PanelPath}}users/{{.ID}}/quota/reset" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">Reset quota</button>
     </form>
-    <form method="post" action="users/{{.ID}}/quota" class="inline">
+    <form method="post" action="{{$.PanelPath}}users/{{.ID}}/quota" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <input type="number" step="0.1" min="0" name="gb" placeholder="GB" style="width:5em">
       <select name="period">
@@ -106,7 +106,7 @@ form.inline{display:inline}
       <input type="number" min="0" max="100" name="warn_pct" value="80" style="width:4em">
       <button type="submit">Set quota</button>
     </form>
-    <form method="post" action="users/{{.ID}}/delete" class="inline">
+    <form method="post" action="{{$.PanelPath}}users/{{.ID}}/delete" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit" onclick="return confirm('Delete {{.Label}}?')">Delete</button>
     </form>

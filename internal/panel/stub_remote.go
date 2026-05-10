@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	githubTreeURL  = "https://api.github.com/repos/learning-zone/website-templates/git/trees/main?recursive=1"
-	githubRawBase  = "https://raw.githubusercontent.com/learning-zone/website-templates/main/"
+	githubTreeURL  = "https://api.github.com/repos/learning-zone/website-templates/git/trees/master?recursive=1"
+	githubRawBase  = "https://raw.githubusercontent.com/learning-zone/website-templates/master/"
 	treeCacheTTL   = 30 * time.Minute
 	maxRemoteFile  = 10 << 20 // 10 MB per file
 	maxRemoteTotal = 50 << 20 // 50 MB total per template

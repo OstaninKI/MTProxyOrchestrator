@@ -114,7 +114,9 @@ type UserRepo struct {
 // List returns all non-deleted users ordered by creation time.
 func (r UserRepo) List() ([]UserRow, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, label, secret_hex, enabled, created_at, rotated_at,
+		`SELECT id, label, secret_hex, enabled,
+		        strftime('%Y-%m-%d %H:%M:%S', created_at),
+		        strftime('%Y-%m-%d %H:%M:%S', rotated_at),
 		        quota_bytes, quota_period, quota_warn_pct, quota_suspended,
 		        quota_period_start, quota_used_bytes, quota_warned
 		 FROM users WHERE deleted_at IS NULL ORDER BY created_at ASC`,

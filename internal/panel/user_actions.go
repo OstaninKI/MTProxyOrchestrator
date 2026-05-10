@@ -90,7 +90,7 @@ func (s *Server) handleUserToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "../users", http.StatusSeeOther)
+	http.Redirect(w, r, "../../users", http.StatusSeeOther)
 }
 
 func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +122,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "../users", http.StatusSeeOther)
+	http.Redirect(w, r, "../../users", http.StatusSeeOther)
 }
 
 func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
