@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -280,9 +281,11 @@ func (r UserRepo) Create(label, secretHex string) (int64, error) {
 		return 0, fmt.Errorf("maximum %d active users reached", maxActiveUsers)
 	}
 	var exists int
-	r.DB.QueryRow(
+	if err := r.DB.QueryRow(
 		`SELECT COUNT(*) FROM users WHERE label=? AND deleted_at IS NULL`, label,
-	).Scan(&exists)
+	).Scan(&exists); err != nil {
+		return 0, err
+	}
 	if exists > 0 {
 		return 0, fmt.Errorf("label %q already exists", label)
 	}
@@ -343,7 +346,7 @@ func (s *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 	}
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	userListPage(w, users, tok, "", s.PanelPath)
+	userListPage(w, users, tok, r.URL.Query().Get("error"), s.PanelPath)
 }
 
 func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
@@ -353,12 +356,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	label := strings.TrimSpace(r.FormValue("label"))
 	if err := secrets.ValidateUserLabel(label); err != nil {
-		repo := UserRepo{DB: s.DB}
-		users, _ := repo.List()
-		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		userListPage(w, users, tok, "Invalid label: "+err.Error(), s.PanelPath)
+		http.Redirect(w, r, s.PanelPath+"users?error="+url.QueryEscape("Invalid label: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -371,17 +369,14 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	repo := UserRepo{DB: s.DB}
 	id, err := repo.Create(label, secret.Hex())
 	if err != nil {
-		users, _ := repo.List()
-		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		userListPage(w, users, tok, err.Error(), s.PanelPath)
+		http.Redirect(w, r, s.PanelPath+"users?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
 	audit.Log(s.DB, s.sessionAdminID(r), "user.create", label, fmt.Sprintf("id=%d", id), clientIP(r)) //nolint:errcheck
 	if err := s.reloadTeleproxy(); err != nil {
 		_ = repo.Delete(id)
+		audit.Log(s.DB, s.sessionAdminID(r), "user.create_rollback", label, "user deleted after reload failure", clientIP(r)) //nolint:errcheck
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
 	}
