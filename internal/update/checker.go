@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,8 +25,8 @@ const (
 
 // componentRepo maps a Component to its GitHub owner/repo pair.
 var componentRepo = map[Component][2]string{
-	ComponentCLI:       {"mtproto-orchestrator", "mtproto-orchestrator"},
-	ComponentPanel:     {"mtproto-orchestrator", "mtproto-orchestrator"},
+	ComponentCLI:       {"OstaninKI", "MTProxyOrchestrator"},
+	ComponentPanel:     {"OstaninKI", "MTProxyOrchestrator"},
 	ComponentTeleproxy: {"teleproxy", "teleproxy"},
 	ComponentSingbox:   {"SagerNet", "sing-box"},
 }
@@ -199,9 +200,21 @@ func parseVersion(raw string) ([]int, bool) {
 	if raw == "" {
 		return nil, false
 	}
+	fixNum := 0
+	if idx := strings.Index(raw, "-"); idx >= 0 {
+		suffix := raw[idx+1:]
+		raw = raw[:idx]
+		if strings.HasPrefix(suffix, "f") {
+			suffix = suffix[1:]
+		}
+		n, err := strconv.Atoi(suffix)
+		if err == nil {
+			fixNum = n
+		}
+	}
 
 	parts := strings.Split(raw, ".")
-	version := make([]int, len(parts))
+	version := make([]int, len(parts)+1)
 	for i, part := range parts {
 		if part == "" {
 			return nil, false
@@ -215,6 +228,7 @@ func parseVersion(raw string) ([]int, bool) {
 		}
 		version[i] = value
 	}
+	version[len(parts)] = fixNum
 	return version, true
 }
 
@@ -250,6 +264,7 @@ type githubRelease struct {
 type githubAsset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
+	Digest             string `json:"digest"`
 }
 
 // fetchLatestRelease queries the GitHub Releases API and returns the latest
@@ -289,16 +304,21 @@ func (c *Checker) fetchLatestRelease(comp Component) (tagName, downloadURL, asse
 	downloadURL, assetName = findAssetURLAndName(comp, rel.Assets)
 
 	if downloadURL != "" && assetName != "" {
-		// Look for a checksum file among the release assets and extract the
-		// SHA256 for the selected asset.  We only accept a checksum that
-		// names the exact asset we selected.
 		checksumURL := findChecksumURL(rel.Assets)
 		if checksumURL != "" {
 			sha256, err = fetchChecksumForAsset(client, checksumURL, assetName)
 			if err != nil {
-				// Log the fetch failure but leave sha256 empty so the caller
-				// can apply fail-closed logic.
 				sha256 = ""
+			}
+		}
+		if sha256 == "" {
+			for _, a := range rel.Assets {
+				if a.Name == assetName && a.Digest != "" {
+					if hex, ok := parseDigest(a.Digest); ok {
+						sha256 = hex
+					}
+					break
+				}
 			}
 		}
 	}
@@ -312,7 +332,8 @@ func findChecksumURL(assets []githubAsset) string {
 	for _, a := range assets {
 		name := strings.ToLower(a.Name)
 		if strings.HasSuffix(name, "_checksums.txt") || strings.HasSuffix(name, ".sha256") ||
-			strings.HasSuffix(name, "_checksums.sha256") || strings.Contains(name, "checksums") {
+			strings.HasSuffix(name, "_checksums.sha256") || strings.Contains(name, "checksums") ||
+			strings.Contains(name, "sha256sums") {
 			return a.BrowserDownloadURL
 		}
 	}
@@ -368,6 +389,18 @@ func parseChecksumFile(content, assetName string) (string, error) {
 	return "", fmt.Errorf("no checksum found for asset %q", assetName)
 }
 
+func parseDigest(digest string) (string, bool) {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(digest, prefix) {
+		return "", false
+	}
+	hex := strings.TrimPrefix(digest, prefix)
+	if len(hex) != 64 {
+		return "", false
+	}
+	return hex, true
+}
+
 // findAssetURLAndName picks the best download URL and asset name from a list of
 // release assets.  It prefers linux-amd64 variants matching the component name.
 // Checksum files are never selected as the binary asset.
@@ -382,8 +415,17 @@ func findAssetURLAndName(comp Component, assets []githubAsset) (downloadURL, ass
 			strings.Contains(n, "checksums")
 	}
 
-	// Preference order: exact match with linux-amd64, then linux-amd64 alone,
-	// then any asset containing the component name.
+	for _, a := range assets {
+		if isChecksumFile(a.Name) {
+			continue
+		}
+		name := strings.ToLower(a.Name)
+		if strings.Contains(name, compStr) && strings.Contains(name, "linux") && strings.Contains(name, "amd64") {
+			if !strings.Contains(name, "glibc") && !strings.Contains(name, "musl") {
+				return a.BrowserDownloadURL, a.Name
+			}
+		}
+	}
 	for _, a := range assets {
 		if isChecksumFile(a.Name) {
 			continue
@@ -393,7 +435,6 @@ func findAssetURLAndName(comp Component, assets []githubAsset) (downloadURL, ass
 			return a.BrowserDownloadURL, a.Name
 		}
 	}
-	// Teleproxy uses pattern: teleproxy-linux-amd64 (no archive)
 	for _, a := range assets {
 		if isChecksumFile(a.Name) {
 			continue
@@ -403,7 +444,15 @@ func findAssetURLAndName(comp Component, assets []githubAsset) (downloadURL, ass
 			return a.BrowserDownloadURL, a.Name
 		}
 	}
-	// Fallback: first non-checksum asset.
+	for _, a := range assets {
+		if isChecksumFile(a.Name) {
+			continue
+		}
+		name := strings.ToLower(a.Name)
+		if strings.Contains(name, compStr) {
+			return a.BrowserDownloadURL, a.Name
+		}
+	}
 	for _, a := range assets {
 		if !isChecksumFile(a.Name) {
 			return a.BrowserDownloadURL, a.Name

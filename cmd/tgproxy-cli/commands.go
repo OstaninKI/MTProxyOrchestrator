@@ -14,7 +14,9 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/reconcile"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/service"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/update"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
@@ -29,6 +31,7 @@ func init() {
 	rootCmd.AddCommand(resetTOTPCmd)
 	rootCmd.AddCommand(backupCmd)
 	rootCmd.AddCommand(restoreCmd)
+	rootCmd.AddCommand(restartCmd)
 
 	resetTOTPCmd.Flags().BoolVar(&resetTOTPYes, "yes", false, "skip confirmation prompt")
 
@@ -150,6 +153,18 @@ var updateCmd = &cobra.Command{
 				fmt.Fprintf(cmd.OutOrStdout(), "  updated successfully\n")
 			}
 		}
+
+		reconcileOpts := reconcile.Options{
+			ConfigFile: paths.ConfigFile,
+			PanelDB:    paths.PanelDB,
+			Paths:      paths,
+		}
+		if err := reconcile.Reconcile(reconcileOpts); err != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "config reconciliation failed: %v\n", err)
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "Configs reconciled.")
+		}
+
 		return nil
 	},
 }
@@ -364,6 +379,40 @@ var restoreCmd = &cobra.Command{
 		startServiceFn("tgproxy-panel.service")
 
 		fmt.Fprintln(cmd.OutOrStdout(), "Restore complete. Services restarted.")
+		return nil
+	},
+}
+
+var restartCmd = &cobra.Command{
+	Use:   "restart",
+	Short: "Restart all services and verify health",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		paths := defaultPaths()
+		mode := currentRuntimeMode(paths)
+		mgr := service.NewManager(paths)
+
+		results := mgr.RestartAll(mode)
+
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		hasError := false
+		for _, r := range results {
+			status := "OK"
+			if !r.OK {
+				status = "FAILED"
+				hasError = true
+			}
+			fmt.Fprintf(w, "%s\t%s\n", r.Service, status)
+			if r.Error != nil {
+				fmt.Fprintf(w, "\t%v\n", r.Error)
+			}
+		}
+		_ = w.Flush()
+
+		if hasError {
+			fmt.Fprintln(cmd.OutOrStdout(), "\nStatus: DEGRADED")
+			return fmt.Errorf("one or more services failed to restart")
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "\nStatus: OK")
 		return nil
 	},
 }

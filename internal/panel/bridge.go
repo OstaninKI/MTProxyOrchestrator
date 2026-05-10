@@ -3,7 +3,6 @@ package panel
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -371,29 +370,21 @@ type bridgePageData struct {
 	PanelPath string
 }
 
-var bridgeTmpl = template.Must(template.New("bridge").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bridge Mode</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1,h2{margin-bottom:1rem}a{color:#2563eb}
-table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb}
-input[type=text],input[type=number],select{width:100%;box-sizing:border-box;padding:.5rem;border:1px solid #ccc;border-radius:4px;font-size:1rem;margin-bottom:.75rem}
-button{padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;font-size:.875rem;cursor:pointer}
-button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{background:#b91c1c}
-.warn{background:#d97706}.warn:hover{background:#b45309}
-.success{color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0;padding:.75rem;border-radius:4px;margin-bottom:1rem}
-.flash{color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;padding:.75rem;border-radius:4px;margin-bottom:1rem}
+var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{end}}
+{{define "content"}}
+<style>
+.btn-warn{background:rgba(217,119,6,.15);color:#d97706;border-color:rgba(217,119,6,.3)}
+.btn-warn:hover{background:rgba(217,119,6,.25)}
+.flash{color:var(--accent);background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.2);padding:.75rem;border-radius:4px;margin-bottom:1rem}
+details{margin-bottom:1rem}
+summary{cursor:pointer;color:var(--accent)}
 </style>
-</head>
-<body>
 <h1>Bridge Mode</h1>
 
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 
 <h2>Add outbound node via share URL</h2>
-<form method="post" action="bridge/nodes/add">
+<form method="post" action="bridge/nodes/add" style="max-width:600px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Share URL (vless://, trojan://, ss://, hysteria2://, tuic://)</label>
 <input type="text" name="share_url" placeholder="vless://uuid@host:port?...#tag" required>
@@ -402,8 +393,8 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 
 <h2 style="margin-top:1.5rem">Add node manually</h2>
 <details>
-<summary style="cursor:pointer;color:#2563eb">Expand manual add form</summary>
-<form method="post" action="bridge/nodes/add-manual" style="margin-top:1rem">
+<summary>Expand manual add form</summary>
+<form method="post" action="bridge/nodes/add-manual" style="margin-top:1rem;max-width:600px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Protocol</label>
 <select name="protocol" required>
@@ -441,7 +432,7 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 
 {{if .Nodes}}
 <h2 style="margin-top:2rem">Outbound nodes</h2>
-<table>
+<div class="table-wrap"><table>
 <thead><tr><th>Tag</th><th>Type</th><th>Host</th><th>Port</th><th>Status</th><th>Latency</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Nodes}}
@@ -450,19 +441,19 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
   <td>{{.Type}}</td>
   <td>{{.Host}}</td>
   <td>{{.Port}}</td>
-  <td>{{if .Enabled}}<span style="color:#16a34a">enabled</span>{{else}}<span style="color:#6b7280">disabled</span>{{end}}</td>
+  <td>{{if .Enabled}}<span class="ok">enabled</span>{{else}}<span class="muted">disabled</span>{{end}}</td>
   <td>{{if .LastLatency}}{{.LastLatency}}ms{{else}}—{{end}}</td>
   <td>
-    <form method="post" action="bridge/nodes/{{.ID}}/toggle" style="display:inline">
+    <form method="post" action="bridge/nodes/{{.ID}}/toggle" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-      <button type="submit" class="warn">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+      <button type="submit" class="btn-warn">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
     </form>
-    <form method="post" action="bridge/nodes/{{.ID}}/ping" style="display:inline">
+    <form method="post" action="bridge/nodes/{{.ID}}/ping" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">Test Latency</button>
     </form>
     <a href="bridge/nodes/{{.ID}}/edit"><button type="button">Edit</button></a>
-    <form method="post" action="bridge/nodes/{{.ID}}/delete" style="display:inline"
+    <form method="post" action="bridge/nodes/{{.ID}}/delete" class="inline"
           onsubmit="return confirm('Delete node {{.Tag}}?')">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit" class="danger">Delete</button>
@@ -471,10 +462,10 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 </tr>
 {{end}}
 </tbody>
-</table>
+</table></div>
 
 <h2 style="margin-top:2rem">Routing strategy</h2>
-<form method="post" action="bridge/strategy">
+<form method="post" action="bridge/strategy" style="max-width:400px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <select name="strategy">
   <option value="urltest"{{if eq .Strategy "urltest"}} selected{{end}}{{if eq .Strategy ""}} selected{{end}}>urltest (auto — lowest latency)</option>
@@ -486,7 +477,7 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 </form>
 
 <h2 style="margin-top:2rem">Mode control</h2>
-<form method="post" action="bridge/enable">
+<form method="post" action="bridge/enable" style="max-width:600px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Enable Bridge with share URL</label>
 <input type="text" name="vless_url" placeholder="vless://...#tag (VLESS Reality only for first enable)">
@@ -499,30 +490,19 @@ button:hover{background:#1d4ed8}.danger{background:#dc2626}.danger:hover{backgro
 {{end}}
 
 <p style="margin-top:2rem"><a href="{{.PanelPath}}dashboard">← Dashboard</a></p>
-</body>
-</html>
-`))
+{{end}}
+{{template "base" .}}`, nil)
 
 func bridgePage(w io.Writer, data bridgePageData) {
 	bridgeTmpl.Execute(w, data) //nolint:errcheck
 }
 
 // editNodeTmpl is the template for the node edit form.
-var editNodeTmpl = template.Must(template.New("editNode").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Edit Node</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}
-input[type=text],input[type=number]{width:100%;box-sizing:border-box;padding:.5rem;border:1px solid #ccc;border-radius:4px;font-size:1rem;margin-bottom:.75rem}
-button{padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;font-size:.875rem;cursor:pointer}
-button:hover{background:#1d4ed8}.flash{color:#dc2626;margin-bottom:1rem}</style>
-</head>
-<body>
+var editNodeTmpl = layoutTemplate("editNode", `{{define "page_title"}}Edit Node{{end}}
+{{define "content"}}
 <h1>Edit Node: {{.Node.Tag}}</h1>
-{{if .Error}}<p class="flash">{{.Error}}</p>{{end}}
-<form method="post" action="">
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<form method="post" action="" style="max-width:480px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Tag (name)</label>
 <input type="text" name="tag" value="{{.Node.Tag}}" required>
@@ -538,19 +518,19 @@ button:hover{background:#1d4ed8}.flash{color:#dc2626;margin-bottom:1rem}</style>
 <input type="text" name="method" value="{{.Node.Method}}">
 <label>Congestion Control (TUIC)</label>
 <input type="text" name="congestion_control" value="{{.Node.CongestionControl}}">
-<p style="color:#6b7280;font-size:.875rem">Credentials (UUID, password, public key, short ID) are not shown and cannot be changed here. Delete and re-add the node to change credentials.</p>
+<p style="color:var(--muted);font-size:.875rem">Credentials (UUID, password, public key, short ID) are not shown and cannot be changed here. Delete and re-add the node to change credentials.</p>
 <button type="submit">Save</button>
 </form>
-<p><a href="../../bridge">← Back</a></p>
-</body>
-</html>
-`))
+<p><a href="{{.PanelPath}}bridge">← Back</a></p>
+{{end}}
+{{template "base" .}}`, nil)
 
 type editNodePageData struct {
 	CSRFField string
 	CSRFToken string
 	Node      bridge.Node
 	Error     string
+	PanelPath string
 }
 
 func editNodePage(w io.Writer, data editNodePageData) {
@@ -749,6 +729,7 @@ func (s *Server) handleBridgeEditNodeForm(w http.ResponseWriter, r *http.Request
 		CSRFField: CSRFField(),
 		CSRFToken: csrfToken,
 		Node:      found,
+		PanelPath: s.PanelPath,
 	})
 }
 

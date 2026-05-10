@@ -386,7 +386,11 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	userCreatedPage(w, label, secret.Hex())
+	serverAddr := s.settingsConfig().Domain
+	if serverAddr == "" {
+		serverAddr = s.settingsConfig().ServerIP
+	}
+	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.PanelPath)
 }
 
 // sessionAdminID returns the admin ID from the current session, or 0.

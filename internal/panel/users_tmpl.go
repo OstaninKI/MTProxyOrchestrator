@@ -27,24 +27,17 @@ var userListFuncs = template.FuncMap{
 	},
 }
 
-var userListTmpl = template.Must(template.New("users").Funcs(userListFuncs).Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Users</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}
-table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb}
-.badge-on{color:#16a34a}.badge-off{color:#dc2626}
-input[type=text]{padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px;margin-right:.5rem}
-button{padding:.4rem .8rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
-button:hover{background:#1d4ed8}.error{color:#dc2626;margin-bottom:1rem}
-a{color:#2563eb}
-.qbar{position:relative;width:160px;height:10px;background:#e5e7eb;border-radius:5px;overflow:hidden}
+const userListContent = `{{define "page_title"}}Users{{end}}
+{{define "content"}}
+<style>
+.badge-on{color:var(--good)}.badge-off{color:var(--bad)}
+.qbar{position:relative;width:160px;height:10px;background:var(--border);border-radius:5px;overflow:hidden}
 .qbar>span{display:block;height:100%;border-radius:5px;transition:width .2s}
-.qbar-green>span{background:#16a34a}.qbar-amber>span{background:#d97706}.qbar-red>span{background:#dc2626}
-.qmeta{font-size:.8rem;color:#555;margin-top:.15rem}.muted{color:#888}</style>
-</head>
-<body>
+.qbar-green>span{background:var(--good)}.qbar-amber>span{background:#d97706}.qbar-red>span{background:var(--bad)}
+.qmeta{font-size:.8rem;color:var(--muted);margin-top:.15rem}
+input[type=number],select{display:inline;width:auto}
+form.inline{display:inline}
+</style>
 <h1>Users</h1>
 <a href="{{.PanelPath}}dashboard">← Dashboard</a>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
@@ -86,23 +79,23 @@ a{color:#2563eb}
   </td>
   <td>{{.CreatedAt.Format "2006-01-02"}}</td>
   <td>
-    <form method="post" action="users/{{.ID}}/toggle" style="display:inline">
+    <form method="post" action="users/{{.ID}}/toggle" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
     </form>
-    <form method="post" action="users/{{.ID}}/rotate" style="display:inline">
+    <form method="post" action="users/{{.ID}}/rotate" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">Rotate</button>
     </form>
-    <form method="post" action="users/{{.ID}}/suspend" style="display:inline">
+    <form method="post" action="users/{{.ID}}/suspend" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">{{if .QuotaSuspended}}Unsuspend{{else}}Suspend{{end}}</button>
     </form>
-    <form method="post" action="users/{{.ID}}/quota/reset" style="display:inline">
+    <form method="post" action="users/{{.ID}}/quota/reset" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">Reset quota</button>
     </form>
-    <form method="post" action="users/{{.ID}}/quota" style="display:inline">
+    <form method="post" action="users/{{.ID}}/quota" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <input type="number" step="0.1" min="0" name="gb" placeholder="GB" style="width:5em">
       <select name="period">
@@ -113,7 +106,7 @@ a{color:#2563eb}
       <input type="number" min="0" max="100" name="warn_pct" value="80" style="width:4em">
       <button type="submit">Set quota</button>
     </form>
-    <form method="post" action="users/{{.ID}}/delete" style="display:inline">
+    <form method="post" action="users/{{.ID}}/delete" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit" onclick="return confirm('Delete {{.Label}}?')">Delete</button>
     </form>
@@ -122,30 +115,24 @@ a{color:#2563eb}
 {{end}}
 </tbody>
 </table>
-</body>
-</html>
-`))
+{{end}}
+{{template "base" .}}`
 
-var userCreatedTmpl = template.Must(template.New("user_created").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>User created</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}.card{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:1.5rem;max-width:600px}
-code{background:#e5e7eb;padding:.2rem .4rem;border-radius:3px;font-family:monospace;word-break:break-all}
-a{color:#2563eb}.warn{color:#d97706;font-size:.875rem;margin-top:.5rem}</style>
-</head>
-<body>
+var userListTmpl = layoutTemplate("users", userListContent, userListFuncs)
+
+const userCreatedContent = `{{define "page_title"}}User created{{end}}
+{{define "content"}}
 <h1>User created</h1>
 <div class="card">
 <p><strong>Label:</strong> {{.Label}}</p>
 <p><strong>Telegram link:</strong><br><code>{{.TelegramURL}}</code></p>
 <p class="warn">⚠ Save this link — the secret will not be shown again.</p>
 </div>
-<p><a href="../users">← Back to users</a></p>
-</body>
-</html>
-`))
+<p><a href="{{.PanelPath}}users">← Back to users</a></p>
+{{end}}
+{{template "base" .}}`
+
+var userCreatedTmpl = layoutTemplate("user_created", userCreatedContent, nil)
 
 type userListData struct {
 	Users     []UserRow
@@ -158,10 +145,11 @@ type userListData struct {
 type userCreatedData struct {
 	Label       string
 	TelegramURL string
+	PanelPath   string
 }
 
 func userListPage(w io.Writer, users []UserRow, csrfToken, errMsg, panelPath string) {
-	userListTmpl.Execute(w, userListData{ //nolint:errcheck
+	userListTmpl.Execute(w, userListData{
 		Users:     users,
 		CSRFField: CSRFField(),
 		CSRFToken: csrfToken,
@@ -170,15 +158,16 @@ func userListPage(w io.Writer, users []UserRow, csrfToken, errMsg, panelPath str
 	})
 }
 
-func userCreatedPage(w io.Writer, label, secretHex string) {
+func userCreatedPage(w io.Writer, label, secretHex, serverAddr string, port int, maskHost, panelPath string) {
 	link := ProxyLink{
-		Server:    "<your-server>",
-		Port:      443,
+		Server:    serverAddr,
+		Port:      port,
 		SecretHex: secretHex,
-		MaskHost:  "www.microsoft.com",
+		MaskHost:  maskHost,
 	}
-	userCreatedTmpl.Execute(w, userCreatedData{ //nolint:errcheck
+	userCreatedTmpl.Execute(w, userCreatedData{
 		Label:       label,
 		TelegramURL: link.TelegramURL(),
+		PanelPath:   panelPath,
 	})
 }

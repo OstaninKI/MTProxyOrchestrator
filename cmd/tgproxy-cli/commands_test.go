@@ -59,6 +59,19 @@ func TestUpdateCmd_RegistratedInRoot(t *testing.T) {
 	}
 }
 
+func TestRestartCmd_RegisteredInRoot(t *testing.T) {
+	found := false
+	for _, c := range rootCmd.Commands() {
+		if c.Use == "restart" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("restart command not registered in rootCmd")
+	}
+}
+
 func TestBackupCmd_RequiresFlags(t *testing.T) {
 	cmd := &cobra.Command{Use: "tgproxy-cli"}
 	bc := *backupCmd

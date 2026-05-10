@@ -188,6 +188,19 @@ sudo tgproxy-cli status
 
 Reports current service health for the active runtime mode. Single mode checks Teleproxy, the panel service, and nginx stub health. Bridge mode checks the sing-box chain.
 
+## Restart
+
+```bash
+sudo tgproxy-cli restart
+```
+
+Restarts all managed services for the active mode and verifies each one reaches `active` state within 15 seconds. Reports a table of service names and status (OK/FAILED). Returns a non-zero exit code if any service fails the health check.
+
+In Single mode: `teleproxy.service`, `tgproxy-panel.service`.
+In Bridge mode: `teleproxy.service`, `tgproxy-panel.service`, `sing-box.service`.
+
+The command detects the current mode from the Teleproxy config at `/etc/tgproxy/teleproxy.toml`.
+
 ## Backup
 
 Create an encrypted backup:
@@ -226,7 +239,36 @@ Current behavior:
 
 - checks GitHub Releases immediately
 - verifies SHA256 before replacing any binary
+- reconciles all config templates (systemd units, nginx, teleproxy.toml) with current config.toml and DB settings before restarting
 - rolls back on restart/health failure
+
+### Config reconciliation
+
+Before restarting services after an update, `tgproxy-cli update` re-renders all generated config files from the current `config.toml` and runtime DB settings. This ensures that new binaries receive up-to-date ExecStart flags, systemd hardening, and nginx security headers even if the template format changed between releases.
+
+The reconciliation step:
+
+1. reads `/etc/tgproxy/config.toml` (install-time settings)
+2. reads runtime overrides from the `settings` table in `/etc/tgproxy/panel.db`
+3. merges: DB overrides take precedence over config.toml values
+4. re-renders `teleproxy.service`, `tgproxy-panel.service`, teleproxy.toml, and nginx configs to their canonical paths
+5. renders `sing-box.service` only when Bridge mode is active
+6. runs `systemctl daemon-reload` and `systemctl reload nginx`
+
+All file writes use atomic rename (write to temp, rename) to avoid partial writes.
+
+### SHA256 verification
+
+SHA256 checksums are resolved in this order:
+
+1. A `checksums.txt` or `SHA256SUMS` file attached to the GitHub release (parsed per asset name).
+2. The `digest` field from the GitHub Releases API (format `sha256:<hex>`). This covers components like sing-box that do not publish separate checksum files.
+
+If neither source provides a valid SHA256, the update is rejected (fail-closed).
+
+### Version format
+
+Project releases use date-based version tags: `v<year>.<month>.<day>` with an optional fix suffix `-f<N>` for same-day patch releases. Examples: `v2026.5.10`, `v2026.5.10-f3`, `v2026.5.10-f12`. The update checker compares all four components, so `v2026.5.10-f3` is detected as an upgrade over `v2026.5.10-f2`.
 
 The `--manual` flag currently defaults to `true`. Passing `--manual=false` enables the 18-hour throttling logic in the update checker.
 

@@ -180,6 +180,7 @@ func (s *Server) handleSettingsStubList(w http.ResponseWriter, r *http.Request) 
 		CSRFField: CSRFField(),
 		CSRFToken: tok,
 		Templates: templates,
+		PanelPath: s.PanelPath,
 	})
 }
 
@@ -226,6 +227,7 @@ func (s *Server) handleSettingsStubApply(w http.ResponseWriter, r *http.Request)
 			CSRFToken:  tok,
 			Templates:  templates,
 			ApplyError: fmt.Sprintf("apply failed (rolled back): %v", err),
+			PanelPath:  s.PanelPath,
 		})
 		return
 	}
@@ -239,6 +241,7 @@ func (s *Server) handleSettingsStubApply(w http.ResponseWriter, r *http.Request)
 		CSRFToken:    tok,
 		Templates:    templates,
 		ApplySuccess: name,
+		PanelPath:    s.PanelPath,
 	})
 }
 
@@ -265,6 +268,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 			CSRFToken:   tok,
 			Templates:   builtinTemplates(cfg.StubTemplatesDir),
 			UploadError: "upload too large or invalid (max 5 MB)",
+			PanelPath:   s.PanelPath,
 		})
 		return
 	}
@@ -279,6 +283,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 			CSRFToken:   tok,
 			Templates:   builtinTemplates(cfg.StubTemplatesDir),
 			UploadError: "no file uploaded",
+			PanelPath:   s.PanelPath,
 		})
 		return
 	}
@@ -300,6 +305,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 			CSRFToken:   tok,
 			Templates:   builtinTemplates(cfg.StubTemplatesDir),
 			UploadError: fmt.Sprintf("file too large (max %d bytes)", maxUploadBytes),
+			PanelPath:   s.PanelPath,
 		})
 		return
 	}
@@ -321,6 +327,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 			CSRFToken:        tok,
 			Templates:        builtinTemplates(cfg.StubTemplatesDir),
 			UploadValidation: msgs,
+			PanelPath:        s.PanelPath,
 		})
 		return
 	}
@@ -347,6 +354,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 			CSRFToken:   tok,
 			Templates:   builtinTemplates(cfg.StubTemplatesDir),
 			UploadError: fmt.Sprintf("apply failed (rolled back): %v", err),
+			PanelPath:   s.PanelPath,
 		})
 		return
 	}
@@ -360,6 +368,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 		CSRFToken:    tok,
 		Templates:    builtinTemplates(cfg.StubTemplatesDir),
 		ApplySuccess: "custom upload",
+		PanelPath:    s.PanelPath,
 	})
 }
 
@@ -371,6 +380,7 @@ func (s *Server) handleSettingsCertificates(w http.ResponseWriter, r *http.Reque
 		HasDomain: cfg.Domain != "",
 		Domain:    cfg.Domain,
 		ServerIP:  cfg.ServerIP,
+		PanelPath: s.PanelPath,
 	}
 
 	// Load cert info if we have a cert directory.
@@ -475,4 +485,78 @@ func (s *Server) handleSettingsCertRenew(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	http.Redirect(w, r, s.PanelPath+"settings/certificates", http.StatusSeeOther)
+}
+
+// handleSettingsStubRemote renders the remote GitHub templates page.
+func (s *Server) handleSettingsStubRemote(w http.ResponseWriter, r *http.Request) {
+	templates, err := fetchRemoteTemplateList(remoteHTTPClient)
+	var remoteErr string
+	if err != nil {
+		remoteErr = "Failed to load templates from GitHub: " + err.Error()
+	}
+
+	applied := r.URL.Query().Get("applied")
+
+	tok, _ := NewCSRFToken()
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	settingsStubRemotePage(w, settingsStubRemoteData{
+		CSRFField:    CSRFField(),
+		CSRFToken:    tok,
+		Templates:    templates,
+		Error:        remoteErr,
+		ApplySuccess: applied,
+		PanelPath:    s.PanelPath,
+	})
+}
+
+// handleSettingsStubRemoteApply downloads a template from GitHub and applies it.
+func (s *Server) handleSettingsStubRemoteApply(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("template"))
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") ||
+		strings.Contains(name, string(os.PathSeparator)) {
+		http.Error(w, "invalid template name", http.StatusBadRequest)
+		return
+	}
+
+	cfg := s.settingsConfig()
+
+	tmpDir, err := os.MkdirTemp("", "tgproxy-stub-remote-*")
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	renderRemoteErr := func(msg string) {
+		templates, _ := fetchRemoteTemplateList(remoteHTTPClient)
+		tok, _ := NewCSRFToken()
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		settingsStubRemotePage(w, settingsStubRemoteData{
+			CSRFField: CSRFField(),
+			CSRFToken: tok,
+			Templates: templates,
+			Error:     msg,
+			PanelPath: s.PanelPath,
+		})
+	}
+
+	if err := downloadRemoteTemplate(remoteHTTPClient, name, tmpDir); err != nil {
+		renderRemoteErr(fmt.Sprintf("Download failed: %v", err))
+		return
+	}
+
+	if err := applyStubTemplate(cfg.WebRoot, tmpDir); err != nil {
+		renderRemoteErr(fmt.Sprintf("Apply failed (rolled back): %v", err))
+		return
+	}
+
+	audit.Log(s.DB, s.sessionAdminID(r), "stub.remote", name, "", clientIP(r)) //nolint:errcheck
+	http.Redirect(w, r, s.PanelPath+"settings/stubs/remote?applied="+name, http.StatusSeeOther)
 }

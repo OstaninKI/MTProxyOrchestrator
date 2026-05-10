@@ -50,6 +50,32 @@ func TestQRPNGNotEmpty(t *testing.T) {
 	}
 }
 
+func TestProxyLinkUsesDomainAsServer(t *testing.T) {
+	link := panel.ProxyLink{
+		Server:    "proxy.example.com",
+		Port:      443,
+		SecretHex: "aabbccddeeff00112233445566778899",
+		MaskHost:  "www.microsoft.com",
+	}
+	u := link.TelegramURL()
+	if !strings.Contains(u, "server=proxy.example.com") {
+		t.Errorf("URL must contain server=proxy.example.com, got: %s", u)
+	}
+}
+
+func TestProxyLinkUsesIPAsServer(t *testing.T) {
+	link := panel.ProxyLink{
+		Server:    "198.51.100.1",
+		Port:      443,
+		SecretHex: "aabbccddeeff00112233445566778899",
+		MaskHost:  "www.microsoft.com",
+	}
+	u := link.TelegramURL()
+	if !strings.Contains(u, "server=198.51.100.1") {
+		t.Errorf("URL must contain server=198.51.100.1, got: %s", u)
+	}
+}
+
 func TestQRPNGDifferentLinks(t *testing.T) {
 	a := baseLink()
 	b := baseLink()

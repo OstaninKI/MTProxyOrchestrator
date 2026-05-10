@@ -1,61 +1,48 @@
 package panel
 
 import (
-	"html/template"
 	"io"
 )
 
-// proxySettingsData is passed to the proxy settings template.
 type proxySettingsData struct {
 	CSRFField   string
 	CSRFToken   string
 	MaskHost    string
 	MTProtoPort int
-	Success     string // non-empty on successful save
-	Error       string // non-empty on validation error
+	ServerAddr  string
+	Success     string
+	Error       string
+	PanelPath   string
 }
 
-// adminPasswordData is passed to the admin password change template.
 type adminPasswordData struct {
 	CSRFField string
 	CSRFToken string
-	Success   string // non-empty on successful change
-	Error     string // non-empty on validation error
+	Success   string
+	Error     string
+	PanelPath string
 }
 
-// systemSettingsData is passed to the system settings template.
 type systemSettingsData struct {
 	CSRFField           string
 	CSRFToken           string
 	PanelPath           string
-	LogLevel            string // "debug", "info", "warn", "error"
-	RetentionMinuteDays int    // 1-30
-	RetentionHourlyDays int    // 7-365
-	Success             string // non-empty on successful save
-	Error               string // non-empty on validation error
+	LogLevel            string
+	RetentionMinuteDays int
+	RetentionHourlyDays int
+	Success             string
+	Error               string
 }
 
-var proxySettingsTmpl = template.Must(template.New("proxy_settings").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Proxy Settings</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}
-form{max-width:400px}label{display:block;margin-top:1rem;font-weight:bold}
-input[type=text],input[type=number]{width:100%;padding:.5rem;margin-top:.25rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
-button{margin-top:1.5rem;padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
-button:hover{background:#1d4ed8}
-.success{color:#16a34a;margin-bottom:1rem}.error{color:#dc2626;margin-bottom:1rem}
-a{color:#2563eb;margin-right:1rem}</style>
-</head>
-<body>
+const proxySettingsContent = `{{define "page_title"}}Proxy Settings{{end}}
+{{define "content"}}
 <h1>Proxy Settings</h1>
 <p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="admin-password">Admin Password →</a> &nbsp;|&nbsp; <a href="system">System →</a></p>
 
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
-<form method="post">
+<form method="post" style="max-width:400px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 
 <label for="mask_host">Mask host</label>
@@ -64,34 +51,26 @@ a{color:#2563eb;margin-right:1rem}</style>
 <label for="mtproto_port">MTProto port</label>
 <input type="number" id="mtproto_port" name="mtproto_port" value="{{.MTProtoPort}}" min="1" max="65535" required>
 
+<label for="server_addr">Server IP or domain (used in proxy links)</label>
+<input type="text" id="server_addr" name="server_addr" value="{{.ServerAddr}}" placeholder="e.g. 1.2.3.4 or proxy.example.com">
+
 <button type="submit">Save</button>
 </form>
-</body>
-</html>
-`))
+{{end}}
+{{template "base" .}}`
 
-var adminPasswordTmpl = template.Must(template.New("admin_password").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Change Admin Password</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}
-form{max-width:400px}label{display:block;margin-top:1rem;font-weight:bold}
-input[type=password]{width:100%;padding:.5rem;margin-top:.25rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
-button{margin-top:1.5rem;padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
-button:hover{background:#1d4ed8}
-.success{color:#16a34a;margin-bottom:1rem}.error{color:#dc2626;margin-bottom:1rem}
-.hint{font-size:.875rem;color:#555;margin-top:.5rem}
-a{color:#2563eb;margin-right:1rem}</style>
-</head>
-<body>
+var proxySettingsTmpl = layoutTemplate("proxy_settings", proxySettingsContent, nil)
+
+const adminPasswordContent = `{{define "page_title"}}Change Admin Password{{end}}
+{{define "content"}}
+<style>.hint{font-size:.875rem;color:var(--muted);margin-top:.5rem}</style>
 <h1>Change Admin Password</h1>
 <p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="proxy">Proxy Settings →</a> &nbsp;|&nbsp; <a href="system">System →</a></p>
 
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
-<form method="post">
+<form method="post" style="max-width:400px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 
 <label for="current_password">Current password</label>
@@ -106,25 +85,13 @@ a{color:#2563eb;margin-right:1rem}</style>
 
 <button type="submit">Change Password</button>
 </form>
-</body>
-</html>
-`))
+{{end}}
+{{template "base" .}}`
 
-var systemSettingsTmpl = template.Must(template.New("system_settings").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>System Settings</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}
-form{max-width:400px}label{display:block;margin-top:1rem;font-weight:bold}
-input[type=text],input[type=number],select{width:100%;padding:.5rem;margin-top:.25rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
-button{margin-top:1.5rem;padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
-button:hover{background:#1d4ed8}
-.success{color:#16a34a;margin-bottom:1rem}.error{color:#dc2626;margin-bottom:1rem}
-.warn-box{background:#fffbeb;border:1px solid #fed7aa;border-radius:6px;padding:1rem;margin-bottom:1.5rem;color:#92400e}
-a{color:#2563eb;margin-right:1rem}</style>
-</head>
-<body>
+var adminPasswordTmpl = layoutTemplate("admin_password", adminPasswordContent, nil)
+
+const systemSettingsContent = `{{define "page_title"}}System Settings{{end}}
+{{define "content"}}
 <h1>System Settings</h1>
 <p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="proxy">Proxy Settings →</a> &nbsp;|&nbsp; <a href="admin-password">Admin Password →</a></p>
 
@@ -135,7 +102,7 @@ a{color:#2563eb;margin-right:1rem}</style>
 <strong>Note:</strong> Panel path and log level changes require restarting tgproxy-panel to take effect.
 </div>
 
-<form method="post">
+<form method="post" style="max-width:400px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 
 <label for="panel_path">Panel path</label>
@@ -157,18 +124,19 @@ a{color:#2563eb;margin-right:1rem}</style>
 
 <button type="submit">Save</button>
 </form>
-</body>
-</html>
-`))
+{{end}}
+{{template "base" .}}`
+
+var systemSettingsTmpl = layoutTemplate("system_settings", systemSettingsContent, nil)
 
 func proxySettingsPage(w io.Writer, data proxySettingsData) {
-	proxySettingsTmpl.Execute(w, data) //nolint:errcheck
+	proxySettingsTmpl.Execute(w, data)
 }
 
 func adminPasswordPage(w io.Writer, data adminPasswordData) {
-	adminPasswordTmpl.Execute(w, data) //nolint:errcheck
+	adminPasswordTmpl.Execute(w, data)
 }
 
 func systemSettingsPage(w io.Writer, data systemSettingsData) {
-	systemSettingsTmpl.Execute(w, data) //nolint:errcheck
+	systemSettingsTmpl.Execute(w, data)
 }

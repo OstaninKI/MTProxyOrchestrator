@@ -168,6 +168,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		SettingsCfg: &panel.SettingsConfig{
 			CertDir:   certDir,
 			Domain:    domain,
+			ServerIP:  d.GetSetting("server_ip", ""),
 			ACMEEmail: acmeEmail,
 		},
 	}

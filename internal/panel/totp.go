@@ -291,6 +291,7 @@ func (s *Server) handleSettingsTOTPGet(w http.ResponseWriter, r *http.Request) {
 		CSRFField: CSRFField(),
 		CSRFToken: tok,
 		Enabled:   a.enabled,
+		PanelPath: s.PanelPath,
 	})
 }
 
@@ -343,6 +344,7 @@ func (s *Server) handleSettingsTOTPBegin(w http.ResponseWriter, r *http.Request)
 		Secret:      secret,
 		OTPAuthURL:  otpURL,
 		QRPNGBase64: qrPNG,
+		PanelPath:   s.PanelPath,
 	})
 }
 
@@ -376,6 +378,7 @@ func (s *Server) handleSettingsTOTPConfirm(w http.ResponseWriter, r *http.Reques
 			OTPAuthURL:  otpURL,
 			QRPNGBase64: qrPNG,
 			Error:       "Invalid code",
+			PanelPath:   s.PanelPath,
 		})
 		return
 	}
@@ -403,6 +406,7 @@ func (s *Server) handleSettingsTOTPConfirm(w http.ResponseWriter, r *http.Reques
 		CSRFToken:     tok,
 		RecoveryCodes: plain,
 		Heading:       "Two-factor authentication enabled",
+		PanelPath:     s.PanelPath,
 	})
 }
 
@@ -436,6 +440,7 @@ func (s *Server) handleSettingsTOTPDisable(w http.ResponseWriter, r *http.Reques
 			CSRFToken: tok,
 			Enabled:   true,
 			Error:     "Invalid code; cannot disable two-factor.",
+			PanelPath: s.PanelPath,
 		})
 		return
 	}
@@ -452,6 +457,7 @@ func (s *Server) handleSettingsTOTPDisable(w http.ResponseWriter, r *http.Reques
 		CSRFToken: tok,
 		Enabled:   false,
 		Success:   "Two-factor authentication disabled.",
+		PanelPath: s.PanelPath,
 	})
 }
 
@@ -480,6 +486,7 @@ func (s *Server) handleSettingsTOTPRegenerate(w http.ResponseWriter, r *http.Req
 			CSRFToken: tok,
 			Enabled:   true,
 			Error:     "Invalid code; recovery codes not regenerated.",
+			PanelPath: s.PanelPath,
 		})
 		return
 	}
@@ -506,6 +513,7 @@ func (s *Server) handleSettingsTOTPRegenerate(w http.ResponseWriter, r *http.Req
 		CSRFToken:     tok,
 		RecoveryCodes: plain,
 		Heading:       "New recovery codes",
+		PanelPath:     s.PanelPath,
 	})
 }
 
@@ -561,6 +569,7 @@ type totpSettingsData struct {
 	Enabled   bool
 	Success   string
 	Error     string
+	PanelPath string
 }
 
 type totpEnrollData struct {
@@ -570,6 +579,7 @@ type totpEnrollData struct {
 	OTPAuthURL  string
 	QRPNGBase64 string
 	Error       string
+	PanelPath   string
 }
 
 type totpRecoveryData struct {
@@ -577,17 +587,24 @@ type totpRecoveryData struct {
 	CSRFToken     string
 	RecoveryCodes []string
 	Heading       string
+	PanelPath     string
 }
 
 var totpVerifyTmpl = template.Must(template.New("totp_verify").Parse(`<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Two-factor verification</title>
-<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f5f5}
-.card{background:#fff;padding:2rem;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12);width:320px}
-h1{margin:0 0 1rem;font-size:1.2rem}label{display:block;margin-bottom:.25rem;font-size:.875rem;color:#555}
-input{width:100%;box-sizing:border-box;padding:.5rem;border:1px solid #ccc;border-radius:4px;margin-bottom:1rem;font-size:1rem}
-button{width:100%;padding:.6rem;background:#2563eb;color:#fff;border:none;border-radius:4px;font-size:1rem;cursor:pointer}
-.error{color:#dc2626;margin-bottom:1rem;font-size:.875rem}p.hint{font-size:.8rem;color:#555}</style>
+<style>
+:root{--bg:#09090b;--card:#101014;--card2:#15151b;--border:#27272f;--text:#f4f4f5;--muted:#a1a1aa;--accent:#38bdf8;--bad:#f43f5e}
+*{box-sizing:border-box}
+body{font-family:Aptos,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:radial-gradient(circle at 18% -8%,rgba(56,189,248,.2),transparent 34%),linear-gradient(135deg,#09090b,#111116 48%,#0c0f14);color:var(--text)}
+.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--border);padding:2rem;border-radius:8px;width:320px}
+h1{margin:0 0 1rem;font-size:1.2rem}label{display:block;margin-bottom:.25rem;font-size:.875rem;color:var(--muted)}
+input{width:100%;box-sizing:border-box;padding:.5rem .75rem;border:1px solid var(--border);border-radius:6px;margin-bottom:1rem;font-size:1rem;background:var(--card);color:var(--text)}
+input:focus{outline:none;border-color:var(--accent)}
+button{width:100%;padding:.6rem;background:rgba(56,189,248,.15);color:var(--accent);border:1px solid rgba(56,189,248,.3);border-radius:6px;font-size:1rem;cursor:pointer}
+button:hover{background:rgba(56,189,248,.25)}
+.error{color:var(--bad);margin-bottom:1rem;font-size:.875rem}p.hint{font-size:.8rem;color:var(--muted)}
+</style>
 </head><body><div class="card">
 <h1>Two-factor verification</h1>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
@@ -604,17 +621,9 @@ func totpVerifyPage(w io.Writer, data totpVerifyData) {
 	totpVerifyTmpl.Execute(w, data) //nolint:errcheck
 }
 
-var totpSettingsTmpl = template.Must(template.New("totp_settings").Parse(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Two-factor authentication</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}
-form{max-width:480px;margin-bottom:1.5rem}label{display:block;margin-top:1rem;font-weight:bold}
-input[type=text]{width:100%;padding:.5rem;margin-top:.25rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
-button{margin-top:1rem;padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
-.danger{background:#b91c1c}.success{color:#16a34a;margin-bottom:1rem}.error{color:#dc2626;margin-bottom:1rem}
-.box{background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:1rem;margin-bottom:1rem}
-a{color:#2563eb}</style>
-</head><body>
+var totpSettingsTmpl = layoutTemplate("totp_settings", `{{define "page_title"}}Two-factor authentication{{end}}
+{{define "content"}}
+<style>.box{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:1rem;margin-bottom:1rem}</style>
 <h1>Two-factor authentication</h1>
 <p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="admin-password">Admin password</a></p>
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
@@ -623,14 +632,14 @@ a{color:#2563eb}</style>
 {{if .Enabled}}
 <div class="box"><strong>Status:</strong> enabled.</div>
 
-<form method="post" action="totp/disable">
+<form method="post" action="totp/disable" style="max-width:480px;margin-bottom:1.5rem">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Disable two-factor — enter current code</label>
 <input type="text" name="code" autocomplete="one-time-code" required>
 <button class="danger" type="submit">Disable</button>
 </form>
 
-<form method="post" action="totp/regenerate">
+<form method="post" action="totp/regenerate" style="max-width:480px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Regenerate recovery codes — enter current code</label>
 <input type="text" name="code" autocomplete="one-time-code" required>
@@ -643,55 +652,48 @@ a{color:#2563eb}</style>
 <button type="submit">Enable two-factor</button>
 </form>
 {{end}}
-</body></html>`))
+{{end}}
+{{template "base" .}}`, nil)
 
 func totpSettingsPage(w io.Writer, data totpSettingsData) {
 	totpSettingsTmpl.Execute(w, data) //nolint:errcheck
 }
 
-var totpEnrollTmpl = template.Must(template.New("totp_enroll").Parse(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Enable two-factor</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}
-form{max-width:480px}label{display:block;margin-top:1rem;font-weight:bold}
-input[type=text]{width:100%;padding:.5rem;margin-top:.25rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box}
-button{margin-top:1rem;padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
-.error{color:#dc2626;margin-bottom:1rem}.mono{font-family:monospace;background:#f3f4f6;padding:.25rem .5rem;border-radius:4px}
+var totpEnrollTmpl = layoutTemplate("totp_enroll", `{{define "page_title"}}Enable two-factor{{end}}
+{{define "content"}}
+<style>.mono{font-family:monospace;background:var(--card2);padding:.25rem .5rem;border-radius:4px}
 .qr{margin:1rem 0}img{display:block}</style>
-</head><body>
 <h1>Enable two-factor</h1>
 <p>Scan the QR code with your authenticator app, or enter the secret manually.</p>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <div class="qr"><img src="data:image/png;base64,{{.QRPNGBase64}}" alt="TOTP QR code"></div>
 <p>Secret: <span class="mono">{{.Secret}}</span></p>
 <p>otpauth URL: <span class="mono">{{.OTPAuthURL}}</span></p>
-<form method="post" action="totp/confirm">
+<form method="post" action="totp/confirm" style="max-width:480px">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Enter the 6-digit code from your app</label>
 <input type="text" name="code" autocomplete="one-time-code" required autofocus>
 <button type="submit">Confirm and enable</button>
 </form>
-</body></html>`))
+{{end}}
+{{template "base" .}}`, nil)
 
 func totpEnrollPage(w io.Writer, data totpEnrollData) {
 	totpEnrollTmpl.Execute(w, data) //nolint:errcheck
 }
 
-var totpRecoveryTmpl = template.Must(template.New("totp_recovery").Parse(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Recovery codes</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1{margin-bottom:1rem}
-ul{list-style:none;padding:0;font-family:monospace;font-size:1.05rem;background:#f3f4f6;padding:1rem;border-radius:6px;max-width:320px}
-li{margin:.25rem 0}.warn{background:#fffbeb;border:1px solid #fed7aa;padding:1rem;border-radius:6px;color:#92400e;max-width:480px;margin-bottom:1rem}
-a{color:#2563eb}</style>
-</head><body>
+var totpRecoveryTmpl = layoutTemplate("totp_recovery", `{{define "page_title"}}Recovery codes{{end}}
+{{define "content"}}
+<style>ul.codes{list-style:none;padding:1rem;font-family:monospace;font-size:1.05rem;background:var(--card);border:1px solid var(--border);border-radius:6px;max-width:320px}
+li{margin:.25rem 0}</style>
 <h1>{{.Heading}}</h1>
-<div class="warn"><strong>Save these codes now.</strong> Each can be used once if you lose your authenticator. They will not be shown again.</div>
-<ul>
+<div class="warn-box"><strong>Save these codes now.</strong> Each can be used once if you lose your authenticator. They will not be shown again.</div>
+<ul class="codes">
 {{range .RecoveryCodes}}<li>{{.}}</li>{{end}}
 </ul>
 <p><a href="../totp">← Back to two-factor settings</a></p>
-</body></html>`))
+{{end}}
+{{template "base" .}}`, nil)
 
 func totpRecoveryCodesPage(w io.Writer, data totpRecoveryData) {
 	totpRecoveryTmpl.Execute(w, data) //nolint:errcheck

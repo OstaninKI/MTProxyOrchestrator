@@ -165,7 +165,11 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	userCreatedPage(w, label, secret.Hex())
+	serverAddr := s.settingsConfig().Domain
+	if serverAddr == "" {
+		serverAddr = s.settingsConfig().ServerIP
+	}
+	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.PanelPath)
 }
 
 // ReloadTeleproxyForQuota is exposed so the quota service can rebuild teleproxy

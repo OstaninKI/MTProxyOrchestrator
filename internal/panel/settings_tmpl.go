@@ -1,49 +1,45 @@
 package panel
 
 import (
-	"html/template"
 	"io"
 	"time"
 )
 
-// settingsStubListData is passed to the stub list/upload template.
 type settingsStubListData struct {
 	CSRFField        string
 	CSRFToken        string
 	Templates        []BuiltinStubTemplate
-	ApplySuccess     string   // non-empty on successful apply
-	ApplyError       string   // non-empty on rollback error
-	UploadError      string   // non-empty on upload-level error
-	UploadValidation []string // non-empty on ZIP validation errors
+	ApplySuccess     string
+	ApplyError       string
+	UploadError      string
+	UploadValidation []string
+	PanelPath        string
 }
 
-// settingsCertData is passed to the certificate state template.
+type settingsStubRemoteData struct {
+	CSRFField    string
+	CSRFToken    string
+	Templates    []RemoteStubTemplate
+	ApplySuccess string
+	Error        string
+	PanelPath    string
+}
+
 type settingsCertData struct {
 	HasDomain    bool
 	Domain       string
 	ServerIP     string
-	CertMode     string // "ACME (Let's Encrypt)", "Self-signed", "none", or ""
+	CertMode     string
 	ExpiresAt    time.Time
 	IssuedAt     time.Time
 	IsValid      bool
 	NeedsRenewal bool
 	Renewals     []RenewalAttempt
+	PanelPath    string
 }
 
-var settingsStubListTmpl = template.Must(template.New("settings_stubs").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stub Templates</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1,h2{margin-bottom:1rem}a{color:#2563eb}
-table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb}
-button{padding:.4rem .8rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
-button:hover{background:#1d4ed8}
-.success{color:#16a34a;margin-bottom:1rem}.error{color:#dc2626;margin-bottom:1rem}
-ul.errors{margin:.5rem 0 1rem;padding-left:1.5rem;color:#dc2626}
-input[type=file]{margin-bottom:.75rem}</style>
-</head>
-<body>
+const settingsStubListContent = `{{define "page_title"}}Stub Templates{{end}}
+{{define "content"}}
 <h1>Stub Templates</h1>
 <p><a href="../dashboard">← Dashboard</a></p>
 
@@ -52,7 +48,7 @@ input[type=file]{margin-bottom:.75rem}</style>
 {{if .UploadError}}<p class="error">{{.UploadError}}</p>{{end}}
 {{if .UploadValidation}}
 <ul class="errors">
-{{range .UploadValidation}}<li>{{.}}</li>{{end}}
+{{range .UploadValidation}}<li class="error">{{.}}</li>{{end}}
 </ul>
 {{end}}
 
@@ -66,7 +62,7 @@ input[type=file]{margin-bottom:.75rem}</style>
   <td>{{.Name}}</td>
   <td>{{.Description}}</td>
   <td>
-    <form method="post" action="stubs/apply">
+    <form method="post" action="stubs/apply" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <input type="hidden" name="template" value="{{.Name}}">
       <button type="submit">Apply</button>
@@ -77,36 +73,70 @@ input[type=file]{margin-bottom:.75rem}</style>
 </tbody>
 </table>
 {{else}}
-<p style="color:#888">No built-in templates available.</p>
+<p class="muted">No built-in templates available.</p>
 {{end}}
 
 <h2>Upload custom template</h2>
-<p style="font-size:.875rem;color:#555">Upload a ZIP archive (max 5 MB). Allowed files: HTML, CSS, JS, images, fonts.</p>
+<p style="font-size:.875rem;color:var(--muted)">Upload a ZIP archive (max 5 MB). Allowed files: HTML, CSS, JS, images, fonts.</p>
 <form method="post" action="stubs/upload" enctype="multipart/form-data">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <input type="file" name="stub_zip" accept=".zip" required><br>
 <button type="submit">Upload and apply</button>
 </form>
 
-<p style="margin-top:2rem"><a href="../settings/certificates">Certificate settings →</a></p>
-</body>
-</html>
-`))
+<p style="margin-top:2rem">
+  <a href="stubs/remote">Browse remote templates (GitHub) →</a>
+  &nbsp;|&nbsp;
+  <a href="../settings/certificates">Certificate settings →</a>
+</p>
+{{end}}
+{{template "base" .}}`
 
-var settingsCertTmpl = template.Must(template.New("settings_certs").Parse(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Certificates</title>
-<style>body{font-family:sans-serif;margin:2rem;color:#333}h1,h2{margin-bottom:1rem}a{color:#2563eb}
-table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:left;padding:.5rem;border-bottom:1px solid #e5e7eb}
-.ok{color:#16a34a}.warn{color:#d97706}.err{color:#dc2626}
-.info-box{background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:1rem;margin-bottom:1.5rem}
-.warn-box{background:#fffbeb;border:1px solid #fed7aa;border-radius:6px;padding:1rem;margin-bottom:1.5rem}</style>
-</head>
-<body>
+var settingsStubListTmpl = layoutTemplate("settings_stubs", settingsStubListContent, nil)
+
+const settingsStubRemoteContent = `{{define "page_title"}}Remote Templates{{end}}
+{{define "content"}}
+<h1>Remote Templates</h1>
+<p><a href="../stubs">← Stub Templates</a></p>
+<p style="font-size:.875rem;color:var(--muted)">Templates from <a href="https://github.com/learning-zone/website-templates" target="_blank" rel="noopener">learning-zone/website-templates</a>. Files are downloaded from GitHub and applied as the stub page.</p>
+
+{{if .ApplySuccess}}<p class="success">Template "{{.ApplySuccess}}" downloaded and applied successfully.</p>{{end}}
+{{if .Error}}<div class="warn-box">{{.Error}}</div>{{end}}
+
+{{if .Templates}}
+<div class="table-wrap" style="margin-top:1rem"><table>
+<thead><tr><th>Template</th><th>Action</th></tr></thead>
+<tbody>
+{{range .Templates}}
+<tr>
+  <td>{{.Name}}</td>
+  <td>
+    <form method="post" action="remote-apply" class="inline">
+      <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
+      <input type="hidden" name="template" value="{{.Name}}">
+      <button type="submit">Download &amp; Apply</button>
+    </form>
+  </td>
+</tr>
+{{end}}
+</tbody>
+</table></div>
+{{else if not .Error}}
+<p class="muted">No templates available.</p>
+{{end}}
+{{end}}
+{{template "base" .}}`
+
+var settingsStubRemoteTmpl = layoutTemplate("settings_stubs_remote", settingsStubRemoteContent, nil)
+
+func settingsStubRemotePage(w io.Writer, data settingsStubRemoteData) {
+	settingsStubRemoteTmpl.Execute(w, data) //nolint:errcheck
+}
+
+const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
+{{define "content"}}
 <h1>Certificate Settings</h1>
-<p><a href="../../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="../settings/stubs">Stub templates →</a></p>
+<p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="stubs">Stub templates →</a></p>
 
 {{if not .HasDomain}}
 <div class="warn-box">
@@ -127,7 +157,7 @@ table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:le
 {{if not .IssuedAt.IsZero}}<tr><td>Issued</td><td>{{.IssuedAt.Format "2006-01-02 15:04 UTC"}}</td></tr>{{end}}
 <tr>
   <td>Valid</td>
-  <td>{{if .IsValid}}<span class="ok">Yes</span>{{else}}<span class="err">No</span>{{end}}</td>
+  <td>{{if .IsValid}}<span class="ok">Yes</span>{{else}}<span class="error" style="margin:0">No</span>{{end}}</td>
 </tr>
 {{if and .HasDomain .NeedsRenewal}}
 <tr>
@@ -146,7 +176,7 @@ table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:le
 {{range .Renewals}}
 <tr>
   <td>{{.Domain}}</td>
-  <td>{{if .Success}}<span class="ok">success</span>{{else}}<span class="err">failed</span>{{end}}</td>
+  <td>{{if .Success}}<span class="ok">success</span>{{else}}<span class="error" style="margin:0">failed</span>{{end}}</td>
   <td>{{.ErrorMsg}}</td>
   <td>{{.CreatedAt}}</td>
 </tr>
@@ -154,14 +184,15 @@ table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:le
 </tbody>
 </table>
 {{end}}
-</body>
-</html>
-`))
+{{end}}
+{{template "base" .}}`
+
+var settingsCertTmpl = layoutTemplate("settings_certs", settingsCertContent, nil)
 
 func settingsStubListPage(w io.Writer, data settingsStubListData) {
-	settingsStubListTmpl.Execute(w, data) //nolint:errcheck
+	settingsStubListTmpl.Execute(w, data)
 }
 
 func settingsCertPage(w io.Writer, data settingsCertData) {
-	settingsCertTmpl.Execute(w, data) //nolint:errcheck
+	settingsCertTmpl.Execute(w, data)
 }

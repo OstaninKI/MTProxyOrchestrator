@@ -14,6 +14,7 @@ import (
 const (
 	settingMaskHost            = "mask_host"
 	settingMTProtoPort         = "mtproto_port"
+	settingServerIP            = "server_ip"
 	settingPanelPath           = "panel_path"
 	settingLogLevel            = "log_level"
 	settingRetentionMinuteDays = "retention_minutes_days"
@@ -34,6 +35,8 @@ func (s *Server) handleSettingsProxyGet(w http.ResponseWriter, r *http.Request) 
 		CSRFToken:   tok,
 		MaskHost:    s.bridgeMaskHost(),
 		MTProtoPort: s.bridgeMTProtoPort(),
+		ServerAddr:  s.settingsConfig().ServerIP,
+		PanelPath:   s.PanelPath,
 	})
 }
 
@@ -47,21 +50,22 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 
 	maskHost := strings.TrimSpace(r.FormValue("mask_host"))
 	portStr := strings.TrimSpace(r.FormValue("mtproto_port"))
+	serverAddr := strings.TrimSpace(r.FormValue("server_addr"))
 
 	// Validate mask_host.
 	if maskHost == "" {
-		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), "mask host is required")
+		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "mask host is required")
 		return
 	}
 	if !isValidMaskHost(maskHost) {
-		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), "mask host must be a valid hostname")
+		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "mask host must be a valid hostname")
 		return
 	}
 
 	// Validate port.
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
-		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), "port must be between 1 and 65535")
+		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "port must be between 1 and 65535")
 		return
 	}
 
@@ -74,16 +78,23 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	if err := s.DB.SetSetting(settingServerIP, serverAddr); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 
 	// Update runtime config.
 	if s.BridgeCfg != nil {
 		s.BridgeCfg.MaskHost = maskHost
 		s.BridgeCfg.MTProtoPort = port
 	}
+	if s.SettingsCfg != nil {
+		s.SettingsCfg.ServerIP = serverAddr
+	}
 
 	// Reload Teleproxy.
 	if err := s.reloadTeleproxy(); err != nil {
-		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, port, "failed to reload teleproxy")
+		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, port, serverAddr, "failed to reload teleproxy")
 		return
 	}
 
@@ -97,7 +108,9 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 		CSRFToken:   tok,
 		MaskHost:    maskHost,
 		MTProtoPort: port,
+		ServerAddr:  serverAddr,
 		Success:     "Proxy settings saved.",
+		PanelPath:   s.PanelPath,
 	})
 }
 
@@ -113,6 +126,7 @@ func (s *Server) handleSettingsAdminPasswordGet(w http.ResponseWriter, r *http.R
 	adminPasswordPage(w, adminPasswordData{
 		CSRFField: CSRFField(),
 		CSRFToken: tok,
+		PanelPath: s.PanelPath,
 	})
 }
 
@@ -185,6 +199,7 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 		CSRFField: CSRFField(),
 		CSRFToken: tok,
 		Success:   "Password changed successfully.",
+		PanelPath: s.PanelPath,
 	})
 }
 
@@ -377,7 +392,7 @@ func isValidMaskHost(host string) bool {
 
 // --- render error helpers ---
 
-func renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, maskHost string, port int, errMsg string) {
+func renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, maskHost string, port int, serverAddr, errMsg string) {
 	tok, _ := NewCSRFToken()
 	SetCSRFCookie(w, tok, secure, panelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -386,7 +401,9 @@ func renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure boo
 		CSRFToken:   tok,
 		MaskHost:    maskHost,
 		MTProtoPort: port,
+		ServerAddr:  serverAddr,
 		Error:       errMsg,
+		PanelPath:   panelPath,
 	})
 }
 
@@ -398,6 +415,7 @@ func renderAdminPasswordError(w http.ResponseWriter, r *http.Request, secure boo
 		CSRFField: CSRFField(),
 		CSRFToken: tok,
 		Error:     errMsg,
+		PanelPath: panelPath,
 	})
 }
 

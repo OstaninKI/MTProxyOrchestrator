@@ -53,6 +53,11 @@ jobs:
             -o bin/tgproxy-panel \
             ./cmd/tgproxy-panel
 
+      - name: Generate checksums
+        run: |
+          cd bin
+          sha256sum tgproxy-cli tgproxy-panel > checksums.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -61,3 +66,4 @@ jobs:
           files: |
             bin/tgproxy-cli
             bin/tgproxy-panel
+            bin/checksums.txt

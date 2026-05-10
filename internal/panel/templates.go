@@ -11,13 +11,18 @@ var loginTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Login</title>
-<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f5f5}
-.card{background:#fff;padding:2rem;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12);width:320px}
-h1{margin:0 0 1.5rem;font-size:1.4rem;color:#333}
-label{display:block;margin-bottom:.25rem;font-size:.875rem;color:#555}
-input{width:100%;box-sizing:border-box;padding:.5rem;border:1px solid #ccc;border-radius:4px;margin-bottom:1rem;font-size:1rem}
-button{width:100%;padding:.6rem;background:#2563eb;color:#fff;border:none;border-radius:4px;font-size:1rem;cursor:pointer}
-button:hover{background:#1d4ed8}.error{color:#dc2626;margin-bottom:1rem;font-size:.875rem}</style>
+<style>
+:root{--bg:#09090b;--card:#101014;--card2:#15151b;--border:#27272f;--text:#f4f4f5;--muted:#a1a1aa;--accent:#38bdf8;--bad:#f43f5e}
+*{box-sizing:border-box}
+body{font-family:Aptos,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:radial-gradient(circle at 18% -8%,rgba(56,189,248,.2),transparent 34%),linear-gradient(135deg,#09090b,#111116 48%,#0c0f14);color:var(--text)}
+.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--border);padding:2rem;border-radius:8px;width:320px}
+h1{margin:0 0 1.5rem;font-size:1.4rem}
+label{display:block;margin-bottom:.25rem;font-size:.875rem;color:var(--muted)}
+input{width:100%;box-sizing:border-box;padding:.5rem .75rem;border:1px solid var(--border);border-radius:6px;margin-bottom:1rem;font-size:1rem;background:var(--card);color:var(--text)}
+input:focus{outline:none;border-color:var(--accent)}
+button{width:100%;padding:.6rem;background:rgba(56,189,248,.15);color:var(--accent);border:1px solid rgba(56,189,248,.3);border-radius:6px;font-size:1rem;cursor:pointer}
+button:hover{background:rgba(56,189,248,.25)}
+.error{color:var(--bad);margin-bottom:1rem;font-size:.875rem}</style>
 </head>
 <body>
 <div class="card">
