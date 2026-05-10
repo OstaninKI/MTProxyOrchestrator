@@ -24,7 +24,7 @@ func (c StubConfig) Render() []byte {
 }
 
 var stubTmpl = template.Must(template.New("nginx-stub").Parse(`server {
-    listen 127.0.0.1:{{.ListenPort}};
+    listen 0.0.0.0:{{.ListenPort}};
     server_name {{.ServerName}};
     server_tokens off;
 
@@ -58,7 +58,7 @@ func (c TLSStubConfig) Render() []byte {
 }
 
 var tlsStubTmpl = template.Must(template.New("nginx-tls-stub").Parse(`server {
-    listen 127.0.0.1:{{.ListenPort}} ssl;
+    listen 0.0.0.0:{{.ListenPort}} ssl;
     server_name {{.ServerName}};
     server_tokens off;
 

@@ -24,14 +24,14 @@ func TestStubRenderServerTokensOff(t *testing.T) {
 	}
 }
 
-func TestStubRenderLoopbackOnly(t *testing.T) {
+func TestStubRenderPublicBind(t *testing.T) {
 	out := baseCfg.Render()
-	if !bytes.Contains(out, []byte("127.0.0.1")) {
-		t.Error("output must contain 127.0.0.1 in listen directive")
+	if !bytes.Contains(out, []byte("0.0.0.0")) {
+		t.Error("output must bind on 0.0.0.0 so external browsers can reach the stub page")
 	}
 }
 
-func TestTLSStubRenderLoopbackOnlyWithCertificate(t *testing.T) {
+func TestTLSStubRenderPublicBindWithCertificate(t *testing.T) {
 	cfg := nginx.TLSStubConfig{
 		ListenPort: 9443,
 		ServerName: "proxy.example.com",
@@ -41,7 +41,7 @@ func TestTLSStubRenderLoopbackOnlyWithCertificate(t *testing.T) {
 	}
 	out := cfg.Render()
 	for _, want := range []string{
-		"listen 127.0.0.1:9443 ssl",
+		"listen 0.0.0.0:9443 ssl",
 		"server_name proxy.example.com",
 		"ssl_certificate     /etc/tgproxy/certs/proxy.example.com/cert.pem",
 		"ssl_certificate_key /etc/tgproxy/certs/proxy.example.com/key.pem",
