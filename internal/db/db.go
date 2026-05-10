@@ -29,6 +29,12 @@ func (d *DB) BeginImmediate(ctx context.Context) (*ImmediateTx, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Allow up to 30 s for the write lock. Covers slow operations (e.g. bcrypt
+	// comparisons) held by a concurrent writer before it can commit.
+	if _, err := conn.ExecContext(ctx, `PRAGMA busy_timeout=30000`); err != nil {
+		conn.Close()
+		return nil, err
+	}
 	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
 		conn.Close()
 		return nil, err

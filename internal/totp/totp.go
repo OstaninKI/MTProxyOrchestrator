@@ -110,27 +110,14 @@ func ConsumeRecoveryCode(ctx context.Context, d *db.DB, adminID int64, plaintext
 	if plaintext == "" {
 		return false, nil
 	}
-	conn, err := d.Conn(ctx)
+	tx, err := d.BeginImmediate(ctx)
 	if err != nil {
 		return false, err
 	}
-	defer conn.Close()
-	// Ensure BEGIN IMMEDIATE waits instead of failing fast when another
-	// writer holds the lock. Scoped to this connection.
-	if _, err := conn.ExecContext(ctx, `PRAGMA busy_timeout=5000`); err != nil {
-		return false, err
-	}
-	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
-		return false, err
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			conn.ExecContext(ctx, `ROLLBACK`) //nolint:errcheck
-		}
-	}()
+	defer tx.Rollback(ctx) //nolint:errcheck
+
 	var stored string
-	if err := conn.QueryRowContext(ctx, `SELECT totp_recovery_codes FROM admin WHERE id=?`, adminID).Scan(&stored); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT totp_recovery_codes FROM admin WHERE id=?`, adminID).Scan(&stored); err != nil {
 		return false, err
 	}
 	hashes, err := DecodeRecoveryHashes(stored)
@@ -145,23 +132,15 @@ func ConsumeRecoveryCode(ctx context.Context, d *db.DB, adminID int64, plaintext
 		}
 	}
 	if matchIdx < 0 {
-		if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
-			return false, err
-		}
-		committed = true
-		return false, nil
+		return false, tx.Commit(ctx)
 	}
 	hashes = append(hashes[:matchIdx], hashes[matchIdx+1:]...)
 	encoded, err := EncodeRecoveryHashes(hashes)
 	if err != nil {
 		return false, err
 	}
-	if _, err := conn.ExecContext(ctx, `UPDATE admin SET totp_recovery_codes=? WHERE id=?`, encoded, adminID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE admin SET totp_recovery_codes=? WHERE id=?`, encoded, adminID); err != nil {
 		return false, fmt.Errorf("update recovery codes: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
-		return false, err
-	}
-	committed = true
-	return true, nil
+	return true, tx.Commit(ctx)
 }
