@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Linux binaries and create release
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build tgproxy-cli
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version.Version=$VERSION" \
+            -o bin/tgproxy-cli \
+            ./cmd/tgproxy-cli
+
+      - name: Build tgproxy-panel
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version.Version=$VERSION" \
+            -o bin/tgproxy-panel \
+            ./cmd/tgproxy-panel
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.VERSION }}"
+          generate_release_notes: true
+          files: |
+            bin/tgproxy-cli
+            bin/tgproxy-panel
