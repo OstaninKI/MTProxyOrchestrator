@@ -29,8 +29,8 @@ bin/
 .build/
 
 # Built binaries in project root
-tgproxy-cli
-tgproxy-panel
+/tgproxy-cli
+/tgproxy-panel
 
 # OS and editor files
 .DS_Store
