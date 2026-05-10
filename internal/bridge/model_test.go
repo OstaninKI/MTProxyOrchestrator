@@ -92,6 +92,75 @@ func TestNodeValidateEmptyShortIDAllowed(t *testing.T) {
 	}
 }
 
+func TestNodeValidateProtocolSpecificRequirements(t *testing.T) {
+	cases := []struct {
+		name      string
+		node      bridge.Node
+		wantValid bool
+	}{
+		{
+			name: "trojan does not require uuid or public key",
+			node: bridge.Node{
+				Type: bridge.NodeTypeTrojan, Tag: "trojan", Host: "example.com", Port: 443,
+				Password: "secret", SNI: "example.com",
+			},
+			wantValid: true,
+		},
+		{
+			name: "trojan requires password",
+			node: bridge.Node{
+				Type: bridge.NodeTypeTrojan, Tag: "trojan", Host: "example.com", Port: 443,
+				SNI: "example.com",
+			},
+			wantValid: false,
+		},
+		{
+			name: "shadowsocks requires password and method but no sni",
+			node: bridge.Node{
+				Type: bridge.NodeTypeShadowsocks, Tag: "ss", Host: "example.com", Port: 8388,
+				Password: "secret", Method: "chacha20-ietf-poly1305",
+			},
+			wantValid: true,
+		},
+		{
+			name: "hysteria2 requires sni",
+			node: bridge.Node{
+				Type: bridge.NodeTypeHysteria2, Tag: "hy2", Host: "example.com", Port: 443,
+				Password: "secret",
+			},
+			wantValid: false,
+		},
+		{
+			name: "tuic requires uuid password and sni",
+			node: bridge.Node{
+				Type: bridge.NodeTypeTUIC, Tag: "tuic", Host: "example.com", Port: 443,
+				UUID: "aaaabbbb-cccc-dddd-eeee-ffffffffffff", Password: "secret", SNI: "example.com",
+			},
+			wantValid: true,
+		},
+		{
+			name: "vless reality requires public key",
+			node: bridge.Node{
+				Type: bridge.NodeTypeVLESSReality, Tag: "vless", Host: "example.com", Port: 443,
+				UUID: "aaaabbbb-cccc-dddd-eeee-ffffffffffff", SNI: "example.com",
+			},
+			wantValid: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.node.Validate()
+			if tc.wantValid && err != nil {
+				t.Fatalf("Validate() error: %v", err)
+			}
+			if !tc.wantValid && err == nil {
+				t.Fatal("Validate() should fail")
+			}
+		})
+	}
+}
+
 func TestNodeLoadSaveRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nodes", "outbounds.json")
@@ -107,6 +176,8 @@ func TestNodeLoadSaveRoundtrip(t *testing.T) {
 				Enabled: true, LastLatency: 42, LastChecked: &now,
 			},
 		},
+		Strategy:         "roundrobin",
+		RoundRobinCursor: 3,
 	}
 
 	if err := nl.Save(path); err != nil {
@@ -126,6 +197,12 @@ func TestNodeLoadSaveRoundtrip(t *testing.T) {
 	}
 	if got.LastLatency != 42 {
 		t.Errorf("want last_latency_ms=42, got %d", got.LastLatency)
+	}
+	if loaded.Strategy != "roundrobin" {
+		t.Errorf("want strategy=roundrobin, got %q", loaded.Strategy)
+	}
+	if loaded.RoundRobinCursor != 3 {
+		t.Errorf("want round_robin_cursor=3, got %d", loaded.RoundRobinCursor)
 	}
 }
 

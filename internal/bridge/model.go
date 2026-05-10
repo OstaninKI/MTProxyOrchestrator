@@ -41,7 +41,7 @@ type Node struct {
 	LastChecked       *time.Time `json:"last_checked,omitempty"`
 }
 
-// Validate returns an error if required VLESS Reality fields are missing.
+// Validate returns an error if required common and protocol-specific fields are missing.
 func (n Node) Validate() error {
 	var errs []error
 	if n.Tag == "" {
@@ -53,16 +53,51 @@ func (n Node) Validate() error {
 	if n.Port < 1 || n.Port > 65535 {
 		errs = append(errs, fmt.Errorf("port %d is out of range", n.Port))
 	}
-	if n.UUID == "" {
-		errs = append(errs, errors.New("uuid is required"))
+
+	switch n.Type {
+	case NodeTypeTrojan:
+		if n.Password == "" {
+			errs = append(errs, errors.New("password is required"))
+		}
+		if n.SNI == "" {
+			errs = append(errs, errors.New("sni is required"))
+		}
+	case NodeTypeShadowsocks:
+		if n.Password == "" {
+			errs = append(errs, errors.New("password is required"))
+		}
+		if n.Method == "" {
+			errs = append(errs, errors.New("method is required"))
+		}
+	case NodeTypeHysteria2:
+		if n.Password == "" {
+			errs = append(errs, errors.New("password is required"))
+		}
+		if n.SNI == "" {
+			errs = append(errs, errors.New("sni is required"))
+		}
+	case NodeTypeTUIC:
+		if n.UUID == "" {
+			errs = append(errs, errors.New("uuid is required"))
+		}
+		if n.Password == "" {
+			errs = append(errs, errors.New("password is required"))
+		}
+		if n.SNI == "" {
+			errs = append(errs, errors.New("sni is required"))
+		}
+	default:
+		if n.UUID == "" {
+			errs = append(errs, errors.New("uuid is required"))
+		}
+		if n.SNI == "" {
+			errs = append(errs, errors.New("sni is required"))
+		}
+		if n.PublicKey == "" {
+			errs = append(errs, errors.New("public_key is required"))
+		}
 	}
-	if n.SNI == "" {
-		errs = append(errs, errors.New("sni is required"))
-	}
-	if n.PublicKey == "" {
-		errs = append(errs, errors.New("public_key is required"))
-	}
-	// short_id may be empty string (valid for Reality), but must be present
+
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -71,8 +106,9 @@ func (n Node) Validate() error {
 
 // NodeList is the root structure of outbounds.json.
 type NodeList struct {
-	Nodes    []Node `json:"nodes"`
-	Strategy string `json:"strategy,omitempty"` // urltest | fallback | roundrobin | selector; empty → urltest
+	Nodes            []Node `json:"nodes"`
+	Strategy         string `json:"strategy,omitempty"`           // urltest | fallback | roundrobin | selector; empty → urltest
+	RoundRobinCursor int    `json:"round_robin_cursor,omitempty"` // next active node offset for deterministic round-robin renders
 }
 
 // Load reads a NodeList from path. Returns empty list if file does not exist.

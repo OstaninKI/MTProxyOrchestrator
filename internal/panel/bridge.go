@@ -142,10 +142,84 @@ func (s *Server) handleBridgeDisable(w http.ResponseWriter, r *http.Request) {
 
 // bridgePaths returns InstallPaths from Server.BridgeCfg if set, else DefaultPaths.
 func (s *Server) bridgePaths() config.InstallPaths {
-	if s.BridgeCfg != nil {
-		return s.BridgeCfg.Paths
+	paths := config.DefaultPaths()
+	if s.BridgeCfg == nil {
+		return paths
 	}
-	return config.DefaultPaths()
+	override := s.BridgeCfg.Paths
+	if override.ConfigDir != "" {
+		paths.ConfigDir = override.ConfigDir
+	}
+	if override.LogDir != "" {
+		paths.LogDir = override.LogDir
+	}
+	if override.BinDir != "" {
+		paths.BinDir = override.BinDir
+	}
+	if override.SystemdDir != "" {
+		paths.SystemdDir = override.SystemdDir
+	}
+	if override.StubDir != "" {
+		paths.StubDir = override.StubDir
+	}
+	if override.CertDir != "" {
+		paths.CertDir = override.CertDir
+	}
+	if override.NginxSnippetDir != "" {
+		paths.NginxSnippetDir = override.NginxSnippetDir
+	}
+	if override.ConfigFile != "" {
+		paths.ConfigFile = override.ConfigFile
+	}
+	if override.TeleproxyTOML != "" {
+		paths.TeleproxyTOML = override.TeleproxyTOML
+	}
+	if override.SingboxJSON != "" {
+		paths.SingboxJSON = override.SingboxJSON
+	}
+	if override.UsersJSON != "" {
+		paths.UsersJSON = override.UsersJSON
+	}
+	if override.OutboundsJSON != "" {
+		paths.OutboundsJSON = override.OutboundsJSON
+	}
+	if override.PanelDB != "" {
+		paths.PanelDB = override.PanelDB
+	}
+	if override.PanelLog != "" {
+		paths.PanelLog = override.PanelLog
+	}
+	if override.TeleproxyLog != "" {
+		paths.TeleproxyLog = override.TeleproxyLog
+	}
+	if override.SingboxLog != "" {
+		paths.SingboxLog = override.SingboxLog
+	}
+	if override.NginxLog != "" {
+		paths.NginxLog = override.NginxLog
+	}
+	if override.TeleproxyBin != "" {
+		paths.TeleproxyBin = override.TeleproxyBin
+	}
+	if override.SingboxBin != "" {
+		paths.SingboxBin = override.SingboxBin
+	}
+	if override.CLIBin != "" {
+		paths.CLIBin = override.CLIBin
+	}
+	if override.PanelBin != "" {
+		paths.PanelBin = override.PanelBin
+	}
+	if override.TeleproxyService != "" {
+		paths.TeleproxyService = override.TeleproxyService
+	}
+	if override.SingboxService != "" {
+		paths.SingboxService = override.SingboxService
+	}
+	if override.PanelService != "" {
+		paths.PanelService = override.PanelService
+	}
+	return paths
 }
 
 func (s *Server) bridgeMTProtoPort() int {

@@ -41,6 +41,7 @@
       "uuid": "bbbbbbbb-0000-0000-0000-000000000002"
     },
     {
+      "interrupt_exist_connections": true,
       "interval": "1m",
       "outbounds": [
         "node-a",

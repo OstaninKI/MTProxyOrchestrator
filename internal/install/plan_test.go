@@ -2,6 +2,8 @@ package install_test
 
 import (
 	"encoding/hex"
+	"encoding/json"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -27,6 +29,130 @@ func TestSinglePlanNoSingBox(t *testing.T) {
 			t.Errorf("Single plan must not reference sing-box, got step: %+v", s)
 		}
 	}
+}
+
+func TestSinglePlanWritesRootConfigFile(t *testing.T) {
+	cfg := config.Default()
+	paths := config.DefaultPaths()
+
+	plan, err := install.BuildSinglePlan(cfg, paths, 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range plan.Steps {
+		if s.Kind != install.StepWriteFile || s.Target != paths.ConfigFile {
+			continue
+		}
+		if s.Mode != 0o600 {
+			t.Fatalf("config.toml mode = %04o, want 0600", s.Mode)
+		}
+		body := string(s.Content)
+		for _, want := range []string{
+			`mode = "single"`,
+			`panel_path = "` + plan.Creds.PanelPath + `"`,
+			`mask_host = "www.microsoft.com"`,
+			`mtproto_port = 443`,
+			`# [telegram_bot]`,
+			`# token = ""`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("config.toml missing %q:\n%s", want, body)
+			}
+		}
+		return
+	}
+	t.Fatalf("Single plan must write %s", paths.ConfigFile)
+}
+
+func TestSinglePlanPanelPathIsRandomNotAdminLogin(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plan.Creds.PanelPath, plan.Creds.AdminLogin) {
+		t.Fatalf("panel path %q must not contain admin login %q", plan.Creds.PanelPath, plan.Creds.AdminLogin)
+	}
+	if !regexp.MustCompile(`^/p-[a-z0-9]{8}/$`).MatchString(plan.Creds.PanelPath) {
+		t.Fatalf("panel path %q must match /p-{8 lowercase alnum}/", plan.Creds.PanelPath)
+	}
+}
+
+func TestBridgePlanAddsSingboxAndRoutesTeleproxyThroughSOCKS5(t *testing.T) {
+	cfg := config.Default()
+	cfg.BridgeStrategy = "selector"
+	paths := config.DefaultPaths()
+	const shareURL = "vless://11111111-1111-4111-8111-111111111111@bridge.example.com:443?security=reality&sni=www.cloudflare.com&pbk=abc123&sid=deadbeef&flow=xtls-rprx-vision#first"
+
+	plan, err := install.BuildBridgePlan(cfg, paths, 8443, testLocalBinaries(), shareURL, "selector")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Mode != config.ModeBridge {
+		t.Fatalf("mode = %s, want bridge", plan.Mode)
+	}
+
+	var gotConfig, gotOutbounds, gotSingboxJSON, gotSingboxService, gotSingboxStart, gotTeleproxySOCKS bool
+	for _, s := range plan.Steps {
+		switch {
+		case s.Kind == install.StepWriteFile && s.Target == paths.ConfigFile:
+			gotConfig = strings.Contains(string(s.Content), `mode = "bridge"`) &&
+				strings.Contains(string(s.Content), `bridge_strategy = "selector"`)
+		case s.Kind == install.StepWriteFile && s.Target == paths.OutboundsJSON:
+			gotOutbounds = strings.Contains(string(s.Content), `"strategy": "selector"`) &&
+				strings.Contains(string(s.Content), `"host": "bridge.example.com"`)
+		case s.Kind == install.StepWriteFile && s.Target == paths.SingboxJSON:
+			gotSingboxJSON = strings.Contains(string(s.Content), `"type": "socks"`) &&
+				strings.Contains(string(s.Content), `"type": "selector"`) &&
+				strings.Contains(string(s.Content), `"type": "vless"`)
+		case s.Kind == install.StepWriteFile && s.Target == paths.SingboxService:
+			gotSingboxService = strings.Contains(string(s.Content), "sing-box run --config "+paths.SingboxJSON)
+		case s.Kind == install.StepStartService && s.Target == "sing-box":
+			gotSingboxStart = true
+		case s.Kind == install.StepWriteFile && s.Target == paths.TeleproxyTOML:
+			gotTeleproxySOCKS = strings.Contains(string(s.Content), `socks5 = "127.0.0.1:1080"`)
+		}
+	}
+	for name, ok := range map[string]bool{
+		"config.toml bridge mode": gotConfig,
+		"outbounds.json":          gotOutbounds,
+		"sing-box.json":           gotSingboxJSON,
+		"sing-box.service":        gotSingboxService,
+		"sing-box start":          gotSingboxStart,
+		"teleproxy socks5":        gotTeleproxySOCKS,
+	} {
+		if !ok {
+			t.Errorf("Bridge plan missing %s", name)
+		}
+	}
+}
+
+func TestBridgePlanRejectsNonVLESSFirstOutbound(t *testing.T) {
+	_, err := install.BuildBridgePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries(), "trojan://secret@example.com:443?sni=example.com#x", "urltest")
+	if err == nil {
+		t.Fatal("expected non-VLESS first outbound to be rejected")
+	}
+	if !strings.Contains(err.Error(), "VLESS Reality") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBridgePlanOutboundsJSONIsValid(t *testing.T) {
+	const shareURL = "vless://11111111-1111-4111-8111-111111111111@bridge.example.com:443?security=reality&sni=www.cloudflare.com&pbk=abc123&sid=deadbeef#first"
+	plan, err := install.BuildBridgePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries(), shareURL, "urltest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range plan.Steps {
+		if s.Kind == install.StepWriteFile && s.Target == config.DefaultPaths().OutboundsJSON {
+			var doc map[string]any
+			if err := json.Unmarshal(s.Content, &doc); err != nil {
+				t.Fatalf("outbounds.json must be valid JSON: %v\n%s", err, s.Content)
+			}
+			return
+		}
+	}
+	t.Fatal("Bridge plan must write outbounds.json")
 }
 
 func TestSinglePlanWritesPanelProxyWhenTLSConfigPresent(t *testing.T) {

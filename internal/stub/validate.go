@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -23,11 +24,15 @@ const (
 var AllowedExtensions = map[string]bool{
 	".html": true, ".htm": true,
 	".css": true,
-	".js":  true, // inline scripts already in .html are fine; .js files allowed
 	".svg": true,
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".ico": true,
 	".woff": true, ".woff2": true, ".ttf": true, ".eot": true, ".otf": true,
 }
+
+var eventHandlerAttrPattern = regexp.MustCompile(`(?i)\son[a-z0-9_-]+\s*=`)
+var svgExternalReferencePattern = regexp.MustCompile(`(?i)\b(?:href|xlink:href|src)\s*=\s*["']?\s*(?:https?:)?//`)
+var protocolRelativeURLPattern = regexp.MustCompile(`//[a-z0-9]`)
+var svgSetElementPattern = regexp.MustCompile(`(?i)<set[\s>/]`)
 
 // ValidationError is a specific validation failure.
 type ValidationError struct {
@@ -49,7 +54,7 @@ func (e ValidationError) Error() string {
 //  2. No path traversal: reject entries where filepath.Clean(name) contains ".." or starts with "/"
 //  3. No symlinks: reject entries where entry.Mode()&os.ModeSymlink != 0
 //  4. Extension allowlist: reject entries not in AllowedExtensions (directories are exempt)
-//  5. No external URLs in .html/.css content: reject files containing "http://" or "https://"
+//  5. No active content or external URLs in .html/.css/.svg content.
 func Validate(r io.ReaderAt, size int64) []ValidationError {
 	var errs []ValidationError
 
@@ -80,6 +85,7 @@ func Validate(r io.ReaderAt, size int64) []ValidationError {
 	}
 
 	var totalExtracted uint64
+	var hasRootHTML bool
 	for _, entry := range zr.File {
 		name := entry.Name
 
@@ -91,6 +97,14 @@ func Validate(r io.ReaderAt, size int64) []ValidationError {
 				Reason: "path traversal detected",
 			})
 			continue
+		}
+
+		// Track root-level HTML for entry point validation.
+		// "clean" contains the cleaned path; if it has no separator it's at the root.
+		if !strings.ContainsRune(clean, '/') && !strings.ContainsRune(clean, '\\') {
+			if e := strings.ToLower(filepath.Ext(clean)); e == ".html" || e == ".htm" {
+				hasRootHTML = true
+			}
 		}
 
 		// Check 3: symlinks
@@ -132,36 +146,82 @@ func Validate(r io.ReaderAt, size int64) []ValidationError {
 			continue
 		}
 
-		// Check 5: no external URLs in .html/.css files
-		if ext == ".html" || ext == ".htm" || ext == ".css" {
-			if entry.UncompressedSize64 <= 1024*1024 {
-				rc, openErr := entry.Open()
-				if openErr != nil {
-					errs = append(errs, ValidationError{
-						File:   name,
-						Reason: fmt.Sprintf("failed to read file: %s", openErr),
-					})
-					continue
-				}
-				content, readErr := io.ReadAll(rc)
-				rc.Close()
-				if readErr != nil {
-					errs = append(errs, ValidationError{
-						File:   name,
-						Reason: fmt.Sprintf("failed to read file content: %s", readErr),
-					})
-					continue
-				}
-				s := string(content)
-				if strings.Contains(s, "http://") || strings.Contains(s, "https://") {
-					errs = append(errs, ValidationError{
-						File:   name,
-						Reason: "external URLs are not allowed",
-					})
-				}
+		// Check 5: no active content or external URLs in text-based stub files.
+		if isTextStubFile(ext) {
+			rc, openErr := entry.Open()
+			if openErr != nil {
+				errs = append(errs, ValidationError{
+					File:   name,
+					Reason: fmt.Sprintf("failed to read file: %s", openErr),
+				})
+				continue
+			}
+			content, readErr := io.ReadAll(rc)
+			rc.Close()
+			if readErr != nil {
+				errs = append(errs, ValidationError{
+					File:   name,
+					Reason: fmt.Sprintf("failed to read file content: %s", readErr),
+				})
+				continue
+			}
+			s := string(content)
+			if containsExternalURL(ext, s) {
+				errs = append(errs, ValidationError{
+					File:   name,
+					Reason: "external URLs are not allowed",
+				})
+			}
+			if containsActiveContent(ext, s) {
+				errs = append(errs, ValidationError{
+					File:   name,
+					Reason: "active content is not allowed",
+				})
 			}
 		}
 	}
 
+	if !hasRootHTML {
+		errs = append(errs, ValidationError{
+			File:   "",
+			Reason: "archive must contain at least one .html or .htm file at the root",
+		})
+	}
+
 	return errs
+}
+
+func isTextStubFile(ext string) bool {
+	switch ext {
+	case ".html", ".htm", ".css", ".svg":
+		return true
+	default:
+		return false
+	}
+}
+
+func containsExternalURL(ext, content string) bool {
+	lower := strings.ToLower(content)
+	if ext == ".svg" {
+		return svgExternalReferencePattern.MatchString(content)
+	}
+	return strings.Contains(lower, "http://") || strings.Contains(lower, "https://") || protocolRelativeURLPattern.MatchString(lower)
+}
+
+func containsActiveContent(ext, content string) bool {
+	lower := strings.ToLower(content)
+	if strings.Contains(lower, "<script") ||
+		strings.Contains(lower, "javascript:") ||
+		eventHandlerAttrPattern.MatchString(content) {
+		return true
+	}
+	if ext == ".css" {
+		return strings.Contains(lower, "@import") || strings.Contains(lower, "expression(")
+	}
+	if ext == ".svg" {
+		return strings.Contains(lower, "<foreignobject") ||
+			strings.Contains(lower, "<animate") ||
+			svgSetElementPattern.MatchString(lower)
+	}
+	return false
 }

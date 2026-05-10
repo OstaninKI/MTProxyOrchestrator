@@ -40,8 +40,45 @@ func (s *stubPreflightRunner) Run(panelPort int, extraPorts ...int) install.Chec
 	return s.result
 }
 
+type installPromptStub struct {
+	strings  []string
+	selects  []string
+	confirms []bool
+}
+
+func (s *installPromptStub) AskString(string, string) (string, error) {
+	if len(s.strings) == 0 {
+		return "", fmt.Errorf("unexpected string prompt")
+	}
+	v := s.strings[0]
+	s.strings = s.strings[1:]
+	return v, nil
+}
+
+func (s *installPromptStub) AskSelect(string, []string) (string, error) {
+	if len(s.selects) == 0 {
+		return "", fmt.Errorf("unexpected select prompt")
+	}
+	v := s.selects[0]
+	s.selects = s.selects[1:]
+	return v, nil
+}
+
+func (s *installPromptStub) AskConfirm(string, bool) (bool, error) {
+	if len(s.confirms) == 0 {
+		return false, fmt.Errorf("unexpected confirm prompt")
+	}
+	v := s.confirms[0]
+	s.confirms = s.confirms[1:]
+	return v, nil
+}
+
 func TestRunInstallChecksPanelBackendPort(t *testing.T) {
 	oldUnattended := unattended
+	oldPanelDomain := panelDomain
+	oldPanelCert := panelCert
+	oldPanelKey := panelKey
+	oldPanelEmail := panelEmail
 	oldChecker := defaultChecker
 	oldResolve := resolveLocalBinaries
 	oldBuild := buildSinglePlan
@@ -49,6 +86,10 @@ func TestRunInstallChecksPanelBackendPort(t *testing.T) {
 	oldPostInstall := runPostInstallCheck
 	t.Cleanup(func() {
 		unattended = oldUnattended
+		panelDomain = oldPanelDomain
+		panelCert = oldPanelCert
+		panelKey = oldPanelKey
+		panelEmail = oldPanelEmail
 		defaultChecker = oldChecker
 		resolveLocalBinaries = oldResolve
 		buildSinglePlan = oldBuild
@@ -57,6 +98,10 @@ func TestRunInstallChecksPanelBackendPort(t *testing.T) {
 	})
 
 	unattended = true
+	panelDomain = ""
+	panelCert = ""
+	panelKey = ""
+	panelEmail = ""
 	runner := &stubPreflightRunner{}
 	defaultChecker = func() preflightRunner { return runner }
 	resolveLocalBinaries = func() (install.LocalBinaries, error) {
@@ -79,6 +124,140 @@ func TestRunInstallChecksPanelBackendPort(t *testing.T) {
 	}
 	if len(runner.extraPorts) != 1 || runner.extraPorts[0] != install.PanelBackendPort {
 		t.Fatalf("extra ports = %v, want [%d]", runner.extraPorts, install.PanelBackendPort)
+	}
+}
+
+func TestRunInstallPrintsFallbackPanelHostWithoutDomain(t *testing.T) {
+	oldUnattended := unattended
+	oldPanelDomain := panelDomain
+	oldPanelCert := panelCert
+	oldPanelKey := panelKey
+	oldPanelEmail := panelEmail
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuild := buildSinglePlan
+	oldExec := newExecutor
+	oldPostInstall := runPostInstallCheck
+	oldStatConfigDir := statConfigDir
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		panelDomain = oldPanelDomain
+		panelCert = oldPanelCert
+		panelKey = oldPanelKey
+		panelEmail = oldPanelEmail
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuild
+		newExecutor = oldExec
+		runPostInstallCheck = oldPostInstall
+		statConfigDir = oldStatConfigDir
+	})
+
+	unattended = true
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+	statConfigDir = func(string) error { return os.ErrNotExist }
+	buildSinglePlan = func(config.Config, config.InstallPaths, int, install.LocalBinaries) (install.Plan, error) {
+		return install.Plan{
+			Creds: install.GeneratedCreds{
+				PanelPath:     "/p-test/",
+				AdminLogin:    "admin",
+				AdminPassword: "password",
+				FirstUser:     secrets.UserSecret{Label: "user1"},
+			},
+		}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+	runPostInstallCheck = func() error { return nil }
+
+	var out strings.Builder
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	if err := runInstall(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "https://:8443") {
+		t.Fatalf("Panel URL must not contain empty host:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "https://<your-server-ip>:8443/p-test/") {
+		t.Fatalf("Panel URL must use server-ip placeholder without domain:\n%s", out.String())
+	}
+}
+
+func TestRunInstallInteractiveBridgeBuildsBridgePlan(t *testing.T) {
+	oldUnattended := unattended
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuildSingle := buildSinglePlan
+	oldBuildBridge := buildBridgePlan
+	oldPrompter := newPrompter
+	oldExec := newExecutor
+	oldPostInstall := runPostInstallCheck
+	oldStatConfigDir := statConfigDir
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuildSingle
+		buildBridgePlan = oldBuildBridge
+		newPrompter = oldPrompter
+		newExecutor = oldExec
+		runPostInstallCheck = oldPostInstall
+		statConfigDir = oldStatConfigDir
+	})
+
+	unattended = false
+	panelDomain = ""
+	panelCert = ""
+	panelKey = ""
+	panelEmail = ""
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+	statConfigDir = func(string) error { return os.ErrNotExist }
+	newPrompter = func() install.Prompter {
+		return &installPromptStub{
+			selects:  []string{"Bridge", "urltest"},
+			strings:  []string{"www.microsoft.com", "", "vless://id@example.com:443?security=reality&sni=example.com&pbk=key&sid=01#first"},
+			confirms: []bool{true},
+		}
+	}
+	buildSinglePlan = func(config.Config, config.InstallPaths, int, install.LocalBinaries) (install.Plan, error) {
+		t.Fatal("interactive Bridge install must not build Single plan")
+		return install.Plan{}, nil
+	}
+	var gotShareURL, gotStrategy string
+	buildBridgePlan = func(_ config.Config, _ config.InstallPaths, _ int, _ install.LocalBinaries, shareURL, strategy string) (install.Plan, error) {
+		gotShareURL = shareURL
+		gotStrategy = strategy
+		return install.Plan{
+			Mode: config.ModeBridge,
+			Creds: install.GeneratedCreds{
+				PanelPath:     "/p-test/",
+				AdminLogin:    "admin",
+				AdminPassword: "password",
+				FirstUser:     secrets.UserSecret{Label: "user1"},
+			},
+		}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+	runPostInstallCheck = func() error { return nil }
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := runInstall(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotShareURL == "" {
+		t.Fatal("Bridge share URL was not passed to BuildBridgePlan")
+	}
+	if gotStrategy != "urltest" {
+		t.Fatalf("strategy = %q, want urltest", gotStrategy)
 	}
 }
 

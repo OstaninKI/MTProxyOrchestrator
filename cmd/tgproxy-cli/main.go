@@ -39,6 +39,7 @@ var (
 	defaultChecker       = func() preflightRunner { return install.DefaultChecker() }
 	resolveLocalBinaries = currentLocalBinaries
 	buildSinglePlan      = install.BuildSinglePlan
+	buildBridgePlan      = install.BuildBridgePlan
 	newExecutor          = func() install.Executor { return install.NewSystemExecutor() }
 	runPostInstallCheck  = func() error {
 		// Allow systemd time to transition services to active state before probing.
@@ -83,6 +84,9 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	cfg.PanelCertPath = panelCert
 	cfg.PanelKeyPath = panelKey
 	cfg.ACMEEmail = panelEmail
+	installMode := config.ModeSingle
+	var firstOutboundURL string
+	bridgeStrategy := cfg.BridgeStrategy
 	if err := validatePanelSetup(cfg); err != nil {
 		return err
 	}
@@ -97,7 +101,15 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	if !unattended {
-		p := install.NewHuhPrompter()
+		p := newPrompter()
+		selectedMode, err := p.AskSelect("Install mode", []string{"Single", "Bridge"})
+		if err != nil {
+			return err
+		}
+		if strings.EqualFold(selectedMode, "Bridge") {
+			installMode = config.ModeBridge
+		}
+
 		maskHost, err := p.AskString("Mask host", cfg.MaskHost)
 		if err != nil {
 			return err
@@ -119,7 +131,19 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		ok, err := p.AskConfirm("Proceed with Single mode install?", true)
+		if installMode == config.ModeBridge {
+			firstOutboundURL, err = p.AskString("First outbound VLESS Reality share URL", "")
+			if err != nil {
+				return err
+			}
+			bridgeStrategy, err = p.AskSelect("Bridge routing strategy", []string{"urltest", "fallback", "selector", "roundrobin"})
+			if err != nil {
+				return err
+			}
+			cfg.BridgeStrategy = bridgeStrategy
+		}
+
+		ok, err := p.AskConfirm(fmt.Sprintf("Proceed with %s mode install?", installMode), true)
 		if err != nil {
 			return err
 		}
@@ -149,12 +173,17 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	plan, err := buildSinglePlan(cfg, paths, panelPort, binaries)
+	var plan install.Plan
+	if installMode == config.ModeBridge {
+		plan, err = buildBridgePlan(cfg, paths, panelPort, binaries, firstOutboundURL, bridgeStrategy)
+	} else {
+		plan, err = buildSinglePlan(cfg, paths, panelPort, binaries)
+	}
 	if err != nil {
 		return fmt.Errorf("build plan: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Panel URL:  https://%s:%d%s\n", cfg.PanelDomain, panelPort, plan.Creds.PanelPath)
+	fmt.Fprintf(cmd.OutOrStdout(), "Panel URL:  https://%s:%d%s\n", displayPanelHost(cfg.PanelDomain), panelPort, plan.Creds.PanelPath)
 	fmt.Fprintf(cmd.OutOrStdout(), "Login:      %s\n", plan.Creds.AdminLogin)
 	fmt.Fprintf(cmd.OutOrStdout(), "Password:   %s\n", plan.Creds.AdminPassword)
 	fmt.Fprintf(cmd.OutOrStdout(), "First user: tg://proxy?server=<your-ip>&port=443&secret=%s\n", plan.Creds.FirstUser.Secret.Hex())
@@ -174,6 +203,13 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Services healthy.")
 	return nil
+}
+
+func displayPanelHost(domain string) string {
+	if strings.TrimSpace(domain) != "" {
+		return domain
+	}
+	return "<your-server-ip>"
 }
 
 // validatePanelSetup ensures the panel TLS/ACME flags are used correctly:

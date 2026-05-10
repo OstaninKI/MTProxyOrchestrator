@@ -26,3 +26,21 @@ func TestIsBridgeModeUsesTeleproxyConfig(t *testing.T) {
 		t.Fatal("expected bridge mode when teleproxy config contains socks5 upstream")
 	}
 }
+
+func TestBridgePathsUsesDefaultsWhenBridgeConfigHasNoPaths(t *testing.T) {
+	srv := &Server{
+		BridgeCfg: &BridgeConfig{
+			MTProtoPort: 443,
+			MaskHost:    "www.microsoft.com",
+			StatsPort:   9091,
+		},
+	}
+
+	got := srv.bridgePaths()
+	if got.TeleproxyTOML != config.DefaultPaths().TeleproxyTOML {
+		t.Fatalf("TeleproxyTOML = %q, want default %q", got.TeleproxyTOML, config.DefaultPaths().TeleproxyTOML)
+	}
+	if got.OutboundsJSON != config.DefaultPaths().OutboundsJSON {
+		t.Fatalf("OutboundsJSON = %q, want default %q", got.OutboundsJSON, config.DefaultPaths().OutboundsJSON)
+	}
+}

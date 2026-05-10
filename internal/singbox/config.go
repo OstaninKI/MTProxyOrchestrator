@@ -151,12 +151,12 @@ func (c Config) build() map[string]any {
 //
 // Strategy mapping to sing-box outbound group types:
 //   - urltest  → "urltest"  (auto-select by lowest latency)
-//   - fallback → "urltest"  (urltest handles fallback — picks best available)
+//   - fallback → "urltest"  (ordered failover-like group with connection interruption on health changes)
 //   - selector → "selector" (manual selection)
-//   - roundrobin → "selector" (sing-box has no native round-robin; map to selector)
+//   - roundrobin → "selector" (caller rotates tags before rendering; default is first tag)
 func buildStrategyGroup(s Strategy, tags []string) map[string]any {
 	switch s {
-	case StrategyURLTest, StrategyFallback:
+	case StrategyURLTest:
 		return map[string]any{
 			"type":      "urltest",
 			"tag":       "proxy",
@@ -164,6 +164,16 @@ func buildStrategyGroup(s Strategy, tags []string) map[string]any {
 			"url":       "https://www.gstatic.com/generate_204",
 			"interval":  "1m",
 			"tolerance": 50,
+		}
+	case StrategyFallback:
+		return map[string]any{
+			"type":                        "urltest",
+			"tag":                         "proxy",
+			"outbounds":                   tags,
+			"url":                         "https://www.gstatic.com/generate_204",
+			"interval":                    "1m",
+			"tolerance":                   50,
+			"interrupt_exist_connections": true,
 		}
 	case StrategySelector, StrategyRoundRobin:
 		g := map[string]any{

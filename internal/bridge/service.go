@@ -38,6 +38,7 @@ type EnableConfig struct {
 	MTProtoPort    int
 	MaskHost       string
 	StatsPort      int
+	Strategy       string
 	SingboxURL     string
 	SingboxSHA256  string
 }
@@ -84,6 +85,9 @@ func (s *BridgeService) Enable(cfg EnableConfig) error {
 	node.ID = nl.NextID()
 	node.Enabled = true
 	nl.Nodes = append(nl.Nodes, node)
+	if cfg.Strategy != "" {
+		nl.Strategy = string(normalizeStrategy(cfg.Strategy))
+	}
 	if err := nl.Save(s.NodePath); err != nil {
 		return fmt.Errorf("bridge enable: save nodes: %w", err)
 	}
@@ -96,15 +100,12 @@ func (s *BridgeService) Enable(cfg EnableConfig) error {
 	}
 
 	// 3. Render and write sing-box.json.
-	active := nl.Active()
-	outbounds := make([]singbox.Outbound, 0, len(active))
-	for _, n := range active {
-		outbounds = append(outbounds, nodeToOutbound(n))
-	}
+	strategy := normalizeStrategy(nl.Strategy)
+	outbounds, renderedNL := renderOutbounds(nl, strategy)
 	sbCfg := singbox.Config{
 		SOCKSListenAddr: singboxSOCKSAddr,
 		SOCKSListenPort: singboxSOCKSPort,
-		Strategy:        singbox.StrategyURLTest,
+		Strategy:        strategy,
 		Outbounds:       outbounds,
 	}
 	sbJSON, err := sbCfg.Render()
@@ -113,6 +114,11 @@ func (s *BridgeService) Enable(cfg EnableConfig) error {
 	}
 	if err := s.Exec.WriteFile(cfg.Paths.SingboxJSON, sbJSON, 0o600); err != nil {
 		return s.rollback(cfg, fmt.Errorf("bridge enable: write sing-box.json: %w", err), nodeSnapshot)
+	}
+	if renderedNL.RoundRobinCursor != nl.RoundRobinCursor {
+		if err := renderedNL.Save(s.NodePath); err != nil {
+			return s.rollback(cfg, fmt.Errorf("bridge enable: save round-robin cursor: %w", err), nodeSnapshot)
+		}
 	}
 
 	// 4. Render and write sing-box.service.
@@ -261,23 +267,12 @@ func nodeToOutbound(n Node) singbox.Outbound {
 // If render or write fails, the previous sing-box.json content is restored.
 // Returns a descriptive error for display to the admin; never includes node credentials.
 func (s *BridgeService) RerenderConfig(nl NodeList, singboxJSONPath string) error {
-	active := nl.Active()
-	if len(active) == 0 {
+	if len(nl.Active()) == 0 {
 		return errors.New("no enabled nodes — cannot render sing-box config")
 	}
 
-	outbounds := make([]singbox.Outbound, 0, len(active))
-	for _, n := range active {
-		outbounds = append(outbounds, nodeToOutbound(n))
-	}
-
-	strategy := singbox.Strategy(nl.Strategy)
-	switch strategy {
-	case singbox.StrategyURLTest, singbox.StrategyFallback, singbox.StrategyRoundRobin, singbox.StrategySelector:
-		// valid
-	default:
-		strategy = singbox.StrategyURLTest
-	}
+	strategy := normalizeStrategy(nl.Strategy)
+	outbounds, renderedNL := renderOutbounds(nl, strategy)
 
 	cfg := singbox.Config{
 		SOCKSListenAddr: singboxSOCKSAddr,
@@ -302,7 +297,44 @@ func (s *BridgeService) RerenderConfig(nl NodeList, singboxJSONPath string) erro
 		}
 		return fmt.Errorf("sing-box config write failed: %w", err)
 	}
+	if renderedNL.RoundRobinCursor != nl.RoundRobinCursor {
+		if err := renderedNL.Save(s.NodePath); err != nil {
+			if snapErr == nil && snap.existed {
+				_ = restoreFile(singboxJSONPath, snap)
+			}
+			return fmt.Errorf("round-robin cursor save failed: %w", err)
+		}
+	}
 	return nil
+}
+
+func normalizeStrategy(strategy string) singbox.Strategy {
+	switch singbox.Strategy(strategy) {
+	case singbox.StrategyURLTest, singbox.StrategyFallback, singbox.StrategyRoundRobin, singbox.StrategySelector:
+		return singbox.Strategy(strategy)
+	default:
+		return singbox.StrategyURLTest
+	}
+}
+
+func renderOutbounds(nl NodeList, strategy singbox.Strategy) ([]singbox.Outbound, NodeList) {
+	active := nl.Active()
+	if strategy == singbox.StrategyRoundRobin && len(active) > 1 {
+		offset := nl.RoundRobinCursor % len(active)
+		if offset < 0 {
+			offset = 0
+		}
+		rotated := append([]Node(nil), active[offset:]...)
+		rotated = append(rotated, active[:offset]...)
+		active = rotated
+		nl.RoundRobinCursor = (offset + 1) % len(active)
+	}
+
+	outbounds := make([]singbox.Outbound, 0, len(active))
+	for _, n := range active {
+		outbounds = append(outbounds, nodeToOutbound(n))
+	}
+	return outbounds, nl
 }
 
 type fileSnapshot struct {

@@ -295,6 +295,8 @@ var restoreCmd = &cobra.Command{
 			return nil
 		}
 
+		previousNeedsSingbox := restoreNeedsSingbox(paths.TeleproxyTOML)
+
 		stopServiceFn("tgproxy-panel.service")
 		stopServiceFn("teleproxy.service")
 		stopServiceFn("sing-box.service")
@@ -305,6 +307,11 @@ var restoreCmd = &cobra.Command{
 			Passphrase:  restorePass,
 		}
 		if err := restoreArchive(opts); err != nil {
+			if previousNeedsSingbox {
+				startServiceFn("sing-box.service")
+			}
+			startServiceFn("teleproxy.service")
+			startServiceFn("tgproxy-panel.service")
 			return fmt.Errorf("restore failed: %w", err)
 		}
 

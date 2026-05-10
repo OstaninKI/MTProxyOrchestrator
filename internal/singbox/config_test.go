@@ -300,6 +300,9 @@ func TestStrategyFallbackRendersURLTest(t *testing.T) {
 	if g["type"] != "urltest" {
 		t.Errorf("fallback strategy: want type=urltest, got %v", g["type"])
 	}
+	if g["interrupt_exist_connections"] != true {
+		t.Errorf("fallback strategy should interrupt existing connections on health changes, got %v", g["interrupt_exist_connections"])
+	}
 }
 
 func TestStrategySelectorRendersSelector(t *testing.T) {

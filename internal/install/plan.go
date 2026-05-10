@@ -1,12 +1,16 @@
 package install
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/nginx"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/singbox"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/systemd"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
@@ -14,7 +18,12 @@ import (
 const (
 	teleproxyLinuxAMD64URL    = "https://github.com/teleproxy/teleproxy/releases/download/v4.12.2/teleproxy-linux-amd64"
 	teleproxyLinuxAMD64SHA256 = "02d5e0e4f1f8f44c45eb4c9b3cf6e6bc88c9b4f7f1682622da96eede8f02089f"
+	singboxLinuxAMD64URL      = "https://github.com/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-linux-amd64.tar.gz"
+	singboxLinuxAMD64SHA256   = "10ff037632165ca4f6472a0ec21393280ef5a33677e05bcde7fbcf6f9737637b"
 	PanelBackendPort          = 18080
+	bridgeSOCKS5Addr          = "127.0.0.1:1080"
+	bridgeSOCKS5ListenAddr    = "127.0.0.1"
+	bridgeSOCKS5ListenPort    = 1080
 )
 
 type StepKind string
@@ -73,34 +82,106 @@ type Plan struct {
 // BuildSinglePlan returns the install plan for Single mode.
 // It generates fresh credentials and renders all config files but does not touch the host.
 func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int, binaries LocalBinaries) (Plan, error) {
+	creds, err := generateCreds()
+	if err != nil {
+		return Plan{}, err
+	}
+	cfg.Mode = config.ModeSingle
+	cfg.PanelPath = creds.PanelPath
+	return buildPlan(cfg, paths, panelPort, binaries, creds, nil)
+}
+
+// BuildBridgePlan returns the install plan for Bridge mode using a first
+// VLESS Reality outbound share URL and a local sing-box SOCKS5 listener.
+func BuildBridgePlan(cfg config.Config, paths config.InstallPaths, panelPort int, binaries LocalBinaries, firstOutboundURL, strategy string) (Plan, error) {
+	if strings.TrimSpace(firstOutboundURL) == "" {
+		return Plan{}, fmt.Errorf("build bridge plan: first VLESS Reality outbound URL is required")
+	}
+	node, err := bridge.ImportVLESS(firstOutboundURL)
+	if err != nil {
+		return Plan{}, fmt.Errorf("build bridge plan: first outbound must be VLESS Reality: %w", err)
+	}
+	if strings.TrimSpace(strategy) == "" {
+		strategy = cfg.BridgeStrategy
+	}
+	if strings.TrimSpace(strategy) == "" {
+		strategy = "urltest"
+	}
+
+	creds, err := generateCreds()
+	if err != nil {
+		return Plan{}, err
+	}
+	cfg.Mode = config.ModeBridge
+	cfg.BridgeStrategy = strategy
+	cfg.PanelPath = creds.PanelPath
+
+	bridgeData, err := bridgePlanData(cfg, paths, node, strategy)
+	if err != nil {
+		return Plan{}, err
+	}
+	return buildPlan(cfg, paths, panelPort, binaries, creds, bridgeData)
+}
+
+func generateCreds() (GeneratedCreds, error) {
 	login, err := secrets.GenerateAdminLogin()
 	if err != nil {
-		return Plan{}, fmt.Errorf("generate admin login: %w", err)
+		return GeneratedCreds{}, fmt.Errorf("generate admin login: %w", err)
 	}
 	pass, err := secrets.GenerateAdminPassword()
 	if err != nil {
-		return Plan{}, fmt.Errorf("generate admin password: %w", err)
+		return GeneratedCreds{}, fmt.Errorf("generate admin password: %w", err)
 	}
-	panelPath := fmt.Sprintf("/p-%s/", login)
+	panelToken, err := generatePanelToken(login)
+	if err != nil {
+		return GeneratedCreds{}, fmt.Errorf("generate panel path: %w", err)
+	}
+	panelPath := "/p-" + panelToken + "/"
 	secret, err := secrets.GenerateMTProtoSecret()
 	if err != nil {
-		return Plan{}, fmt.Errorf("generate mtproto secret: %w", err)
+		return GeneratedCreds{}, fmt.Errorf("generate mtproto secret: %w", err)
 	}
 	firstUser := secrets.UserSecret{Label: "user1", Secret: secret}
 
-	creds := GeneratedCreds{
+	return GeneratedCreds{
 		AdminLogin:    login,
 		AdminPassword: pass,
 		PanelPath:     panelPath,
 		FirstUser:     firstUser,
-	}
+	}, nil
+}
 
+func generatePanelToken(login string) (string, error) {
+	for range 8 {
+		token, err := secrets.GenerateAdminLogin()
+		if err != nil {
+			return "", err
+		}
+		if token != login {
+			return token, nil
+		}
+	}
+	return "", fmt.Errorf("panel token matched admin login repeatedly")
+}
+
+type bridgeData struct {
+	OutboundsJSON []byte
+	SingboxJSON   []byte
+	SingboxUnit   []byte
+}
+
+func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, binaries LocalBinaries, creds GeneratedCreds, bridgeMode *bridgeData) (Plan, error) {
+	socks5Addr := ""
+	if bridgeMode != nil {
+		socks5Addr = bridgeSOCKS5Addr
+	}
 	tpCfg := teleproxy.Config{
-		Port:      cfg.MTProtoPort,
-		MaskHost:  cfg.MaskHost,
-		StatsPort: 9091,
+		Port:       cfg.MTProtoPort,
+		MaskHost:   cfg.MaskHost,
+		StatsPort:  9091,
+		SOCKS5Addr: socks5Addr,
 		Users: []teleproxy.UserEntry{
-			{Label: firstUser.Label, Secret: firstUser.Secret.Hex()},
+			{Label: creds.FirstUser.Label, Secret: creds.FirstUser.Secret.Hex()},
 		},
 	}
 	tpData := tpCfg.Render()
@@ -142,7 +223,7 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		BinaryPath:  paths.PanelBin,
 		ConfigPath:  paths.ConfigFile,
 		DBPath:      paths.PanelDB,
-		PanelPath:   panelPath,
+		PanelPath:   creds.PanelPath,
 		ListenAddr:  fmt.Sprintf("127.0.0.1:%d", PanelBackendPort),
 		MTProtoPort: cfg.MTProtoPort,
 		MaskHost:    cfg.MaskHost,
@@ -170,8 +251,9 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepInstallFile, Source: binaries.CLI, Target: paths.CLIBin, Mode: 0o755},
 		{Kind: StepInstallFile, Source: binaries.Panel, Target: paths.PanelBin, Mode: 0o755},
 		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: teleproxyDownloadSHA256(), Mode: 0o755},
+		{Kind: StepWriteFile, Target: paths.ConfigFile, Content: renderRootConfig(cfg), Mode: 0o600},
 		{Kind: StepWriteFile, Target: paths.TeleproxyTOML, Content: tpData, Mode: 0o600},
-		{Kind: StepWriteFile, Target: paths.UsersJSON, Content: usersJSONContent(firstUser), Mode: 0o600},
+		{Kind: StepWriteFile, Target: paths.UsersJSON, Content: usersJSONContent(creds.FirstUser), Mode: 0o600},
 		{
 			Kind:   StepInitPanelDB,
 			Target: paths.PanelDB,
@@ -193,6 +275,22 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 		{Kind: StepEnableService, Target: "tgproxy-panel"},
 		{Kind: StepStartService, Target: "tgproxy-panel"},
 	}
+	if bridgeMode != nil {
+		tpIdx := indexOfWriteTarget(steps, paths.TeleproxyTOML)
+		extra := []Step{
+			{Kind: StepDownloadBinary, Target: paths.SingboxBin, URL: singboxLinuxAMD64URL, SHA256: singboxLinuxAMD64SHA256, Mode: 0o755},
+			{Kind: StepWriteFile, Target: paths.OutboundsJSON, Content: bridgeMode.OutboundsJSON, Mode: 0o600},
+			{Kind: StepWriteFile, Target: paths.SingboxJSON, Content: bridgeMode.SingboxJSON, Mode: 0o600},
+			{Kind: StepWriteFile, Target: paths.SingboxService, Content: bridgeMode.SingboxUnit, Mode: 0o644},
+		}
+		steps = append(steps[:tpIdx], append(extra, steps[tpIdx:]...)...)
+		panelEnableIdx := indexOfServiceStep(steps, StepEnableService, "tgproxy-panel")
+		serviceSteps := []Step{
+			{Kind: StepEnableService, Target: "sing-box"},
+			{Kind: StepStartService, Target: "sing-box"},
+		}
+		steps = append(steps[:panelEnableIdx], append(serviceSteps, steps[panelEnableIdx:]...)...)
+	}
 	if len(acmeSnippetData) > 0 {
 		// Insert snippet write before the stub site config so the include is valid.
 		stubIdx := indexOfWriteTarget(steps, "/etc/nginx/sites-available/tgproxy-stub")
@@ -213,9 +311,54 @@ func BuildSinglePlan(cfg config.Config, paths config.InstallPaths, panelPort int
 	}
 
 	return Plan{
-		Mode:  config.ModeSingle,
+		Mode:  cfg.Mode,
 		Steps: steps,
 		Creds: creds,
+	}, nil
+}
+
+func bridgePlanData(cfg config.Config, paths config.InstallPaths, node bridge.Node, strategy string) (*bridgeData, error) {
+	node.ID = 1
+	nodes := bridge.NodeList{
+		Nodes:    []bridge.Node{node},
+		Strategy: strategy,
+	}
+	outboundsJSON, err := json.MarshalIndent(nodes, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("render outbounds.json: %w", err)
+	}
+	outboundsJSON = append(outboundsJSON, '\n')
+
+	sbCfg := singbox.Config{
+		SOCKSListenAddr: bridgeSOCKS5ListenAddr,
+		SOCKSListenPort: bridgeSOCKS5ListenPort,
+		Strategy:        singbox.Strategy(strategy),
+		Outbounds: []singbox.Outbound{{
+			Type:      singbox.OutboundVLESSReality,
+			Tag:       node.Tag,
+			Server:    node.Host,
+			Port:      node.Port,
+			UUID:      node.UUID,
+			Flow:      node.Flow,
+			TLSServer: node.SNI,
+			PublicKey: node.PublicKey,
+			ShortID:   node.ShortID,
+		}},
+	}
+	singboxJSON, err := sbCfg.Render()
+	if err != nil {
+		return nil, fmt.Errorf("render sing-box.json: %w", err)
+	}
+	sbUnit := systemd.SingboxUnitConfig{
+		BinaryPath: paths.SingboxBin,
+		ConfigPath: paths.SingboxJSON,
+		LogPath:    paths.SingboxLog,
+	}
+	_ = cfg
+	return &bridgeData{
+		OutboundsJSON: outboundsJSON,
+		SingboxJSON:   singboxJSON,
+		SingboxUnit:   sbUnit.Render(),
 	}, nil
 }
 
@@ -247,7 +390,34 @@ func indexOfWriteTarget(steps []Step, target string) int {
 	return len(steps)
 }
 
+func indexOfServiceStep(steps []Step, kind StepKind, target string) int {
+	for i, s := range steps {
+		if s.Kind == kind && s.Target == target {
+			return i
+		}
+	}
+	return len(steps)
+}
+
 // usersJSONContent returns the initial users.json content with the first user's secret.
 func usersJSONContent(firstUser secrets.UserSecret) []byte {
 	return []byte(fmt.Sprintf(`{"users":[{"label":%q,"secret":%q}]}`, firstUser.Label, firstUser.Secret.Hex()))
+}
+
+func renderRootConfig(cfg config.Config) []byte {
+	return []byte(fmt.Sprintf(`mode = %q
+mtproto_port = %d
+mask_host = %q
+bridge_strategy = %q
+log_level = %q
+tcp_keepalive_seconds = %.0f
+panel_path = %q
+panel_domain = %q
+panel_cert_path = %q
+panel_key_path = %q
+acme_email = %q
+
+# [telegram_bot]
+# token = ""
+`, cfg.Mode, cfg.MTProtoPort, cfg.MaskHost, cfg.BridgeStrategy, cfg.LogLevel, cfg.TCPKeepalive.Seconds(), cfg.PanelPath, cfg.PanelDomain, cfg.PanelCertPath, cfg.PanelKeyPath, cfg.ACMEEmail))
 }

@@ -1,6 +1,7 @@
 package bridge_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/singbox"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
 
@@ -256,6 +258,103 @@ func TestEnableBridgePersistsNode(t *testing.T) {
 	}
 }
 
+func TestEnableBridgeUsesConfiguredStrategy(t *testing.T) {
+	cases := []struct {
+		name      string
+		strategy  singbox.Strategy
+		wantType  string
+		wantExtra string
+	}{
+		{name: "roundrobin", strategy: singbox.StrategyRoundRobin, wantType: "selector"},
+		{name: "fallback", strategy: singbox.StrategyFallback, wantType: "urltest", wantExtra: "interrupt_exist_connections"},
+		{name: "selector", strategy: singbox.StrategySelector, wantType: "selector"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exec := newFakeExecutor()
+			cfg := testEnableCfg(t)
+			cfg.Strategy = string(tc.strategy)
+			dir := t.TempDir()
+			nodePath := filepath.Join(dir, "outbounds.json")
+			existing := bridge.NodeList{Nodes: []bridge.Node{
+				{
+					ID: 1, Type: bridge.NodeTypeVLESSReality, Tag: "n0",
+					Host: "10.0.0.2", Port: 443, UUID: "some-uuid-0",
+					SNI: "sni0.test", PublicKey: "pk0", ShortID: "sid0",
+					Enabled: true,
+				},
+			}}
+			if err := existing.Save(nodePath); err != nil {
+				t.Fatalf("seed nodes: %v", err)
+			}
+			svc := &bridge.BridgeService{Exec: exec, NodePath: nodePath}
+
+			if err := svc.Enable(cfg); err != nil {
+				t.Fatalf("Enable: %v", err)
+			}
+
+			g := renderedProxyGroup(t, exec.written[cfg.Paths.SingboxJSON])
+			if g["type"] != tc.wantType {
+				t.Fatalf("strategy %s rendered type=%v, want %s", tc.strategy, g["type"], tc.wantType)
+			}
+			if tc.wantExtra != "" {
+				if _, ok := g[tc.wantExtra]; !ok {
+					t.Fatalf("strategy %s missing %s in rendered group: %#v", tc.strategy, tc.wantExtra, g)
+				}
+			}
+
+			nl, err := bridge.Load(nodePath)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if nl.Strategy != string(tc.strategy) {
+				t.Fatalf("persisted strategy=%q, want %q", nl.Strategy, tc.strategy)
+			}
+		})
+	}
+}
+
+func TestRerenderRoundRobinRotatesOutboundOrderAndPersistsCursor(t *testing.T) {
+	exec := newFakeExecutor()
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	jsonPath := filepath.Join(dir, "sing-box.json")
+	nl := bridge.NodeList{
+		Strategy: "roundrobin",
+		Nodes: []bridge.Node{
+			{ID: 1, Type: bridge.NodeTypeVLESSReality, Tag: "node-a", Host: "1.1.1.1", Port: 443, UUID: "uuid-a", SNI: "a.example.com", PublicKey: "pk-a", Enabled: true},
+			{ID: 2, Type: bridge.NodeTypeVLESSReality, Tag: "node-b", Host: "2.2.2.2", Port: 443, UUID: "uuid-b", SNI: "b.example.com", PublicKey: "pk-b", Enabled: true},
+			{ID: 3, Type: bridge.NodeTypeVLESSReality, Tag: "node-c", Host: "3.3.3.3", Port: 443, UUID: "uuid-c", SNI: "c.example.com", PublicKey: "pk-c", Enabled: true},
+		},
+	}
+	if err := nl.Save(nodePath); err != nil {
+		t.Fatalf("seed nodes: %v", err)
+	}
+	svc := &bridge.BridgeService{Exec: exec, NodePath: nodePath}
+
+	if err := svc.RerenderConfig(nl, jsonPath); err != nil {
+		t.Fatalf("first RerenderConfig: %v", err)
+	}
+	first := outboundTags(t, exec.written[jsonPath])
+
+	updated, err := bridge.Load(nodePath)
+	if err != nil {
+		t.Fatalf("load updated nodes: %v", err)
+	}
+	if updated.RoundRobinCursor != 1 {
+		t.Fatalf("after first render cursor=%d, want 1", updated.RoundRobinCursor)
+	}
+
+	if err := svc.RerenderConfig(updated, jsonPath); err != nil {
+		t.Fatalf("second RerenderConfig: %v", err)
+	}
+	second := outboundTags(t, exec.written[jsonPath])
+	if first[0] == second[0] {
+		t.Fatalf("round-robin did not rotate first outbound: first=%v second=%v", first, second)
+	}
+}
+
 func TestDisableBridgeHappyPath(t *testing.T) {
 	exec := newFakeExecutor()
 	exec.services["sing-box.service"] = true
@@ -370,4 +469,37 @@ func containsCall(calls []string, call string) bool {
 		}
 	}
 	return false
+}
+
+func renderedProxyGroup(t *testing.T, out []byte) map[string]any {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal rendered sing-box config: %v\n%s", err, out)
+	}
+	for _, raw := range doc["outbounds"].([]any) {
+		ob := raw.(map[string]any)
+		if ob["tag"] == "proxy" {
+			return ob
+		}
+	}
+	t.Fatal("proxy group not found")
+	return nil
+}
+
+func outboundTags(t *testing.T, out []byte) []string {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("unmarshal rendered sing-box config: %v\n%s", err, out)
+	}
+	var tags []string
+	for _, raw := range doc["outbounds"].([]any) {
+		ob := raw.(map[string]any)
+		if ob["tag"] == "proxy" || ob["tag"] == "direct" {
+			continue
+		}
+		tags = append(tags, ob["tag"].(string))
+	}
+	return tags
 }

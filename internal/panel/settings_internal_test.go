@@ -97,6 +97,24 @@ func oversizedMultipartBody(t *testing.T) ([]byte, string) {
 	return buf.Bytes(), mw.FormDataContentType()
 }
 
+func multipartZipBody(t *testing.T, payload []byte) ([]byte, string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("stub_zip", "stub.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes(), mw.FormDataContentType()
+}
+
 func TestStubUploadSizeLimitAppliesBeforeCSRFFormParsing(t *testing.T) {
 	body, contentType := oversizedMultipartBody(t)
 	reader := &countingReader{r: bytes.NewReader(body)}
@@ -111,5 +129,24 @@ func TestStubUploadSizeLimitAppliesBeforeCSRFFormParsing(t *testing.T) {
 
 	if reader.read > maxUploadBytes+4096+1024 {
 		t.Fatalf("handler read %d bytes before enforcing upload limit", reader.read)
+	}
+}
+
+func TestStubUploadRejectsActiveContent(t *testing.T) {
+	payload := makeZIP(t, map[string]string{
+		"index.html": `<html><body><script>fetch('/p-example/users')</script></body></html>`,
+	})
+	body, contentType := multipartZipBody(t, payload)
+	req := httptest.NewRequest(http.MethodPost, "/settings/stubs/upload", bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "tok"})
+	req.Form = map[string][]string{CSRFField(): {"tok"}}
+
+	srv := &Server{Secure: false}
+	w := httptest.NewRecorder()
+	srv.handleSettingsStubUpload(w, req)
+
+	if !strings.Contains(w.Body.String(), "active content is not allowed") {
+		t.Fatalf("expected active content validation error, got status %d body: %s", w.Code, w.Body.String())
 	}
 }

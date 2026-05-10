@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
 )
@@ -84,6 +85,9 @@ func (e *SystemExecutor) WriteFile(path string, content []byte, mode os.FileMode
 
 func (e *SystemExecutor) Download(url, sha256hex, destPath string) error {
 	dl := component.Downloader{Client: http.DefaultClient}
+	if strings.HasSuffix(url, ".tar.gz") {
+		return dl.DownloadTarGzBinary(url, sha256hex, filepath.Base(destPath), destPath)
+	}
 	return dl.Download(url, sha256hex, destPath)
 }
 

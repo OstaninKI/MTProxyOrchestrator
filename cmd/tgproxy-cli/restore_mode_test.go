@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -103,5 +105,111 @@ func TestRestoreSkipsSingboxWhenBridgeStateAbsent(t *testing.T) {
 
 	if slices.Contains(started, "sing-box.service") {
 		t.Fatalf("did not expect sing-box.service start without bridge state, got %v", started)
+	}
+}
+
+func TestRestoreRestartsPreviousSingleServicesAfterFailedRestore(t *testing.T) {
+	oldNewPrompter := newPrompter
+	oldStopService := stopServiceFn
+	oldStartService := startServiceFn
+	oldRestore := restoreArchive
+	oldPaths := defaultPaths
+	oldPass := restorePass
+	t.Cleanup(func() {
+		newPrompter = oldNewPrompter
+		stopServiceFn = oldStopService
+		startServiceFn = oldStartService
+		restoreArchive = oldRestore
+		defaultPaths = oldPaths
+		restorePass = oldPass
+	})
+
+	dir := t.TempDir()
+	paths := config.DefaultPaths()
+	paths.ConfigDir = dir
+	paths.TeleproxyTOML = filepath.Join(dir, "teleproxy.toml")
+	defaultPaths = func() config.InstallPaths { return paths }
+	if err := os.WriteFile(paths.TeleproxyTOML, []byte("port = 443\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	newPrompter = func() install.Prompter { return confirmPrompter{} }
+	var events []string
+	stopServiceFn = func(s string) { events = append(events, "stop:"+s) }
+	startServiceFn = func(s string) { events = append(events, "start:"+s) }
+	restoreArchive = func(opts backup.RestoreOptions) error {
+		return errors.New("restore archive failed")
+	}
+	restorePass = "secret"
+
+	err := restoreCmd.RunE(restoreCmd, []string{"/tmp/archive.enc"})
+	if err == nil {
+		t.Fatal("expected restore error")
+	}
+
+	want := []string{
+		"stop:tgproxy-panel.service",
+		"stop:teleproxy.service",
+		"stop:sing-box.service",
+		"start:teleproxy.service",
+		"start:tgproxy-panel.service",
+	}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %v, want %v", events, want)
+	}
+}
+
+func TestRestoreRestartsPreviousBridgeServicesAfterFailedRestore(t *testing.T) {
+	oldNewPrompter := newPrompter
+	oldStopService := stopServiceFn
+	oldStartService := startServiceFn
+	oldRestore := restoreArchive
+	oldPaths := defaultPaths
+	oldPass := restorePass
+	t.Cleanup(func() {
+		newPrompter = oldNewPrompter
+		stopServiceFn = oldStopService
+		startServiceFn = oldStartService
+		restoreArchive = oldRestore
+		defaultPaths = oldPaths
+		restorePass = oldPass
+	})
+
+	dir := t.TempDir()
+	paths := config.DefaultPaths()
+	paths.ConfigDir = dir
+	paths.TeleproxyTOML = filepath.Join(dir, "teleproxy.toml")
+	defaultPaths = func() config.InstallPaths { return paths }
+	if err := os.WriteFile(paths.TeleproxyTOML, []byte("port = 443\nsocks5 = \"127.0.0.1:1080\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	newPrompter = func() install.Prompter { return confirmPrompter{} }
+	var events []string
+	stopServiceFn = func(s string) { events = append(events, "stop:"+s) }
+	startServiceFn = func(s string) { events = append(events, "start:"+s) }
+	restoreArchive = func(opts backup.RestoreOptions) error {
+		if err := os.WriteFile(paths.TeleproxyTOML, []byte("port = 443\n"), 0o600); err != nil {
+			return err
+		}
+		return errors.New("restore archive failed")
+	}
+	restorePass = "secret"
+
+	err := restoreCmd.RunE(restoreCmd, []string{"/tmp/archive.enc"})
+	if err == nil {
+		t.Fatal("expected restore error")
+	}
+
+	want := []string{
+		"stop:tgproxy-panel.service",
+		"stop:teleproxy.service",
+		"stop:sing-box.service",
+		"start:sing-box.service",
+		"start:teleproxy.service",
+		"start:tgproxy-panel.service",
+	}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %v, want %v", events, want)
 	}
 }

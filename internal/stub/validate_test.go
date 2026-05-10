@@ -3,6 +3,7 @@ package stub
 import (
 	"archive/zip"
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -172,6 +173,68 @@ func TestValidateExternalURLInCSS(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsJavaScriptFile(t *testing.T) {
+	data, size := makeZip(t, map[string]string{
+		"index.html": "<html><body>Hello</body></html>",
+		"app.js":     "fetch('/p-example/users')",
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if !hasValidationErrorForFile(errs, "app.js") {
+		t.Fatalf("expected JavaScript file to be rejected, got: %v", errs)
+	}
+}
+
+func TestValidateRejectsInlineScriptInHTML(t *testing.T) {
+	data, size := makeZip(t, map[string]string{
+		"index.html": `<html><body><script>fetch('/p-example/users')</script></body></html>`,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if !hasValidationErrorForFile(errs, "index.html") {
+		t.Fatalf("expected inline script to be rejected, got: %v", errs)
+	}
+}
+
+func TestValidateRejectsEventHandlerAttribute(t *testing.T) {
+	data, size := makeZip(t, map[string]string{
+		"index.html": `<html><body><img src="logo.png" onerror="fetch('/p-example/users')"></body></html>`,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if !hasValidationErrorForFile(errs, "index.html") {
+		t.Fatalf("expected event handler attribute to be rejected, got: %v", errs)
+	}
+}
+
+func TestValidateRejectsJavaScriptURL(t *testing.T) {
+	data, size := makeZip(t, map[string]string{
+		"index.html": `<html><body><a href="javascript:fetch('/p-example/users')">open</a></body></html>`,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if !hasValidationErrorForFile(errs, "index.html") {
+		t.Fatalf("expected javascript URL to be rejected, got: %v", errs)
+	}
+}
+
+func TestValidateRejectsActiveSVG(t *testing.T) {
+	data, size := makeZip(t, map[string]string{
+		"logo.svg": `<svg xmlns="http://www.w3.org/2000/svg"><script>fetch('/p-example/users')</script></svg>`,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if !hasValidationErrorForFile(errs, "logo.svg") {
+		t.Fatalf("expected active SVG to be rejected, got: %v", errs)
+	}
+}
+
+func TestValidateAllowsPassiveSVGNamespace(t *testing.T) {
+	data, size := makeZip(t, map[string]string{
+		"index.html": "<html><body></body></html>",
+		"logo.svg":   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>`,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if len(errs) != 0 {
+		t.Fatalf("expected passive SVG namespace to be allowed, got: %v", errs)
+	}
+}
+
 func TestValidateMultipleErrors(t *testing.T) {
 	// One path traversal entry + one external URL entry
 	data, size := makeZip(t, map[string]string{
@@ -182,4 +245,91 @@ func TestValidateMultipleErrors(t *testing.T) {
 	if len(errs) < 2 {
 		t.Errorf("expected at least 2 errors, got %d: %v", len(errs), errs)
 	}
+}
+
+func TestValidateLargeHTMLWithScriptRejected(t *testing.T) {
+	// Files > 1 MB must still be scanned for active content.
+	large := strings.Repeat("x", 1024*1024+1) + "<script>alert(1)</script>"
+	data, size := makeZip(t, map[string]string{
+		"index.html": large,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if !hasValidationErrorForFile(errs, "index.html") {
+		t.Fatalf("expected large HTML with script to be rejected, got: %v", errs)
+	}
+}
+
+func TestValidateCSSSlashSlashCommentAllowed(t *testing.T) {
+	// CSS with // comments must not be falsely rejected as an external URL.
+	data, size := makeZip(t, map[string]string{
+		"index.html": "<html><body></body></html>",
+		"style.css":  "body { color: red; } // fallback comment\n.foo { margin: 0; }",
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if len(errs) != 0 {
+		t.Fatalf("expected CSS with // comment to be allowed, got: %v", errs)
+	}
+}
+
+func TestValidateProtocolRelativeURLRejected(t *testing.T) {
+	// Protocol-relative URLs like //example.com/img.png must be rejected.
+	data, size := makeZip(t, map[string]string{
+		"index.html": `<html><body><img src="//example.com/img.png"></body></html>`,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if !hasValidationErrorForFile(errs, "index.html") {
+		t.Fatalf("expected protocol-relative URL to be rejected, got: %v", errs)
+	}
+}
+
+func TestValidateSVGSettingsTagAllowed(t *testing.T) {
+	// <settings> must not be mistaken for SVG <set> animation element.
+	data, size := makeZip(t, map[string]string{
+		"index.html": "<html><body></body></html>",
+		"logo.svg":   `<svg xmlns="http://www.w3.org/2000/svg"><settings><option/></settings></svg>`,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if len(errs) != 0 {
+		t.Fatalf("expected SVG with <settings> tag to be allowed, got: %v", errs)
+	}
+}
+
+func TestValidateSVGSetAnimationRejected(t *testing.T) {
+	// SVG <set> animation element must be rejected.
+	data, size := makeZip(t, map[string]string{
+		"index.html": "<html><body></body></html>",
+		"logo.svg":   `<svg xmlns="http://www.w3.org/2000/svg"><circle><set attributeName="r" to="10"/></circle></svg>`,
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	if !hasValidationErrorForFile(errs, "logo.svg") {
+		t.Fatalf("expected SVG with <set> animation to be rejected, got: %v", errs)
+	}
+}
+
+func TestValidateMissingRootHTMLRejected(t *testing.T) {
+	// A ZIP with no .html/.htm file at the root must be rejected.
+	data, size := makeZip(t, map[string]string{
+		"style.css": "body { color: red; }",
+		"logo.png":  "fakepng",
+	})
+	errs := Validate(bytes.NewReader(data), size)
+	hasArchiveErr := false
+	for _, e := range errs {
+		if e.File == "" {
+			hasArchiveErr = true
+			break
+		}
+	}
+	if !hasArchiveErr {
+		t.Fatalf("expected archive-level error for missing root HTML, got: %v", errs)
+	}
+}
+
+func hasValidationErrorForFile(errs []ValidationError, file string) bool {
+	for _, e := range errs {
+		if e.File == file {
+			return true
+		}
+	}
+	return false
 }
