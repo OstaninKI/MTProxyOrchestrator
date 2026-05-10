@@ -211,7 +211,7 @@ func TestSinglePlanWritesTLSStubBackendWhenTLSConfigPresent(t *testing.T) {
 		}
 		body := string(s.Content)
 		for _, want := range []string{
-			"listen 127.0.0.1:9443 ssl",
+			"listen 0.0.0.0:9443 ssl",
 			"server_name proxy.example.com",
 			"ssl_certificate     " + cfg.PanelCertPath,
 			"root /var/www/tgproxy-stub",
@@ -222,7 +222,7 @@ func TestSinglePlanWritesTLSStubBackendWhenTLSConfigPresent(t *testing.T) {
 		}
 		return
 	}
-	t.Fatal("Single plan must write a loopback TLS stub backend when certificate config is present")
+	t.Fatal("Single plan must write a stub TLS backend when certificate config is present")
 }
 
 func TestSinglePlanUsesPanelDomainAsTeleproxyFallbackWhenTLSConfigPresent(t *testing.T) {
