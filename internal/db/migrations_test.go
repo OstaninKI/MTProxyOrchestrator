@@ -114,9 +114,9 @@ func TestMigrationsIdempotentTraffic(t *testing.T) {
 			d.Close()
 			t.Fatalf("query migrations iteration %d: %v", i, err)
 		}
-		if count != 5 {
+		if count != 7 {
 			d.Close()
-			t.Errorf("iteration %d: expected 5 migrations recorded, got %d", i, count)
+			t.Errorf("iteration %d: expected 7 migrations recorded, got %d", i, count)
 		}
 		d.Close()
 	}

@@ -3,6 +3,7 @@ package panel
 import (
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -18,6 +19,9 @@ type Server struct {
 	BridgeCfg     *BridgeConfig   // nil → use DefaultPaths and default ports
 	SettingsCfg   *SettingsConfig // nil → empty stub/cert config
 	SingboxActive func() bool     // lets tests stub the sing-box running check; nil = use real systemd
+
+	totpMu      sync.Mutex
+	totpPending *pendingTOTPStore
 }
 
 // Handler returns the root http.Handler. All requests outside PanelPath return 404.
@@ -57,6 +61,8 @@ func (s *Server) panelRouter() http.Handler {
 
 	r.Get("/login", s.handleLoginForm)
 	r.Post("/login", s.handleLoginSubmit)
+	r.Get("/totp/verify", s.handleTOTPVerifyForm)
+	r.Post("/totp/verify", s.handleTOTPVerifySubmit)
 	r.Post("/logout", s.handleLogout)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -71,6 +77,9 @@ func (s *Server) panelRouter() http.Handler {
 		r.Post("/users/{id}/toggle", s.handleUserToggle)
 		r.Post("/users/{id}/rotate", s.handleUserRotate)
 		r.Post("/users/{id}/delete", s.handleUserDelete)
+		r.Post("/users/{id}/quota", s.handleUserQuotaSet)
+		r.Post("/users/{id}/quota/reset", s.handleUserQuotaReset)
+		r.Post("/users/{id}/suspend", s.handleUserSuspendToggle)
 		r.Get("/bridge", s.handleBridgePage)
 		r.Post("/bridge/enable", s.handleBridgeEnable)
 		r.Post("/bridge/disable", s.handleBridgeDisable)
@@ -93,6 +102,11 @@ func (s *Server) panelRouter() http.Handler {
 		r.Post("/settings/admin-password", s.handleSettingsAdminPasswordPost)
 		r.Get("/settings/system", s.handleSettingsSystemGet)
 		r.Post("/settings/system", s.handleSettingsSystemPost)
+		r.Get("/settings/totp", s.handleSettingsTOTPGet)
+		r.Post("/settings/totp/begin", s.handleSettingsTOTPBegin)
+		r.Post("/settings/totp/confirm", s.handleSettingsTOTPConfirm)
+		r.Post("/settings/totp/disable", s.handleSettingsTOTPDisable)
+		r.Post("/settings/totp/regenerate", s.handleSettingsTOTPRegenerate)
 		r.Get("/logs", s.handleLogsPage)
 		r.Get("/logs/stream", s.handleLogsStream)
 		r.Get("/logs/download", s.handleLogsDownload)

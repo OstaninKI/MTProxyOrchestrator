@@ -123,6 +123,37 @@ func TestReloadTeleproxyAppliesOnlyEnabledNonDeletedUsers(t *testing.T) {
 	}
 }
 
+func TestReloadTeleproxyExcludesSuspendedUsers(t *testing.T) {
+	srv := newInternalTestServer(t)
+	repo := UserRepo{DB: srv.DB}
+	if _, err := repo.Create("active", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err != nil {
+		t.Fatal(err)
+	}
+	suspendedID, err := repo.Create("suspended", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetSuspended(suspendedID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	var applied []byte
+	withWriteAndReloadHook(t, func(data []byte) {
+		applied = append([]byte(nil), data...)
+	})
+
+	if err := srv.reloadTeleproxy(); err != nil {
+		t.Fatalf("reloadTeleproxy error: %v", err)
+	}
+	got := string(applied)
+	if !strings.Contains(got, `label = "active"`) {
+		t.Fatalf("active user missing from applied config: %s", got)
+	}
+	if strings.Contains(got, "suspended") {
+		t.Fatalf("suspended user must not appear: %s", got)
+	}
+}
+
 // withBridgeActive injects a stub for isSingboxActive so tests can control
 // whether Bridge mode is considered active without touching the real system.
 func withBridgeActive(t *testing.T, active bool) {

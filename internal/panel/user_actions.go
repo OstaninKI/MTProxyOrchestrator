@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
@@ -167,6 +168,108 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 	userCreatedPage(w, label, secret.Hex())
 }
 
+// ReloadTeleproxyForQuota is exposed so the quota service can rebuild teleproxy
+// config when a user's suspension state transitions.
+func (s *Server) ReloadTeleproxyForQuota() error { return s.reloadTeleproxy() }
+
+func (s *Server) handleUserQuotaSet(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	gb, _ := strconv.ParseFloat(r.FormValue("gb"), 64)
+	if gb < 0 {
+		gb = 0
+	}
+	bytes := int64(gb * 1024 * 1024 * 1024)
+	period := r.FormValue("period")
+	warn, _ := strconv.Atoi(r.FormValue("warn_pct"))
+	if warn == 0 {
+		warn = 80
+	}
+	repo := UserRepo{DB: s.DB}
+	if err := repo.SetQuota(id, bytes, period, warn, time.Now().Unix()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	audit.Log(s.DB, s.sessionAdminID(r), "user.quota_set", chi.URLParam(r, "id"),
+		fmt.Sprintf("bytes=%d period=%s warn=%d", bytes, period, warn), clientIP(r)) //nolint:errcheck
+	if err := s.reloadTeleproxy(); err != nil {
+		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "../../users", http.StatusSeeOther)
+}
+
+func (s *Server) handleUserQuotaReset(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	repo := UserRepo{DB: s.DB}
+	if err := repo.ResetQuota(id, time.Now().Unix()); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	audit.Log(s.DB, s.sessionAdminID(r), "user.quota_reset", chi.URLParam(r, "id"), "", clientIP(r)) //nolint:errcheck
+	if err := s.reloadTeleproxy(); err != nil {
+		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "../../users", http.StatusSeeOther)
+}
+
+func (s *Server) handleUserSuspendToggle(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	repo := UserRepo{DB: s.DB}
+	users, _ := repo.List()
+	var target *UserRow
+	for i := range users {
+		if users[i].ID == id {
+			target = &users[i]
+			break
+		}
+	}
+	if target == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	newState := !target.QuotaSuspended
+	if err := repo.SetSuspended(id, newState); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	action := "user.suspend"
+	if !newState {
+		action = "user.unsuspend"
+	}
+	audit.Log(s.DB, s.sessionAdminID(r), action, target.Label, "", clientIP(r)) //nolint:errcheck
+	if err := s.reloadTeleproxy(); err != nil {
+		_ = repo.SetSuspended(id, target.QuotaSuspended)
+		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "../../users", http.StatusSeeOther)
+}
+
 // reloadTeleproxy rewrites the Teleproxy config and reloads the service.
 // It preserves Bridge mode by including the SOCKS5 upstream when sing-box is active.
 func (s *Server) reloadTeleproxy() error {
@@ -176,7 +279,7 @@ func (s *Server) reloadTeleproxy() error {
 	}
 	var entries []teleproxy.UserEntry
 	for _, u := range users {
-		if u.Enabled && u.DeletedAt == nil {
+		if u.Enabled && u.DeletedAt == nil && !u.QuotaSuspended {
 			entries = append(entries, teleproxy.UserEntry{Label: u.Label, Secret: u.SecretHex})
 		}
 	}

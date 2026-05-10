@@ -13,7 +13,6 @@ MTProto Proxy Orchestrator is a single-host, single-admin system intended for tr
 Out of scope for v1:
 
 - public multi-tenant administration
-- panel 2FA
 - public HTTP API
 - host compromise outside this application boundary
 - network-layer DDoS mitigation
@@ -47,6 +46,22 @@ Out of scope for v1:
 - When the panel is behind local nginx, the app trusts the loopback proxy's `X-Real-IP` value instead of a client-appended `X-Forwarded-For` chain.
 - Audit rows record admin actions without raw secrets or session tokens.
 
+### Optional Two-Factor Authentication
+
+- TOTP-based 2FA is opt-in per admin account. Default state is disabled, preserving prior login behavior for existing deployments.
+- After password verification, the panel issues a 5-minute pending-TOTP cookie and redirects to `/totp/verify`. The session cookie is only minted after the second factor is verified.
+- Failed TOTP attempts are counted by the same login rate limiter (5 per IP per 5 minutes, then 1 hour block).
+- Eight single-use recovery codes are generated at enrollment and stored as bcrypt hashes (cost `12`). Recovery codes are removed from storage on first use.
+- Disabling TOTP and regenerating recovery codes both require a current TOTP code or an unused recovery code. State changes are logged: `totp_enabled`, `totp_disabled`, `totp_recovery_regenerated`, `totp_recovery_used`, `totp_failed`.
+- Lost 2FA device recovery is documented in `docs/OPERATIONS.md`; if recovery codes are also lost, a host-level SQLite reset is the documented last resort.
+
+## Quota-Based Abuse Mitigation
+
+- Per-user traffic quotas are optional. When configured, exceeding the limit suspends the user automatically and excludes their secret from the rendered Teleproxy config until the next period rollover or a manual reset.
+- The quota service crosses the warn threshold once per period and writes a single `quota_warning` audit event, avoiding noisy repeats.
+- Suspension transitions trigger a Teleproxy reload only on state changes, so a steady-state quota check does not perturb the running service.
+- This control is intended as a guard against a leaked user secret consuming the channel, not as a billing mechanism.
+
 ## Backup Handling
 
 - Backups include configuration/state needed to restore `/etc/tgproxy/`.
@@ -76,6 +91,5 @@ Out of scope for v1:
 
 ## Known Non-Goals
 
-- No v1 2FA for the admin panel
 - No multi-tenant admin roles
 - No public API

@@ -25,6 +25,14 @@ type UserRow struct {
 	CreatedAt time.Time
 	RotatedAt *time.Time
 	DeletedAt *time.Time
+
+	QuotaBytes       int64
+	QuotaPeriod      string
+	QuotaWarnPct     int
+	QuotaSuspended   bool
+	QuotaPeriodStart int64
+	QuotaUsedBytes   int64
+	QuotaWarned      bool
 }
 
 // UserRepo wraps DB operations for users.
@@ -35,7 +43,9 @@ type UserRepo struct {
 // List returns all non-deleted users ordered by creation time.
 func (r UserRepo) List() ([]UserRow, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, label, secret_hex, enabled, created_at, rotated_at
+		`SELECT id, label, secret_hex, enabled, created_at, rotated_at,
+		        quota_bytes, quota_period, quota_warn_pct, quota_suspended,
+		        quota_period_start, quota_used_bytes, quota_warned
 		 FROM users WHERE deleted_at IS NULL ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -47,7 +57,9 @@ func (r UserRepo) List() ([]UserRow, error) {
 		var u UserRow
 		var rotated sql.NullString
 		var created string
-		if err := rows.Scan(&u.ID, &u.Label, &u.SecretHex, &u.Enabled, &created, &rotated); err != nil {
+		if err := rows.Scan(&u.ID, &u.Label, &u.SecretHex, &u.Enabled, &created, &rotated,
+			&u.QuotaBytes, &u.QuotaPeriod, &u.QuotaWarnPct, &u.QuotaSuspended,
+			&u.QuotaPeriodStart, &u.QuotaUsedBytes, &u.QuotaWarned); err != nil {
 			return nil, err
 		}
 		u.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", created)
@@ -58,6 +70,58 @@ func (r UserRepo) List() ([]UserRow, error) {
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// SetQuota updates quota configuration for a user. Resets warned/used/period_start
+// only if quota_period changed or period_start is zero.
+func (r UserRepo) SetQuota(id int64, bytes int64, period string, warnPct int, nowTS int64) error {
+	if period != "daily" && period != "weekly" && period != "monthly" {
+		return fmt.Errorf("invalid period %q", period)
+	}
+	if warnPct < 0 || warnPct > 100 {
+		return fmt.Errorf("warn pct out of range")
+	}
+	if bytes < 0 {
+		return fmt.Errorf("quota bytes negative")
+	}
+	var curPeriod string
+	var curStart int64
+	if err := r.DB.QueryRow(`SELECT quota_period, quota_period_start FROM users WHERE id=?`, id).Scan(&curPeriod, &curStart); err != nil {
+		return err
+	}
+	if curPeriod != period || curStart == 0 {
+		_, err := r.DB.Exec(
+			`UPDATE users SET quota_bytes=?, quota_period=?, quota_warn_pct=?,
+			                  quota_period_start=?, quota_used_bytes=0, quota_warned=0, quota_suspended=0
+			 WHERE id=? AND deleted_at IS NULL`,
+			bytes, period, warnPct, nowTS, id,
+		)
+		return err
+	}
+	_, err := r.DB.Exec(
+		`UPDATE users SET quota_bytes=?, quota_warn_pct=? WHERE id=? AND deleted_at IS NULL`,
+		bytes, warnPct, id,
+	)
+	return err
+}
+
+// SetSuspended toggles the quota_suspended flag.
+func (r UserRepo) SetSuspended(id int64, suspended bool) error {
+	_, err := r.DB.Exec(
+		`UPDATE users SET quota_suspended=? WHERE id=? AND deleted_at IS NULL`,
+		suspended, id,
+	)
+	return err
+}
+
+// ResetQuota zeroes the quota usage counters and advances period_start.
+func (r UserRepo) ResetQuota(id int64, nowTS int64) error {
+	_, err := r.DB.Exec(
+		`UPDATE users SET quota_used_bytes=0, quota_warned=0, quota_suspended=0, quota_period_start=?
+		 WHERE id=? AND deleted_at IS NULL`,
+		nowTS, id,
+	)
+	return err
 }
 
 // ActiveCount returns the number of enabled non-deleted users.

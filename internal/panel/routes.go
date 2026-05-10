@@ -108,33 +108,21 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.RateLimiter.RecordSuccess(ip)
-	audit.Log(s.DB, adminID, "login_success", login, "", ip) //nolint:errcheck
-
-	sessionID, err := NewSessionID()
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	exp := SessionExpiry()
-	_, err = s.DB.Exec(
-		`INSERT INTO sessions(id, admin_id, expires_at, last_seen_at, ip) VALUES(?,?,?,?,?)`,
-		sessionID, adminID, exp.UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339), ip,
-	)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	// If 2FA is enabled, defer session issuance until TOTP verifies.
+	a, terr := s.loadAdminTOTP(adminID)
+	if terr == nil && a.enabled {
+		if err := s.issuePendingTOTP(w, adminID, login); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, strings.TrimSuffix(s.PanelPath, "/")+"/totp/verify", http.StatusSeeOther)
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    sessionID,
-		Path:     s.PanelPath,
-		MaxAge:   int(sessionDuration.Seconds()),
-		HttpOnly: true,
-		Secure:   s.Secure,
-		SameSite: http.SameSiteStrictMode,
-	})
+	if err := s.finalizeLogin(w, r, adminID, login); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, s.PanelPath, http.StatusSeeOther)
 }
 

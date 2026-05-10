@@ -13,7 +13,25 @@ var migrations = []migration{
 	{"003_cert_schema", sqlCertSchema},
 	{"004_settings", sqlSettingsSchema},
 	{"005_sessions_idle_timeout", `ALTER TABLE sessions ADD COLUMN last_seen_at DATETIME;`},
+	{"006_user_quotas", sqlUserQuotas},
+	{"007_admin_totp", sqlAdminTOTP},
 }
+
+const sqlAdminTOTP = `
+ALTER TABLE admin ADD COLUMN totp_secret TEXT NOT NULL DEFAULT '';
+ALTER TABLE admin ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE admin ADD COLUMN totp_recovery_codes TEXT NOT NULL DEFAULT '';
+`
+
+const sqlUserQuotas = `
+ALTER TABLE users ADD COLUMN quota_bytes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN quota_period TEXT NOT NULL DEFAULT 'monthly';
+ALTER TABLE users ADD COLUMN quota_warn_pct INTEGER NOT NULL DEFAULT 80;
+ALTER TABLE users ADD COLUMN quota_suspended INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN quota_period_start INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN quota_used_bytes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN quota_warned INTEGER NOT NULL DEFAULT 0;
+`
 
 func migrate(d *DB) error {
 	if _, err := d.Exec(`CREATE TABLE IF NOT EXISTS migrations (

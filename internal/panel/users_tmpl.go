@@ -28,12 +28,17 @@ a{color:#2563eb}</style>
 <button type="submit">Add user</button>
 </form>
 <table>
-<thead><tr><th>Label</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+<thead><tr><th>Label</th><th>Status</th><th>Quota</th><th>Used</th><th>Created</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Users}}
 <tr>
   <td>{{.Label}}</td>
-  <td>{{if .Enabled}}<span class="badge-on">enabled</span>{{else}}<span class="badge-off">disabled</span>{{end}}</td>
+  <td>
+    {{if .Enabled}}<span class="badge-on">enabled</span>{{else}}<span class="badge-off">disabled</span>{{end}}
+    {{if .QuotaSuspended}} <span class="badge-off">suspended</span>{{end}}
+  </td>
+  <td>{{if gt .QuotaBytes 0}}{{.QuotaBytes}} B / {{.QuotaPeriod}}{{else}}<span style="color:#888">unlimited</span>{{end}}</td>
+  <td>{{.QuotaUsedBytes}} B</td>
   <td>{{.CreatedAt.Format "2006-01-02"}}</td>
   <td>
     <form method="post" action="users/{{.ID}}/toggle" style="display:inline">
@@ -43,6 +48,25 @@ a{color:#2563eb}</style>
     <form method="post" action="users/{{.ID}}/rotate" style="display:inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">Rotate</button>
+    </form>
+    <form method="post" action="users/{{.ID}}/suspend" style="display:inline">
+      <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
+      <button type="submit">{{if .QuotaSuspended}}Unsuspend{{else}}Suspend{{end}}</button>
+    </form>
+    <form method="post" action="users/{{.ID}}/quota/reset" style="display:inline">
+      <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
+      <button type="submit">Reset quota</button>
+    </form>
+    <form method="post" action="users/{{.ID}}/quota" style="display:inline">
+      <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
+      <input type="number" step="0.1" min="0" name="gb" placeholder="GB" style="width:5em">
+      <select name="period">
+        <option value="daily">daily</option>
+        <option value="weekly">weekly</option>
+        <option value="monthly" selected>monthly</option>
+      </select>
+      <input type="number" min="0" max="100" name="warn_pct" value="80" style="width:4em">
+      <button type="submit">Set quota</button>
     </form>
     <form method="post" action="users/{{.ID}}/delete" style="display:inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">

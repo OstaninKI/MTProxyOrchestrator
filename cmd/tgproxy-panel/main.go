@@ -15,6 +15,7 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/quota"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -170,6 +171,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 			ACMEEmail: acmeEmail,
 		},
 	}
+
+	quotaSvc := quota.NewService(d, func() error { return srv.ReloadTeleproxyForQuota() })
+	go quotaSvc.RunPeriodic(ctx, 5*time.Minute)
 
 	httpSrv := newPanelHTTPServer(listenAddr, srv.Handler())
 

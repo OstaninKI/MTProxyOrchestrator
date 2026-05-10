@@ -90,6 +90,70 @@ The install path can publish the panel on a public TLS endpoint in two ways:
 
 The panel backend remains plain HTTP on loopback (`127.0.0.1:18080`); nginx terminates public TLS on port `8443` when public panel flags are used.
 
+## User Traffic Quotas
+
+The panel can enforce per-user traffic quotas. Quotas are optional; a `quota_bytes` value of zero means unlimited.
+
+Setting a quota:
+
+1. open the Users section in the panel
+2. on the target user, set quota size in bytes, the period (`daily`, `weekly`, or `monthly`), and the warning percentage (default `80`)
+3. save
+
+Behavior:
+
+- A background service recomputes usage every 5 minutes from `traffic_daily` since the current period start.
+- When usage crosses the warning percentage, a single `quota_warning` event is written to the audit log for the period.
+- When usage exceeds the quota, the user is suspended automatically: their secret is excluded from the rendered Teleproxy config and the service is reloaded.
+- Period rollover resets `quota_used_bytes`, clears suspension, and advances `quota_period_start`.
+
+Manual actions on the user record:
+
+- **Reset quota counters**: clears `quota_used_bytes` and `quota_warned`, lifts suspension if it was triggered by the quota.
+- **Toggle suspend**: forces the user into or out of the suspended state. Suspending triggers a Teleproxy reload immediately.
+
+Audit events: `quota_set`, `quota_reset`, `quota_warning`, `user_suspend_toggle`.
+
+## Two-Factor Authentication For Admins
+
+TOTP-based 2FA is opt-in per admin account.
+
+Enable 2FA:
+
+1. log into the panel
+2. open the panel Settings page and find the "Two-factor authentication" section
+3. start enrollment; the panel shows a QR code and the otpauth URL
+4. scan the QR with an authenticator app (Aegis, 1Password, Google Authenticator, etc.)
+5. confirm with one valid 6-digit code from the app
+6. record the eight recovery codes shown once on the success screen; store them outside the panel host
+
+After enrollment, every login goes through password verification followed by a TOTP step at `/totp/verify`. A 5-minute pending-TOTP cookie is issued between the two steps. Failed TOTP attempts share the same rate limiter as failed passwords (5 per IP per 5 minutes, then 1 hour block).
+
+Disable 2FA:
+
+1. open Settings, "Two-factor authentication"
+2. submit the disable form with a current TOTP code or an unused recovery code
+
+Regenerate recovery codes from the same section; the action also requires a current TOTP or recovery code and invalidates previous codes.
+
+### Lost 2FA Device Recovery
+
+If the authenticator app is lost:
+
+1. use one of the recorded recovery codes during the `/totp/verify` step or in the disable form
+2. once logged in, regenerate recovery codes and re-enroll with a new authenticator
+
+If all recovery codes are also lost, recover with direct SQLite access on the host as a last resort:
+
+```bash
+sudo systemctl stop tgproxy-panel
+sudo sqlite3 /etc/tgproxy/panel.db \
+  "UPDATE admin SET totp_enabled = 0, totp_secret = '', totp_recovery_codes = '';"
+sudo systemctl start tgproxy-panel
+``` After recovery, log in with the password, re-enroll TOTP, and rotate the admin password using `tgproxy-cli reset-admin-password`. A dedicated `tgproxy-cli reset-totp` command is not yet implemented.
+
+Audit events: `totp_enabled`, `totp_disabled`, `totp_recovery_regenerated`, `totp_recovery_used`, `totp_failed`.
+
 ## Reset Admin Credentials
 
 ```bash

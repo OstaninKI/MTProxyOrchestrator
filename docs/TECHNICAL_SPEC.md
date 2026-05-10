@@ -182,6 +182,7 @@ Backups include only configuration and state required to restore `/etc/tgproxy/`
 - A CSRF token is required in every POST form.
 - Rate limit: 5 failed attempts per IP in 5 minutes, then block for 1 hour.
 - All admin actions are written to the SQLite audit log.
+- Optional TOTP-based two-factor authentication is available per admin account. When enabled, password verification is followed by a `/totp/verify` step backed by a short-lived (5 minutes) pending-TOTP cookie. The same login rate limiter covers failed TOTP attempts. Eight single-use recovery codes are generated at enrollment and stored as bcrypt hashes (cost >= 12); regenerating recovery codes and disabling TOTP both require a valid TOTP or recovery code. Audit events: `totp_enabled`, `totp_disabled`, `totp_recovery_regenerated`, `totp_recovery_used`, `totp_failed`.
 
 ### Panel Sections
 
@@ -205,6 +206,23 @@ Features:
 - soft-delete;
 - rotate a key with immediate invalidation of the old secret;
 - audit operations without writing secrets to the log.
+
+#### Per-User Traffic Quotas
+
+Optional per-user traffic quotas are enforced by the panel. Each user record carries:
+
+- `quota_bytes` (zero means unlimited);
+- `quota_period`, one of `daily`, `weekly`, `monthly`;
+- `quota_warn_pct` (default `80`);
+- `quota_period_start`, `quota_used_bytes`, `quota_warned`, `quota_suspended`.
+
+Behavior:
+
+- A background service iterates users every 5 minutes, performs period rollover when due, and recomputes `quota_used_bytes` from `traffic_daily` since `quota_period_start`.
+- Crossing `quota_warn_pct` writes a single `quota_warning` audit event per period.
+- Crossing `quota_bytes` sets `quota_suspended = 1`; suspended users are excluded from the rendered Teleproxy config and the service is reloaded only on transitions.
+- The panel exposes per-user actions: set quota, reset quota counters, toggle suspension. All actions are CSRF-protected and audited (`quota_set`, `quota_reset`, `user_suspend_toggle`).
+- Period math: `daily` rolls every 24 hours, `weekly` every 7 days, `monthly` advances one calendar month using `time.Date`.
 
 #### Bridge / Outbound Nodes
 
@@ -344,8 +362,7 @@ Retention:
 ## 11. Out Of Scope For v1
 
 - Managing remote outbound nodes.
-- Billing and traffic quotas.
-- 2FA.
+- Billing.
 - Multi-tenant and administrator roles.
 - Public API.
 - Mobile admin application.

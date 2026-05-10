@@ -7,6 +7,8 @@ MTProto Proxy Orchestrator manages a Teleproxy-based Telegram MTProto proxy on U
 - Installs a Single-mode Teleproxy deployment with nginx stub fallback and systemd units
 - Runs an authenticated admin panel backend on loopback and can wire a public HTTPS nginx proxy when certificate paths are provided
 - Supports user management, Bridge runtime switching, metrics, logs, backups, restore, and verified updates in the codebase
+- Enforces optional per-user traffic quotas with daily, weekly, or monthly periods, soft warning, and hard suspension
+- Supports optional TOTP-based 2FA per admin account with single-use bcrypt-hashed recovery codes
 - Publishes and consumes release assets from `github.com/mtproto-orchestrator/mtproto-orchestrator`
 
 ## Important Current Limitation
