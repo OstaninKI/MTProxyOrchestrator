@@ -40,6 +40,7 @@ var (
 	maskHost    string
 	statsPort   int
 	certDir     string
+	stubDir     string
 	domain      string
 	acmeEmail   string
 )
@@ -58,6 +59,7 @@ func init() {
 	serveCmd.Flags().StringVar(&maskHost, "mask-host", "www.microsoft.com", "FakeTLS mask host used when rendering Teleproxy config")
 	serveCmd.Flags().IntVar(&statsPort, "stats-port", 9091, "Teleproxy stats port used when rendering Teleproxy config")
 	serveCmd.Flags().StringVar(&certDir, "cert-dir", "/etc/tgproxy/certs", "directory for TLS certificates")
+	serveCmd.Flags().StringVar(&stubDir, "stub-dir", "/var/www/tgproxy-stub", "web root directory for stub pages")
 	serveCmd.Flags().StringVar(&domain, "domain", "", "panel domain; enables ACME renewal loop when set with --acme-email")
 	serveCmd.Flags().StringVar(&acmeEmail, "acme-email", "", "email for Let's Encrypt renewal notifications")
 	rootCmd.AddCommand(serveCmd)
@@ -167,6 +169,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		},
 		SettingsCfg: &panel.SettingsConfig{
 			CertDir:   certDir,
+			WebRoot:   stubDir,
 			Domain:    domain,
 			ServerIP:  d.GetSetting("server_ip", ""),
 			ACMEEmail: acmeEmail,

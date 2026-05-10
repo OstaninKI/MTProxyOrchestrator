@@ -9,6 +9,7 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/nginx"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/service"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/stub"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/systemd"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
@@ -86,13 +87,14 @@ func Reconcile(opts Options) error {
 		MaskHost:    effectiveMaskHost,
 		StatsPort:   9091,
 		LogPath:     opts.Paths.PanelLog,
-		ConfigDir:   opts.Paths.ConfigDir,
-		LogDir:      opts.Paths.LogDir,
-		BinDir:      opts.Paths.BinDir,
-		SystemdDir:  opts.Paths.SystemdDir,
-		CertDir:     opts.Paths.CertDir,
-		Domain:      cfg.PanelDomain,
-		ACMEEmail:   cfg.ACMEEmail,
+		ConfigDir:  opts.Paths.ConfigDir,
+		LogDir:     opts.Paths.LogDir,
+		BinDir:     opts.Paths.BinDir,
+		SystemdDir: opts.Paths.SystemdDir,
+		StubDir:    opts.Paths.StubDir,
+		CertDir:    opts.Paths.CertDir,
+		Domain:     cfg.PanelDomain,
+		ACMEEmail:  cfg.ACMEEmail,
 	}
 	if err := writeFile(opts.Paths.PanelService, panelUnit.Render(), 0o644); err != nil {
 		return fmt.Errorf("write panel unit: %w", err)
@@ -154,6 +156,10 @@ func Reconcile(opts Options) error {
 		if err := writeFile("/etc/nginx/sites-available/tgproxy-panel", panelProxy.Render(), 0o644); err != nil {
 			return fmt.Errorf("write nginx panel proxy: %w", err)
 		}
+	}
+
+	if _, err := stub.MigrateStubIfLegacy(opts.Paths.StubDir + "/index.html"); err != nil {
+		return fmt.Errorf("migrate stub: %w", err)
 	}
 
 	mgr := service.NewManager(opts.Paths)

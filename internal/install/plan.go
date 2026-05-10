@@ -12,6 +12,7 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/nginx"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/singbox"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/stub"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/systemd"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
@@ -247,13 +248,14 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 		MaskHost:    effectiveMaskHost,
 		StatsPort:   9091,
 		LogPath:     paths.PanelLog,
-		ConfigDir:   paths.ConfigDir,
-		LogDir:      paths.LogDir,
-		BinDir:      paths.BinDir,
-		SystemdDir:  paths.SystemdDir,
-		CertDir:     paths.CertDir,
-		Domain:      cfg.PanelDomain,
-		ACMEEmail:   cfg.ACMEEmail,
+		ConfigDir:  paths.ConfigDir,
+		LogDir:     paths.LogDir,
+		BinDir:     paths.BinDir,
+		SystemdDir: paths.SystemdDir,
+		StubDir:    paths.StubDir,
+		CertDir:    paths.CertDir,
+		Domain:     cfg.PanelDomain,
+		ACMEEmail:  cfg.ACMEEmail,
 	}
 
 	steps := []Step{
@@ -287,7 +289,7 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 		{Kind: StepWriteFile, Target: paths.TeleproxyService, Content: tpUnit.Render(), Mode: 0o644},
 		{Kind: StepWriteFile, Target: "/etc/nginx/sites-available/tgproxy-stub", Content: ngData, Mode: 0o644},
 		{Kind: StepEnableNginxSite, Target: "tgproxy-stub"},
-		{Kind: StepWriteFile, Target: paths.StubDir + "/index.html", Content: minimalStubHTML(), Mode: 0o644},
+		{Kind: StepWriteFile, Target: paths.StubDir + "/index.html", Content: stub.DefaultStubHTML(), Mode: 0o644},
 		{Kind: StepWriteFile, Target: paths.PanelService, Content: panelUnit.Render(), Mode: 0o644},
 		{Kind: StepEnableService, Target: "teleproxy"},
 		{Kind: StepStartService, Target: "teleproxy"},
@@ -396,15 +398,6 @@ func teleproxyDownloadURL() string {
 
 func teleproxyDownloadSHA256() string {
 	return versions.TeleproxyLinuxAMD64SHA256
-}
-
-func minimalStubHTML() []byte {
-	return []byte(`<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>Welcome</title></head>
-<body><h1>Welcome</h1></body>
-</html>
-`)
 }
 
 // indexOfWriteTarget returns the index of the first StepWriteFile step whose
