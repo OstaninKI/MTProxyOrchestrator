@@ -1,5 +1,6 @@
 # Local documentation and planning notes
 docs/PLAN.md
+docs/superpowers/
 AGENTS.md
 CLAUDE.md
 
@@ -25,6 +26,11 @@ build/
 coverage.out
 coverage.html
 bin/
+.build/
+
+# Built binaries in project root
+tgproxy-cli
+tgproxy-panel
 
 # OS and editor files
 .DS_Store
