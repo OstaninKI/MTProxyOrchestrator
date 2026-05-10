@@ -69,10 +69,27 @@ func PeriodEnd(period string, startTS int64) int64 {
 	case PeriodWeekly:
 		return t.Add(7 * 24 * time.Hour).Unix()
 	case PeriodMonthly:
-		return time.Date(t.Year(), t.Month()+1, t.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC).Unix()
+		return addMonthClamped(t).Unix()
 	default:
-		return time.Date(t.Year(), t.Month()+1, t.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC).Unix()
+		return addMonthClamped(t).Unix()
 	}
+}
+
+// addMonthClamped advances t by exactly one calendar month, clamping the day
+// to the last valid day of the next month so that Jan 31 + 1 month = Feb 28
+// (or Feb 29 in leap years), not Mar 3.
+func addMonthClamped(t time.Time) time.Time {
+	y, m, d := t.Date()
+	nextY, nextM := y, m+1
+	if nextM > time.December {
+		nextY, nextM = y+1, time.January
+	}
+	// Last day of nextM: day 0 of the month after nextM.
+	last := time.Date(nextY, nextM+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	if d > last {
+		d = last
+	}
+	return time.Date(nextY, nextM, d, t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
 }
 
 // userQuotaRow is the minimal shape we read for quota work.
@@ -86,17 +103,6 @@ type userQuotaRow struct {
 	QuotaPeriodSt  int64
 	QuotaUsedBytes int64
 	QuotaWarned    bool
-}
-
-func (s *Service) loadUser(ctx context.Context, label string) (userQuotaRow, error) {
-	var u userQuotaRow
-	row := s.DB.QueryRowContext(ctx,
-		`SELECT id, label, quota_bytes, quota_period, quota_warn_pct,
-		        quota_suspended, quota_period_start, quota_used_bytes, quota_warned
-		 FROM users WHERE label=? AND deleted_at IS NULL`, label)
-	err := row.Scan(&u.ID, &u.Label, &u.QuotaBytes, &u.QuotaPeriod, &u.QuotaWarnPct,
-		&u.QuotaSuspended, &u.QuotaPeriodSt, &u.QuotaUsedBytes, &u.QuotaWarned)
-	return u, err
 }
 
 func (s *Service) listUsers(ctx context.Context) ([]userQuotaRow, error) {
@@ -120,45 +126,63 @@ func (s *Service) listUsers(ctx context.Context) ([]userQuotaRow, error) {
 	return out, rows.Err()
 }
 
-// usageSince returns the sum of bytes_in + bytes_out from traffic_daily for
-// the user since fromTS.
-func (s *Service) usageSince(ctx context.Context, label string, fromTS int64) (int64, error) {
-	var total sql.NullInt64
-	err := s.DB.QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(bytes_in)+SUM(bytes_out),0)
-		 FROM traffic_daily WHERE user_label=? AND day_ts >= ?`,
-		label, fromTS).Scan(&total)
-	if err != nil {
-		return 0, err
-	}
-	return total.Int64, nil
-}
-
-// RolloverIfDue advances the period if the current period has ended.
-// Returns whether a rollover happened.
+// RolloverIfDue advances the period while the current period has ended.
+// Multiple elapsed periods (after a long downtime) are processed one at a time
+// so period_start lands at the start of the period that contains now, not
+// shifted by however long the service was down. Returns whether at least one
+// rollover happened.
 func (s *Service) RolloverIfDue(ctx context.Context, label string) (bool, error) {
-	u, err := s.loadUser(ctx, label)
+	tx, err := s.DB.BeginImmediate(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var (
+		id          int64
+		period      string
+		periodStart int64
+		suspended   bool
+	)
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, quota_period, quota_period_start, quota_suspended
+		 FROM users WHERE label=? AND deleted_at IS NULL`, label).
+		Scan(&id, &period, &periodStart, &suspended)
 	if err != nil {
 		return false, err
 	}
 	now := s.now().Unix()
-	if u.QuotaPeriodSt == 0 {
-		_, err := s.DB.ExecContext(ctx,
-			`UPDATE users SET quota_period_start=? WHERE id=?`, now, u.ID)
-		return false, err
+	if periodStart == 0 {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE users SET quota_period_start=? WHERE id=?`, now, id); err != nil {
+			return false, err
+		}
+		return false, tx.Commit(ctx)
 	}
-	end := PeriodEnd(u.QuotaPeriod, u.QuotaPeriodSt)
-	if now < end {
-		return false, nil
+
+	rolled := false
+	wasSuspended := suspended
+	cur := periodStart
+	for {
+		end := PeriodEnd(period, cur)
+		if end <= 0 || now < end {
+			break
+		}
+		cur = end
+		rolled = true
 	}
-	wasSuspended := u.QuotaSuspended
-	_, err = s.DB.ExecContext(ctx,
+	if !rolled {
+		return false, tx.Commit(ctx)
+	}
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET quota_used_bytes=0, quota_warned=0, quota_suspended=0,
-		                  quota_period_start=? WHERE id=?`, now, u.ID)
-	if err != nil {
+		                  quota_period_start=? WHERE id=?`, cur, id); err != nil {
 		return false, err
 	}
-	s.Audit("quota_rollover", label, fmt.Sprintf("period=%s", u.QuotaPeriod))
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	s.Audit("quota_rollover", label, fmt.Sprintf("period=%s", period))
 	if wasSuspended && s.Reload != nil {
 		if err := s.Reload(); err != nil {
 			return true, err
@@ -170,15 +194,35 @@ func (s *Service) RolloverIfDue(ctx context.Context, label string) (bool, error)
 // Recalculate reads traffic_daily, updates cached usage, and toggles
 // suspension when the hard limit is crossed. Emits a one-shot audit warning
 // when the soft warn threshold is crossed within the current period.
+// The state read and write happen inside a BEGIN IMMEDIATE transaction so an
+// admin handler that just toggled suspension or quota cannot be clobbered by
+// a concurrent tick.
 func (s *Service) Recalculate(ctx context.Context, label string) (int64, bool, error) {
-	u, err := s.loadUser(ctx, label)
+	tx, err := s.DB.BeginImmediate(ctx)
 	if err != nil {
 		return 0, false, err
 	}
-	used, err := s.usageSince(ctx, label, u.QuotaPeriodSt)
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var u userQuotaRow
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, label, quota_bytes, quota_period, quota_warn_pct,
+		        quota_suspended, quota_period_start, quota_used_bytes, quota_warned
+		 FROM users WHERE label=? AND deleted_at IS NULL`, label).
+		Scan(&u.ID, &u.Label, &u.QuotaBytes, &u.QuotaPeriod, &u.QuotaWarnPct,
+			&u.QuotaSuspended, &u.QuotaPeriodSt, &u.QuotaUsedBytes, &u.QuotaWarned)
 	if err != nil {
+		return 0, false, err
+	}
+
+	var totalNull sql.NullInt64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(bytes_in)+SUM(bytes_out),0)
+		 FROM traffic_daily WHERE user_label=? AND day_ts >= ?`,
+		label, u.QuotaPeriodSt).Scan(&totalNull); err != nil {
 		return 0, u.QuotaSuspended, err
 	}
+	used := totalNull.Int64
 
 	newSuspended := u.QuotaSuspended
 	if u.QuotaBytes > 0 && used >= u.QuotaBytes {
@@ -186,20 +230,27 @@ func (s *Service) Recalculate(ctx context.Context, label string) (int64, bool, e
 	}
 
 	newWarned := u.QuotaWarned
+	emitWarning := false
 	if u.QuotaBytes > 0 && !u.QuotaWarned && u.QuotaWarnPct > 0 {
 		threshold := u.QuotaBytes * int64(u.QuotaWarnPct) / 100
 		if used >= threshold {
 			newWarned = true
-			s.Audit("quota_warning", label,
-				fmt.Sprintf("used=%d quota=%d pct=%d", used, u.QuotaBytes, u.QuotaWarnPct))
+			emitWarning = true
 		}
 	}
 
-	_, err = s.DB.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET quota_used_bytes=?, quota_suspended=?, quota_warned=? WHERE id=?`,
-		used, newSuspended, newWarned, u.ID)
-	if err != nil {
+		used, newSuspended, newWarned, u.ID); err != nil {
 		return used, newSuspended, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return used, newSuspended, err
+	}
+
+	if emitWarning {
+		s.Audit("quota_warning", label,
+			fmt.Sprintf("used=%d quota=%d pct=%d", used, u.QuotaBytes, u.QuotaWarnPct))
 	}
 
 	if newSuspended != u.QuotaSuspended {

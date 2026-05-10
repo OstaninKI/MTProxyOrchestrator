@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // fakeDownloader records calls and optionally fails.
@@ -189,5 +190,55 @@ func TestApply_HealthCheckFailure_RollsBack(t *testing.T) {
 	// Two restart calls: one for update, one for rollback.
 	if len(svc.restartCalls) != 2 {
 		t.Fatalf("expected 2 restart calls (update + rollback), got %d", len(svc.restartCalls))
+	}
+}
+
+func TestOSHealthChecker_TimeoutFails(t *testing.T) {
+	now := time.Unix(0, 0)
+	hc := OSHealthChecker{
+		HealthCheckTimeout: 100 * time.Millisecond,
+		PollInterval:       10 * time.Millisecond,
+		isActive: func(service string) (string, error) {
+			return "activating", nil
+		},
+		now:   func() time.Time { return now },
+		sleep: func(d time.Duration) { now = now.Add(d) },
+	}
+	if err := hc.Check("svc"); err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+}
+
+func TestOSHealthChecker_BecomesActiveBeforeTimeout(t *testing.T) {
+	now := time.Unix(0, 0)
+	calls := 0
+	hc := OSHealthChecker{
+		HealthCheckTimeout: 5 * time.Second,
+		PollInterval:       250 * time.Millisecond,
+		isActive: func(service string) (string, error) {
+			calls++
+			// Simulate the service becoming active after ~1s of polling.
+			if now.Sub(time.Unix(0, 0)) >= time.Second {
+				return "active", nil
+			}
+			return "activating", nil
+		},
+		now:   func() time.Time { return now },
+		sleep: func(d time.Duration) { now = now.Add(d) },
+	}
+	if err := hc.Check("svc"); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if calls < 2 {
+		t.Fatalf("expected multiple polls before active, got %d", calls)
+	}
+}
+
+func TestOSHealthChecker_DefaultsApplied(t *testing.T) {
+	hc := OSHealthChecker{
+		isActive: func(string) (string, error) { return "active", nil },
+	}
+	if err := hc.Check("svc"); err != nil {
+		t.Fatalf("expected success with defaults, got %v", err)
 	}
 }

@@ -249,7 +249,7 @@ func validatePanelSetup(cfg config.Config) error {
 }
 
 // obtainACMECert is a variable so tests can replace it without a real ACME server.
-var obtainACMECert = func(ctx context.Context, runner acme.Runner, domain, email string) (certPath, keyPath string, err error) {
+var obtainACMECert = func(ctx context.Context, runner *acme.Runner, domain, email string) (certPath, keyPath string, err error) {
 	return runner.ObtainCert(ctx, domain, email)
 }
 

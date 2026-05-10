@@ -632,3 +632,158 @@ func TestUserRotateAuditsRollback(t *testing.T) {
 		t.Fatalf("expected 1 audit rollback entry, got %d", count)
 	}
 }
+
+func quotaPostReq(id int64, form url.Values) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/users/x/quota", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "token"})
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
+		URLParams: chi.RouteParams{
+			Keys:   []string{"id"},
+			Values: []string{strconv.FormatInt(id, 10)},
+		},
+	}))
+}
+
+func TestUserQuotaSetRestoresDBWhenTeleproxyApplyFails(t *testing.T) {
+	srv := newInternalTestServer(t)
+	repo := UserRepo{DB: srv.DB}
+	id, err := repo.Create("alice", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetQuota(id, 1024*1024*1024, "daily", 70, 1000); err != nil {
+		t.Fatal(err)
+	}
+	users, _ := repo.List()
+	prev := users[0]
+
+	withWriteAndReloadError(t, errApplyFailed)
+
+	form := url.Values{
+		CSRFField(): {"token"},
+		"gb":        {"5"},
+		"period":    {"weekly"},
+		"warn_pct":  {"90"},
+	}
+	rec := httptest.NewRecorder()
+	srv.handleUserQuotaSet(rec, quotaPostReq(id, form))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	users, err = repo.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("unexpected user list: %+v", users)
+	}
+	got := users[0]
+	if got.QuotaBytes != prev.QuotaBytes || got.QuotaPeriod != prev.QuotaPeriod ||
+		got.QuotaWarnPct != prev.QuotaWarnPct || got.QuotaPeriodStart != prev.QuotaPeriodStart {
+		t.Fatalf("quota fields not restored: got=%+v want=%+v", got, prev)
+	}
+}
+
+func TestUserQuotaResetRestoresDBWhenTeleproxyApplyFails(t *testing.T) {
+	srv := newInternalTestServer(t)
+	repo := UserRepo{DB: srv.DB}
+	id, err := repo.Create("alice", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetQuota(id, 1024*1024*1024, "daily", 70, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.DB.Exec(
+		`UPDATE users SET quota_used_bytes=?, quota_warned=1, quota_suspended=1 WHERE id=?`,
+		int64(500*1024*1024), id,
+	); err != nil {
+		t.Fatal(err)
+	}
+	users, _ := repo.List()
+	prev := users[0]
+
+	withWriteAndReloadError(t, errApplyFailed)
+
+	form := url.Values{CSRFField(): {"token"}}
+	rec := httptest.NewRecorder()
+	srv.handleUserQuotaReset(rec, quotaPostReq(id, form))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	users, err = repo.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := users[0]
+	if got.QuotaUsedBytes != prev.QuotaUsedBytes || got.QuotaWarned != prev.QuotaWarned ||
+		got.QuotaSuspended != prev.QuotaSuspended || got.QuotaPeriodStart != prev.QuotaPeriodStart {
+		t.Fatalf("quota counters not restored: got=%+v want=%+v", got, prev)
+	}
+}
+
+func TestUserSuspendToggleRestoresDBWhenTeleproxyApplyFails(t *testing.T) {
+	srv := newInternalTestServer(t)
+	repo := UserRepo{DB: srv.DB}
+	id, err := repo.Create("alice", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withWriteAndReloadError(t, errApplyFailed)
+
+	form := url.Values{CSRFField(): {"token"}}
+	rec := httptest.NewRecorder()
+	srv.handleUserSuspendToggle(rec, quotaPostReq(id, form))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	users, err := repo.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if users[0].QuotaSuspended {
+		t.Fatalf("suspended state not restored: %+v", users[0])
+	}
+}
+
+func TestUserQuotaActionsAuditTargetIsLabel(t *testing.T) {
+	srv := newInternalTestServer(t)
+	repo := UserRepo{DB: srv.DB}
+	id, err := repo.Create("alice", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withWriteAndReloadHook(t, func(_ []byte) {})
+
+	srv.handleUserQuotaSet(httptest.NewRecorder(), quotaPostReq(id, url.Values{
+		CSRFField(): {"token"},
+		"gb":        {"1"},
+		"period":    {"daily"},
+		"warn_pct":  {"80"},
+	}))
+	srv.handleUserQuotaReset(httptest.NewRecorder(), quotaPostReq(id, url.Values{
+		CSRFField(): {"token"},
+	}))
+	srv.handleUserSuspendToggle(httptest.NewRecorder(), quotaPostReq(id, url.Values{
+		CSRFField(): {"token"},
+	}))
+
+	for _, action := range []string{"user.quota_set", "user.quota_reset", "user.suspend"} {
+		var target string
+		if err := srv.DB.QueryRow(
+			`SELECT target FROM audit_log WHERE action=? ORDER BY id DESC LIMIT 1`, action,
+		).Scan(&target); err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		if target != "alice" {
+			t.Fatalf("%s: audit target = %q, want %q", action, target, "alice")
+		}
+		if target == strconv.FormatInt(id, 10) {
+			t.Fatalf("%s: audit target is id, expected label", action)
+		}
+	}
+}

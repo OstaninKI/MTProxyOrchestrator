@@ -19,6 +19,10 @@ type Server struct {
 	BridgeCfg     *BridgeConfig   // nil → use DefaultPaths and default ports
 	SettingsCfg   *SettingsConfig // nil → empty stub/cert config
 	SingboxActive func() bool     // lets tests stub the sing-box running check; nil = use real systemd
+	// RecalcUser, when set, is invoked after admin handlers mutate quota state
+	// so the next periodic tick cannot surprise the just-saved row. Receives
+	// the user label.
+	RecalcUser func(label string)
 
 	totpMu      sync.Mutex
 	totpPending *pendingTOTPStore

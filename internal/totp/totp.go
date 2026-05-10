@@ -100,13 +100,37 @@ func DecodeRecoveryHashes(s string) ([]string, error) {
 
 // ConsumeRecoveryCode looks up the admin's recovery codes, removes the matching
 // hash, and persists the trimmed list. Returns ok=true when a hash matched.
+//
+// The whole load-check-save sequence runs inside a SQLite BEGIN IMMEDIATE
+// transaction so two concurrent requests with the same plaintext code cannot
+// both observe the matching hash and both write the trimmed list — the second
+// caller blocks on the writer lock and re-reads the already-trimmed JSON.
 func ConsumeRecoveryCode(ctx context.Context, d *db.DB, adminID int64, plaintext string) (bool, error) {
 	plaintext = strings.TrimSpace(plaintext)
 	if plaintext == "" {
 		return false, nil
 	}
+	conn, err := d.Conn(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
+	// Ensure BEGIN IMMEDIATE waits instead of failing fast when another
+	// writer holds the lock. Scoped to this connection.
+	if _, err := conn.ExecContext(ctx, `PRAGMA busy_timeout=5000`); err != nil {
+		return false, err
+	}
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		return false, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(ctx, `ROLLBACK`) //nolint:errcheck
+		}
+	}()
 	var stored string
-	if err := d.QueryRow(`SELECT totp_recovery_codes FROM admin WHERE id=?`, adminID).Scan(&stored); err != nil {
+	if err := conn.QueryRowContext(ctx, `SELECT totp_recovery_codes FROM admin WHERE id=?`, adminID).Scan(&stored); err != nil {
 		return false, err
 	}
 	hashes, err := DecodeRecoveryHashes(stored)
@@ -121,6 +145,10 @@ func ConsumeRecoveryCode(ctx context.Context, d *db.DB, adminID int64, plaintext
 		}
 	}
 	if matchIdx < 0 {
+		if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
+			return false, err
+		}
+		committed = true
 		return false, nil
 	}
 	hashes = append(hashes[:matchIdx], hashes[matchIdx+1:]...)
@@ -128,8 +156,12 @@ func ConsumeRecoveryCode(ctx context.Context, d *db.DB, adminID int64, plaintext
 	if err != nil {
 		return false, err
 	}
-	if _, err := d.Exec(`UPDATE admin SET totp_recovery_codes=? WHERE id=?`, encoded, adminID); err != nil {
+	if _, err := conn.ExecContext(ctx, `UPDATE admin SET totp_recovery_codes=? WHERE id=?`, encoded, adminID); err != nil {
 		return false, fmt.Errorf("update recovery codes: %w", err)
 	}
+	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
+		return false, err
+	}
+	committed = true
 	return true, nil
 }

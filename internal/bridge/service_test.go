@@ -389,6 +389,82 @@ func TestDisableBridgeHappyPath(t *testing.T) {
 	}
 }
 
+func TestDisableBridgeRollbackOnWriteFailure(t *testing.T) {
+	exec := newFakeExecutor()
+	exec.services["sing-box.service"] = true
+	exec.services["teleproxy.service"] = true
+
+	paths := testPaths(t)
+	prev := []byte("# previous teleproxy with socks5\nsocks5 = \"127.0.0.1:1080\"\n")
+	if err := os.WriteFile(paths.TeleproxyTOML, prev, 0o600); err != nil {
+		t.Fatalf("seed teleproxy.toml: %v", err)
+	}
+	exec.failOn = "WriteFile:" + paths.TeleproxyTOML
+
+	cfg := bridge.DisableConfig{
+		Paths:          paths,
+		TeleproxyUsers: []teleproxy.UserEntry{{Label: "alice", Secret: "aabbccddeeff00112233445566778899"}},
+		MTProtoPort:    443,
+		MaskHost:       "www.microsoft.com",
+		StatsPort:      9091,
+	}
+	dir := t.TempDir()
+	svc := &bridge.BridgeService{Exec: exec, NodePath: filepath.Join(dir, "outbounds.json")}
+
+	err := svc.Disable(cfg)
+	if err == nil {
+		t.Fatal("expected error when write fails")
+	}
+	if !containsCall(exec.calls, "StartService:sing-box.service") {
+		t.Error("rollback did not restart sing-box")
+	}
+	if !exec.services["sing-box.service"] {
+		t.Error("sing-box should be active after rollback")
+	}
+}
+
+func TestDisableBridgeRollbackOnReloadFailure(t *testing.T) {
+	exec := newFakeExecutor()
+	exec.services["sing-box.service"] = true
+	exec.services["teleproxy.service"] = true
+
+	paths := testPaths(t)
+	prev := []byte("# previous teleproxy with socks5\nsocks5 = \"127.0.0.1:1080\"\n")
+	if err := os.WriteFile(paths.TeleproxyTOML, prev, 0o600); err != nil {
+		t.Fatalf("seed teleproxy.toml: %v", err)
+	}
+	exec.failOn = "ReloadService:teleproxy.service"
+
+	cfg := bridge.DisableConfig{
+		Paths:          paths,
+		TeleproxyUsers: []teleproxy.UserEntry{{Label: "alice", Secret: "aabbccddeeff00112233445566778899"}},
+		MTProtoPort:    443,
+		MaskHost:       "www.microsoft.com",
+		StatsPort:      9091,
+	}
+	dir := t.TempDir()
+	svc := &bridge.BridgeService{Exec: exec, NodePath: filepath.Join(dir, "outbounds.json")}
+
+	err := svc.Disable(cfg)
+	if err == nil {
+		t.Fatal("expected error when reload fails")
+	}
+	if !contains([]byte(err.Error()), "reload teleproxy") {
+		t.Errorf("expected original cause in error, got: %v", err)
+	}
+	// Last write to teleproxy.toml should be the restored snapshot (contains socks5).
+	tp, ok := exec.written[paths.TeleproxyTOML]
+	if !ok {
+		t.Fatal("teleproxy.toml not written")
+	}
+	if !contains(tp, "socks5") {
+		t.Errorf("expected restored teleproxy.toml to contain socks5, got:\n%s", tp)
+	}
+	if !containsCall(exec.calls, "StartService:sing-box.service") {
+		t.Error("rollback did not restart sing-box")
+	}
+}
+
 func TestSingleToBridgeConfigTransition(t *testing.T) {
 	exec := newFakeExecutor()
 	cfg := testEnableCfg(t)

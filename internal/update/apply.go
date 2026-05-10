@@ -60,7 +60,7 @@ func NewDefaultApplier() *Applier {
 	return &Applier{
 		Downloader:        component.Downloader{Client: http.DefaultClient},
 		ServiceController: OSServiceController{},
-		HealthChecker:     OSHealthChecker{},
+		HealthChecker:     OSHealthChecker{HealthCheckTimeout: defaultHealthCheckTimeout},
 		FileOps:           OSFileOps{},
 	}
 }
@@ -199,20 +199,59 @@ func (OSServiceController) Restart(service string) error {
 	return nil
 }
 
-// OSHealthChecker checks service health via systemctl is-active. It tolerates
-// the brief `activating` window after a restart by polling for up to ~5s and
-// fails fast on `failed`.
-type OSHealthChecker struct{}
+// defaultHealthCheckTimeout is the polling window for service health after a
+// restart. Heavier services (panel with DB migrations / cache warm-up) can take
+// noticeably longer than the original 5s budget, so the default is 15s.
+const defaultHealthCheckTimeout = 15 * time.Second
 
-func (OSHealthChecker) Check(service string) error {
-	const (
-		pollInterval = 250 * time.Millisecond
-		pollTimeout  = 5 * time.Second
-	)
-	deadline := time.Now().Add(pollTimeout)
+// defaultHealthCheckPollInterval is how often is-active is polled within the
+// timeout window.
+const defaultHealthCheckPollInterval = 250 * time.Millisecond
+
+// OSHealthChecker checks service health via systemctl is-active. It tolerates
+// the brief `activating` window after a restart by polling until the configured
+// timeout elapses and fails fast on `failed`.
+//
+// HealthCheckTimeout overrides the default polling window when non-zero.
+// PollInterval overrides the default poll interval when non-zero.
+// isActive is an optional override for tests; nil falls back to systemctlIsActive.
+// now is an optional clock override for tests; nil falls back to time.Now.
+// sleep is an optional sleep override for tests; nil falls back to time.Sleep.
+type OSHealthChecker struct {
+	HealthCheckTimeout time.Duration
+	PollInterval       time.Duration
+
+	isActive func(service string) (string, error)
+	now      func() time.Time
+	sleep    func(time.Duration)
+}
+
+func (h OSHealthChecker) Check(service string) error {
+	timeout := h.HealthCheckTimeout
+	if timeout <= 0 {
+		timeout = defaultHealthCheckTimeout
+	}
+	pollInterval := h.PollInterval
+	if pollInterval <= 0 {
+		pollInterval = defaultHealthCheckPollInterval
+	}
+	isActive := h.isActive
+	if isActive == nil {
+		isActive = systemctlIsActive
+	}
+	nowFn := h.now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	sleepFn := h.sleep
+	if sleepFn == nil {
+		sleepFn = time.Sleep
+	}
+
+	deadline := nowFn().Add(timeout)
 	var lastState string
 	for {
-		state, err := systemctlIsActive(service)
+		state, err := isActive(service)
 		lastState = state
 		if err == nil && state == "active" {
 			return nil
@@ -220,10 +259,10 @@ func (OSHealthChecker) Check(service string) error {
 		if state == "failed" {
 			return fmt.Errorf("service %s is failed", service)
 		}
-		if time.Now().After(deadline) {
+		if !nowFn().Before(deadline) {
 			break
 		}
-		time.Sleep(pollInterval)
+		sleepFn(pollInterval)
 	}
 	if lastState == "" {
 		return fmt.Errorf("service %s is not active", service)

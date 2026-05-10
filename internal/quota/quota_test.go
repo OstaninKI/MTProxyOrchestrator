@@ -121,23 +121,78 @@ func TestRolloverDaily(t *testing.T) {
 		Scan(&used, &suspended, &periodStart); err != nil {
 		t.Fatal(err)
 	}
-	if used != 0 || suspended != 0 || periodStart != now.Unix() {
-		t.Errorf("after rollover: used=%d suspended=%d start=%d (want 0,0,%d)", used, suspended, periodStart, now.Unix())
+	// Period was 25h ago; daily rolls forward exactly one 24h step.
+	wantStart := start + 24*3600
+	if used != 0 || suspended != 0 || periodStart != wantStart {
+		t.Errorf("after rollover: used=%d suspended=%d start=%d (want 0,0,%d)", used, suspended, periodStart, wantStart)
 	}
 }
 
 func TestRolloverMonthlyAdvancesByCalendarMonth(t *testing.T) {
+	// Jan 31 + 1 month must clamp to Feb 28 (2026 is not a leap year), not
+	// overflow into March.
 	startT := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
 	end := quota.PeriodEnd(quota.PeriodMonthly, startT.Unix())
 	got := time.Unix(end, 0).UTC()
-	if got.Month() != time.March || got.Day() != 3 { // Feb 31 normalises to Mar 3
-		// Accept either canonical Feb 28 or normalised Mar 3 — Go's time.Date
-		// normalises overflow into March. Just assert >= startT + 28d.
-		if got.Sub(startT) < 28*24*time.Hour {
-			t.Errorf("monthly rollover too short: %v", got)
-		}
+	if got.Year() != 2026 || got.Month() != time.February || got.Day() != 28 {
+		t.Errorf("Jan 31 + 1mo = %v, want 2026-02-28", got)
+	}
+
+	// Leap year: Jan 31 2024 + 1 month = Feb 29 2024.
+	startLeap := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
+	gotLeap := time.Unix(quota.PeriodEnd(quota.PeriodMonthly, startLeap.Unix()), 0).UTC()
+	if gotLeap.Year() != 2024 || gotLeap.Month() != time.February || gotLeap.Day() != 29 {
+		t.Errorf("Jan 31 2024 + 1mo = %v, want 2024-02-29", gotLeap)
+	}
+
+	// Mar 31 + 1 month = Apr 30, not May 1.
+	startMar := time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC)
+	gotMar := time.Unix(quota.PeriodEnd(quota.PeriodMonthly, startMar.Unix()), 0).UTC()
+	if gotMar.Year() != 2026 || gotMar.Month() != time.April || gotMar.Day() != 30 {
+		t.Errorf("Mar 31 + 1mo = %v, want 2026-04-30", gotMar)
+	}
+
+	// Year boundary: Dec 15 + 1 month = Jan 15 next year.
+	startDec := time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC)
+	gotDec := time.Unix(quota.PeriodEnd(quota.PeriodMonthly, startDec.Unix()), 0).UTC()
+	if gotDec.Year() != 2027 || gotDec.Month() != time.January || gotDec.Day() != 15 {
+		t.Errorf("Dec 15 + 1mo = %v, want 2027-01-15", gotDec)
 	}
 }
+
+func TestRolloverMultiPeriodCatchUp(t *testing.T) {
+	// Service was down for ~3 daily periods. Rollover should advance one period
+	// at a time (not jump straight to now), so period_start lands on the start
+	// of the period that contains now.
+	d := openDB(t)
+	now := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
+	start := now.Add(-3*24*time.Hour - 2*time.Hour).Unix() // 3d2h ago
+	insertUser(t, d, "eve", start, "daily", 100, 80)
+
+	s := &quota.Service{DB: d, Now: func() time.Time { return now },
+		Audit: func(string, string, string) {}}
+	rolled, err := s.RolloverIfDue(context.Background(), "eve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rolled {
+		t.Fatal("expected rollover")
+	}
+	var got int64
+	if err := d.QueryRow(`SELECT quota_period_start FROM users WHERE label=?`, "eve").Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	// Three 24h advances from start: start + 3d.
+	want := start + 3*24*3600
+	if got != want {
+		t.Errorf("period_start=%d want %d (start+3d)", got, want)
+	}
+	// New period must contain now.
+	if int64(now.Unix()) < got || int64(now.Unix()) >= got+24*3600 {
+		t.Errorf("period_start=%d does not contain now=%d", got, now.Unix())
+	}
+}
+
 
 func TestRolloverNotDue(t *testing.T) {
 	d := openDB(t)

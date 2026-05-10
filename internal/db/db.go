@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 
 	_ "modernc.org/sqlite"
@@ -11,12 +12,80 @@ type DB struct {
 	*sql.DB
 }
 
+// ImmediateTx is a SQLite transaction acquired with BEGIN IMMEDIATE so that
+// concurrent writers serialize on the database. Use Commit or Rollback exactly
+// like *sql.Tx; the underlying connection is released to the pool on either.
+type ImmediateTx struct {
+	conn      *sql.Conn
+	committed bool
+}
+
+// BeginImmediate acquires a dedicated connection and opens a SQLite
+// transaction with BEGIN IMMEDIATE, so the writer lock is taken up-front.
+// SQLite supports a single writer at a time; with WAL journal mode (set in
+// Open), readers proceed concurrently.
+func (d *DB) BeginImmediate(ctx context.Context) (*ImmediateTx, error) {
+	conn, err := d.DB.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return &ImmediateTx{conn: conn}, nil
+}
+
+// ExecContext runs a statement on the transaction's dedicated connection.
+func (t *ImmediateTx) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	return t.conn.ExecContext(ctx, q, args...)
+}
+
+// QueryRowContext runs a single-row query on the transaction's connection.
+func (t *ImmediateTx) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	return t.conn.QueryRowContext(ctx, q, args...)
+}
+
+// Commit finalizes the transaction.
+func (t *ImmediateTx) Commit(ctx context.Context) error {
+	if t.committed {
+		return nil
+	}
+	_, err := t.conn.ExecContext(ctx, `COMMIT`)
+	t.committed = true
+	closeErr := t.conn.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
+}
+
+// Rollback aborts the transaction. Safe to call after Commit.
+func (t *ImmediateTx) Rollback(ctx context.Context) error {
+	if t.committed {
+		return nil
+	}
+	_, err := t.conn.ExecContext(ctx, `ROLLBACK`)
+	t.committed = true
+	closeErr := t.conn.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
+}
+
 // Open opens or creates a SQLite database at path and runs all pending migrations.
 // Pass ":memory:" for in-memory (tests).
 func Open(path string) (*DB, error) {
 	sqldb, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
+	}
+	// In-memory databases are per-connection in SQLite. Pin to a single
+	// connection so multiple goroutines (and the BeginImmediate connection
+	// pool dance) all see the same schema and rows.
+	if path == ":memory:" {
+		sqldb.SetMaxOpenConns(1)
 	}
 	if _, err := sqldb.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;`); err != nil {
 		sqldb.Close()

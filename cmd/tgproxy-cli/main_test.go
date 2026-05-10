@@ -725,7 +725,7 @@ func TestRunInstallCallsObtainACMEWhenEmailSet(t *testing.T) {
 	}
 
 	var gotDomain, gotEmail string
-	obtainACMECert = func(_ context.Context, _ acme.Runner, domain, email string) (string, string, error) {
+	obtainACMECert = func(_ context.Context, _ *acme.Runner, domain, email string) (string, string, error) {
 		gotDomain = domain
 		gotEmail = email
 		return "/etc/tgproxy/certs/proxy.example.com/cert.pem", "/etc/tgproxy/certs/proxy.example.com/key.pem", nil

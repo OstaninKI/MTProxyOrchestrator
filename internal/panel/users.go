@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -143,7 +144,9 @@ func (r UserRepo) List() ([]UserRow, error) {
 }
 
 // SetQuota updates quota configuration for a user. Resets warned/used/period_start
-// only if quota_period changed or period_start is zero.
+// only if quota_period changed or period_start is zero. When bytes==0
+// (unlimited), suspension and warning state are also cleared regardless of
+// period — there is no quota to remain suspended against.
 func (r UserRepo) SetQuota(id int64, bytes int64, period string, warnPct int, nowTS int64) error {
 	if period != "daily" && period != "weekly" && period != "monthly" {
 		return fmt.Errorf("invalid period %q", period)
@@ -154,44 +157,105 @@ func (r UserRepo) SetQuota(id int64, bytes int64, period string, warnPct int, no
 	if bytes < 0 {
 		return fmt.Errorf("quota bytes negative")
 	}
+	ctx := context.Background()
+	tx, err := r.DB.BeginImmediate(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 	var curPeriod string
 	var curStart int64
-	if err := r.DB.QueryRow(`SELECT quota_period, quota_period_start FROM users WHERE id=?`, id).Scan(&curPeriod, &curStart); err != nil {
+	if err := tx.QueryRowContext(ctx,
+		`SELECT quota_period, quota_period_start FROM users WHERE id=?`, id).
+		Scan(&curPeriod, &curStart); err != nil {
 		return err
 	}
-	if curPeriod != period || curStart == 0 {
-		_, err := r.DB.Exec(
+	switch {
+	case bytes == 0:
+		if curPeriod != period || curStart == 0 {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE users SET quota_bytes=0, quota_period=?, quota_warn_pct=?,
+				                  quota_period_start=?, quota_used_bytes=0,
+				                  quota_warned=0, quota_suspended=0
+				 WHERE id=? AND deleted_at IS NULL`,
+				period, warnPct, nowTS, id); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE users SET quota_bytes=0, quota_warn_pct=?,
+				                  quota_warned=0, quota_suspended=0
+				 WHERE id=? AND deleted_at IS NULL`,
+				warnPct, id); err != nil {
+				return err
+			}
+		}
+	case curPeriod != period || curStart == 0:
+		if _, err := tx.ExecContext(ctx,
 			`UPDATE users SET quota_bytes=?, quota_period=?, quota_warn_pct=?,
-			                  quota_period_start=?, quota_used_bytes=0, quota_warned=0, quota_suspended=0
+			                  quota_period_start=?, quota_used_bytes=0,
+			                  quota_warned=0, quota_suspended=0
 			 WHERE id=? AND deleted_at IS NULL`,
-			bytes, period, warnPct, nowTS, id,
-		)
-		return err
+			bytes, period, warnPct, nowTS, id); err != nil {
+			return err
+		}
+	default:
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE users SET quota_bytes=?, quota_warn_pct=? WHERE id=? AND deleted_at IS NULL`,
+			bytes, warnPct, id); err != nil {
+			return err
+		}
 	}
-	_, err := r.DB.Exec(
-		`UPDATE users SET quota_bytes=?, quota_warn_pct=? WHERE id=? AND deleted_at IS NULL`,
-		bytes, warnPct, id,
-	)
-	return err
+	return tx.Commit(ctx)
 }
 
 // SetSuspended toggles the quota_suspended flag.
 func (r UserRepo) SetSuspended(id int64, suspended bool) error {
-	_, err := r.DB.Exec(
+	ctx := context.Background()
+	tx, err := r.DB.BeginImmediate(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET quota_suspended=? WHERE id=? AND deleted_at IS NULL`,
-		suspended, id,
+		suspended, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// RestoreQuotaState rewrites all quota-related fields to the values captured before
+// a quota mutation, used to roll back DB state when a teleproxy reload fails.
+func (r UserRepo) RestoreQuotaState(id int64, prev UserRow) error {
+	_, err := r.DB.Exec(
+		`UPDATE users SET quota_bytes=?, quota_period=?, quota_warn_pct=?,
+		                  quota_suspended=?, quota_period_start=?,
+		                  quota_used_bytes=?, quota_warned=?
+		 WHERE id=? AND deleted_at IS NULL`,
+		prev.QuotaBytes, prev.QuotaPeriod, prev.QuotaWarnPct,
+		prev.QuotaSuspended, prev.QuotaPeriodStart,
+		prev.QuotaUsedBytes, prev.QuotaWarned,
+		id,
 	)
 	return err
 }
 
 // ResetQuota zeroes the quota usage counters and advances period_start.
 func (r UserRepo) ResetQuota(id int64, nowTS int64) error {
-	_, err := r.DB.Exec(
+	ctx := context.Background()
+	tx, err := r.DB.BeginImmediate(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET quota_used_bytes=0, quota_warned=0, quota_suspended=0, quota_period_start=?
 		 WHERE id=? AND deleted_at IS NULL`,
-		nowTS, id,
-	)
-	return err
+		nowTS, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // ActiveCount returns the number of enabled non-deleted users.

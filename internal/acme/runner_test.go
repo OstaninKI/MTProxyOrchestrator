@@ -12,7 +12,7 @@ import (
 
 // stubRenewer lets tests control what ObtainACME returns without a real ACME server.
 // It patches the Manager fields so the Runner uses deterministic cert paths.
-func runnerWithFreshCert(t *testing.T, expiresIn time.Duration) (acme.Runner, string, func() bool) {
+func runnerWithFreshCert(t *testing.T, expiresIn time.Duration) (*acme.Runner, string, func() bool) {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -39,7 +39,7 @@ func runnerWithFreshCert(t *testing.T, expiresIn time.Duration) (acme.Runner, st
 	}
 
 	reloaded := false
-	runner := acme.Runner{
+	runner := &acme.Runner{
 		Manager:    m,
 		WebRootDir: filepath.Join(dir, ".well-known-webroot"),
 		Reloader: func(ctx context.Context) error {
@@ -64,7 +64,7 @@ func TestRenewIfNeededSkipsWhenFresh(t *testing.T) {
 	}
 
 	reloaded := false
-	runner := acme.Runner{
+	runner := &acme.Runner{
 		Manager:    m,
 		WebRootDir: dir,
 		Reloader: func(ctx context.Context) error {
@@ -91,7 +91,7 @@ func TestRenewIfNeededReturnsErrorOnMissingCert(t *testing.T) {
 		CertDir: dir,
 		Now:     time.Now,
 	}
-	runner := acme.Runner{Manager: m, WebRootDir: dir}
+	runner := &acme.Runner{Manager: m, WebRootDir: dir}
 	_, err := runner.RenewIfNeeded(context.Background(), "x.example.com", "a@b.com", filepath.Join(dir, "missing.pem"))
 	if err == nil {
 		t.Fatal("expected error for missing cert file")
@@ -110,7 +110,7 @@ func TestRenewReloaderCalledOnSuccess(t *testing.T) {
 		Now:            time.Now,
 	}
 	reloaderCalled := false
-	runner := acme.Runner{
+	runner := &acme.Runner{
 		Manager:    m,
 		WebRootDir: dir,
 		Reloader: func(ctx context.Context) error {

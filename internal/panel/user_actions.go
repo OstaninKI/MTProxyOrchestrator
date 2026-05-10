@@ -193,15 +193,32 @@ func (s *Server) handleUserQuotaSet(w http.ResponseWriter, r *http.Request) {
 		warn = 80
 	}
 	repo := UserRepo{DB: s.DB}
+	users, _ := repo.List()
+	var target *UserRow
+	for i := range users {
+		if users[i].ID == id {
+			target = &users[i]
+			break
+		}
+	}
+	if target == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	prev := *target
 	if err := repo.SetQuota(id, bytes, period, warn, time.Now().Unix()); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	audit.Log(s.DB, s.sessionAdminID(r), "user.quota_set", chi.URLParam(r, "id"),
+	audit.Log(s.DB, s.sessionAdminID(r), "user.quota_set", target.Label,
 		fmt.Sprintf("bytes=%d period=%s warn=%d", bytes, period, warn), clientIP(r)) //nolint:errcheck
 	if err := s.reloadTeleproxy(); err != nil {
+		_ = repo.RestoreQuotaState(id, prev)
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
+	}
+	if s.RecalcUser != nil {
+		s.RecalcUser(target.Label)
 	}
 	http.Redirect(w, r, "../../users", http.StatusSeeOther)
 }
@@ -217,14 +234,31 @@ func (s *Server) handleUserQuotaReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repo := UserRepo{DB: s.DB}
+	users, _ := repo.List()
+	var target *UserRow
+	for i := range users {
+		if users[i].ID == id {
+			target = &users[i]
+			break
+		}
+	}
+	if target == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	prev := *target
 	if err := repo.ResetQuota(id, time.Now().Unix()); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	audit.Log(s.DB, s.sessionAdminID(r), "user.quota_reset", chi.URLParam(r, "id"), "", clientIP(r)) //nolint:errcheck
+	audit.Log(s.DB, s.sessionAdminID(r), "user.quota_reset", target.Label, "", clientIP(r)) //nolint:errcheck
 	if err := s.reloadTeleproxy(); err != nil {
+		_ = repo.RestoreQuotaState(id, prev)
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
+	}
+	if s.RecalcUser != nil {
+		s.RecalcUser(target.Label)
 	}
 	http.Redirect(w, r, "../../users", http.StatusSeeOther)
 }
@@ -266,6 +300,9 @@ func (s *Server) handleUserSuspendToggle(w http.ResponseWriter, r *http.Request)
 		_ = repo.SetSuspended(id, target.QuotaSuspended)
 		http.Error(w, "failed to apply teleproxy config", http.StatusInternalServerError)
 		return
+	}
+	if s.RecalcUser != nil {
+		s.RecalcUser(target.Label)
 	}
 	http.Redirect(w, r, "../../users", http.StatusSeeOther)
 }

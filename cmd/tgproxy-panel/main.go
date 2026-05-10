@@ -173,6 +173,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	quotaSvc := quota.NewService(d, func() error { return srv.ReloadTeleproxyForQuota() })
+	srv.RecalcUser = func(label string) {
+		_, _, _ = quotaSvc.Recalculate(ctx, label)
+	}
 	go quotaSvc.RunPeriodic(ctx, 5*time.Minute)
 
 	httpSrv := newPanelHTTPServer(listenAddr, srv.Handler())
