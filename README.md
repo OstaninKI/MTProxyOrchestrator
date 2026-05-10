@@ -5,6 +5,7 @@ MTProto Proxy Orchestrator manages a Teleproxy-based Telegram MTProto proxy on U
 ## Current Scope
 
 - Installs a Single-mode Teleproxy deployment with nginx stub fallback and systemd units
+- Routes invalid FakeTLS probes to a loopback HTTPS stub backend when panel TLS is configured, so browser probes see the deployed domain certificate instead of the external mask host certificate
 - Runs an authenticated admin panel backend on loopback and can wire a public HTTPS nginx proxy when certificate paths are provided
 - Supports user management, Bridge runtime switching, metrics, logs, backups, restore, and verified updates in the codebase
 - Enforces optional per-user traffic quotas with daily, weekly, or monthly periods, soft warning, and hard suspension
@@ -21,6 +22,7 @@ The installer provisions Single mode first. Bridge mode is enabled later from th
 - Root privileges
 - Ports `80` and `443` available for nginx/Teleproxy
 - Port `8443` available for the public HTTPS admin panel when panel TLS flags are used
+- Loopback port `9443` available for the internal HTTPS stub backend when panel TLS flags are used
 - Outbound HTTPS access to GitHub Releases
 
 ## Install
@@ -35,6 +37,8 @@ Current interactive prompts are limited to:
 
 - FakeTLS mask host
 - Final confirmation for a Single-mode install
+
+When panel TLS is configured, the installer uses the panel domain as the FakeTLS hostname for generated user links and points Teleproxy fallback traffic at `panel-domain:9443`. nginx serves that backend on loopback with the same certificate, while the public admin panel remains on `8443`.
 
 Unattended install:
 

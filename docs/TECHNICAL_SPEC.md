@@ -40,7 +40,7 @@ TG client
 
 Unknown probes / browsers
   -> Teleproxy probe fallback
-  -> nginx 127.0.0.1
+  -> nginx 127.0.0.1:9443 TLS stub when domain TLS is configured
   -> static stub site
 ```
 
@@ -57,7 +57,7 @@ TG client
 
 Unknown probes / browsers
   -> Teleproxy probe fallback
-  -> nginx 127.0.0.1
+  -> nginx 127.0.0.1:9443 TLS stub when domain TLS is configured
   -> static stub site
 ```
 
