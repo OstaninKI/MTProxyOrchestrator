@@ -338,10 +338,10 @@ func (s *Server) handleSettingsTOTPBegin(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	totpEnrollPage(w, totpEnrollData{
-		CSRFField:  CSRFField(),
-		CSRFToken:  tok,
-		Secret:     secret,
-		OTPAuthURL: otpURL,
+		CSRFField:   CSRFField(),
+		CSRFToken:   tok,
+		Secret:      secret,
+		OTPAuthURL:  otpURL,
 		QRPNGBase64: qrPNG,
 	})
 }

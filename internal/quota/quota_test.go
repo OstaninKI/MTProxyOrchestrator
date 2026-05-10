@@ -193,7 +193,6 @@ func TestRolloverMultiPeriodCatchUp(t *testing.T) {
 	}
 }
 
-
 func TestRolloverNotDue(t *testing.T) {
 	d := openDB(t)
 	now := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
