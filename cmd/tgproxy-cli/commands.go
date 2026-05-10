@@ -26,8 +26,11 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.AddCommand(resetAdminCmd)
+	rootCmd.AddCommand(resetTOTPCmd)
 	rootCmd.AddCommand(backupCmd)
 	rootCmd.AddCommand(restoreCmd)
+
+	resetTOTPCmd.Flags().BoolVar(&resetTOTPYes, "yes", false, "skip confirmation prompt")
 
 	updateCmd.Flags().BoolVar(&updateManual, "manual", true, "bypass the 18-hour rate limit")
 	backupCmd.Flags().StringVar(&backupDest, "dest", "", "destination archive path (required)")
@@ -41,6 +44,7 @@ func init() {
 var updateManual bool
 var backupDest, backupPass string
 var restorePass string
+var resetTOTPYes bool
 
 var (
 	newPrompter    = func() install.Prompter { return install.NewHuhPrompter() }
@@ -251,6 +255,43 @@ var resetAdminCmd = &cobra.Command{
 
 		fmt.Fprintf(cmd.OutOrStdout(), "New login:    %s\n", newLogin)
 		fmt.Fprintf(cmd.OutOrStdout(), "New password: %s\n", newPassword)
+		fmt.Fprintln(cmd.OutOrStdout(), "Restart tgproxy-panel for the change to take effect.")
+		return nil
+	},
+}
+
+// resetTOTPCmd disables 2FA for the admin account.
+var resetTOTPCmd = &cobra.Command{
+	Use:   "reset-totp",
+	Short: "Disable two-factor authentication for the admin account",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		paths := defaultPaths()
+
+		if !resetTOTPYes {
+			p := newPrompter()
+			ok, err := p.AskConfirm("This will disable 2FA and clear the TOTP secret and recovery codes for the admin account. Continue?", false)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+				return nil
+			}
+		}
+
+		database, err := db.Open(paths.PanelDB)
+		if err != nil {
+			return fmt.Errorf("open panel db: %w", err)
+		}
+		defer database.Close()
+
+		if _, err := database.Exec(
+			`UPDATE admin SET totp_enabled = 0, totp_secret = '', totp_recovery_codes = '', updated_at = datetime('now') WHERE id = 1`,
+		); err != nil {
+			return fmt.Errorf("disable totp: %w", err)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "Two-factor authentication has been disabled for the admin account.")
 		fmt.Fprintln(cmd.OutOrStdout(), "Restart tgproxy-panel for the change to take effect.")
 		return nil
 	},

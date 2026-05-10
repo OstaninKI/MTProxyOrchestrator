@@ -16,6 +16,76 @@ import (
 // maxActiveUsers mirrors Teleproxy's 16-secret limit.
 const maxActiveUsers = 16
 
+// formatBytes renders a byte count with binary units (KB = 1024 B).
+// One decimal place is shown for KB and above when the value is below 10
+// in its unit; otherwise the value is rounded to integer.
+func formatBytes(n uint64) string {
+	const k = 1024
+	if n < k {
+		return fmt.Sprintf("%d B", n)
+	}
+	units := []string{"KB", "MB", "GB", "TB", "PB"}
+	val := float64(n) / k
+	idx := 0
+	for val >= k && idx < len(units)-1 {
+		val /= k
+		idx++
+	}
+	if val < 10 {
+		return fmt.Sprintf("%.1f %s", val, units[idx])
+	}
+	return fmt.Sprintf("%.0f %s", val, units[idx])
+}
+
+// quotaPct returns the integer percentage of used/total, capped at 100.
+// When total is zero (unlimited), returns 0.
+func quotaPct(used, total uint64) int {
+	if total == 0 {
+		return 0
+	}
+	p := (used * 100) / total
+	if p > 100 {
+		return 100
+	}
+	return int(p)
+}
+
+// nextResetIn returns a human readable countdown to the next quota period
+// rollover. Returns "" for unlimited quota (period == "" treated by caller),
+// "—" when periodStart is zero, and "rollover pending" when the period
+// already elapsed (rollover not yet processed).
+func nextResetIn(periodStart int64, period string, now time.Time) string {
+	if periodStart == 0 {
+		return "—"
+	}
+	var dur time.Duration
+	switch period {
+	case "daily":
+		dur = 24 * time.Hour
+	case "weekly":
+		dur = 7 * 24 * time.Hour
+	case "monthly":
+		dur = 30 * 24 * time.Hour
+	default:
+		return "—"
+	}
+	end := time.Unix(periodStart, 0).Add(dur)
+	left := end.Sub(now)
+	if left <= 0 {
+		return "rollover pending"
+	}
+	days := int(left / (24 * time.Hour))
+	hours := int((left % (24 * time.Hour)) / time.Hour)
+	mins := int((left % time.Hour) / time.Minute)
+	if days > 0 {
+		return fmt.Sprintf("resets in %dd %dh", days, hours)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("resets in %dh %dm", hours, mins)
+	}
+	return fmt.Sprintf("resets in %dm", mins)
+}
+
 // UserRow is one row from the users table.
 type UserRow struct {
 	ID        int64

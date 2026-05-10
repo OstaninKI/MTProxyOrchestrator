@@ -143,14 +143,25 @@ If the authenticator app is lost:
 1. use one of the recorded recovery codes during the `/totp/verify` step or in the disable form
 2. once logged in, regenerate recovery codes and re-enroll with a new authenticator
 
-If all recovery codes are also lost, recover with direct SQLite access on the host as a last resort:
+If all recovery codes are also lost, reset 2FA from the host using the CLI:
+
+```bash
+sudo tgproxy-cli reset-totp
+sudo systemctl restart tgproxy-panel
+```
+
+The command clears `totp_enabled`, `totp_secret`, and `totp_recovery_codes` for the admin row. Pass `--yes` to skip the confirmation prompt in unattended environments.
+
+If the `tgproxy-cli` binary is unavailable, fall back to direct SQLite access:
 
 ```bash
 sudo systemctl stop tgproxy-panel
 sudo sqlite3 /etc/tgproxy/panel.db \
   "UPDATE admin SET totp_enabled = 0, totp_secret = '', totp_recovery_codes = '';"
 sudo systemctl start tgproxy-panel
-``` After recovery, log in with the password, re-enroll TOTP, and rotate the admin password using `tgproxy-cli reset-admin-password`. A dedicated `tgproxy-cli reset-totp` command is not yet implemented.
+```
+
+After recovery, log in with the password, re-enroll TOTP, and rotate the admin password using `tgproxy-cli reset-admin-password`.
 
 Audit events: `totp_enabled`, `totp_disabled`, `totp_recovery_regenerated`, `totp_recovery_used`, `totp_failed`.
 

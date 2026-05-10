@@ -156,6 +156,65 @@ func TestResetAdminPasswordInvalidatesExistingSessions(t *testing.T) {
 	}
 }
 
+func TestResetTOTPClearsAdminTOTPColumns(t *testing.T) {
+	oldPaths := defaultPaths
+	t.Cleanup(func() { defaultPaths = oldPaths })
+
+	dir := t.TempDir()
+	paths := config.DefaultPaths()
+	paths.PanelDB = dir + "/panel.db"
+	defaultPaths = func() config.InstallPaths { return paths }
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	database, err := db.Open(paths.PanelDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := panel.HashPassword("old-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(
+		`INSERT INTO admin(id, login, password_hash, totp_secret, totp_enabled, totp_recovery_codes) VALUES(1, ?, ?, 'JBSWY3DPEHPK3PXP', 1, 'code1,code2')`,
+		"admin", hash,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resetTOTPYes = true
+	t.Cleanup(func() { resetTOTPYes = false })
+
+	var buf bytes.Buffer
+	resetTOTPCmd.SetOut(&buf)
+	resetTOTPCmd.SetErr(&buf)
+	if err := resetTOTPCmd.RunE(resetTOTPCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	database, err = db.Open(paths.PanelDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	var enabled int
+	var secret, recovery string
+	if err := database.QueryRow(`SELECT totp_enabled, totp_secret, totp_recovery_codes FROM admin WHERE id=1`).Scan(&enabled, &secret, &recovery); err != nil {
+		t.Fatal(err)
+	}
+	if enabled != 0 || secret != "" || recovery != "" {
+		t.Fatalf("expected totp columns cleared, got enabled=%d secret=%q recovery=%q", enabled, secret, recovery)
+	}
+	if out := buf.String(); !strings.Contains(out, "disabled") {
+		t.Fatalf("expected confirmation message, got %q", out)
+	}
+}
+
 func TestCurrentRuntimeModeReadsTeleproxyConfig(t *testing.T) {
 	dir := t.TempDir()
 	teleproxyPath := dir + "/teleproxy.toml"

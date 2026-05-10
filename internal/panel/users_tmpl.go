@@ -3,9 +3,31 @@ package panel
 import (
 	"html/template"
 	"io"
+	"time"
 )
 
-var userListTmpl = template.Must(template.New("users").Parse(`<!DOCTYPE html>
+var userListFuncs = template.FuncMap{
+	"formatBytes": func(n int64) string {
+		if n < 0 {
+			return "0 B"
+		}
+		return formatBytes(uint64(n))
+	},
+	"quotaPct": func(used, total int64) int {
+		if used < 0 {
+			used = 0
+		}
+		if total <= 0 {
+			return 0
+		}
+		return quotaPct(uint64(used), uint64(total))
+	},
+	"nextResetIn": func(periodStart int64, period string) string {
+		return nextResetIn(periodStart, period, time.Now())
+	},
+}
+
+var userListTmpl = template.Must(template.New("users").Funcs(userListFuncs).Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -16,7 +38,11 @@ table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:le
 input[type=text]{padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px;margin-right:.5rem}
 button{padding:.4rem .8rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
 button:hover{background:#1d4ed8}.error{color:#dc2626;margin-bottom:1rem}
-a{color:#2563eb}</style>
+a{color:#2563eb}
+.qbar{position:relative;width:160px;height:10px;background:#e5e7eb;border-radius:5px;overflow:hidden}
+.qbar>span{display:block;height:100%;border-radius:5px;transition:width .2s}
+.qbar-green>span{background:#16a34a}.qbar-amber>span{background:#d97706}.qbar-red>span{background:#dc2626}
+.qmeta{font-size:.8rem;color:#555;margin-top:.15rem}.muted{color:#888}</style>
 </head>
 <body>
 <h1>Users</h1>
@@ -37,8 +63,27 @@ a{color:#2563eb}</style>
     {{if .Enabled}}<span class="badge-on">enabled</span>{{else}}<span class="badge-off">disabled</span>{{end}}
     {{if .QuotaSuspended}} <span class="badge-off">suspended</span>{{end}}
   </td>
-  <td>{{if gt .QuotaBytes 0}}{{.QuotaBytes}} B / {{.QuotaPeriod}}{{else}}<span style="color:#888">unlimited</span>{{end}}</td>
-  <td>{{.QuotaUsedBytes}} B</td>
+  <td>{{if gt .QuotaBytes 0}}{{formatBytes .QuotaBytes}} / {{.QuotaPeriod}}{{else}}<span class="muted">unlimited</span>{{end}}</td>
+  <td>
+    {{if gt .QuotaBytes 0}}
+      {{- $pct := quotaPct .QuotaUsedBytes .QuotaBytes -}}
+      {{- $color := "" -}}
+      {{- if or .QuotaSuspended (ge $pct 100) -}}{{- $color = "qbar-red" -}}
+      {{- else if and (gt .QuotaWarnPct 0) (ge $pct .QuotaWarnPct) -}}{{- $color = "qbar-amber" -}}
+      {{- else -}}{{- $color = "qbar-green" -}}{{- end -}}
+      <div class="qbar {{$color}}" role="progressbar"
+           aria-valuenow="{{$pct}}" aria-valuemin="0" aria-valuemax="100"
+           aria-label="{{formatBytes .QuotaUsedBytes}} of {{formatBytes .QuotaBytes}} used ({{$pct}}%)">
+        <span style="width:{{$pct}}%"></span>
+      </div>
+      <div class="qmeta">{{formatBytes .QuotaUsedBytes}} / {{formatBytes .QuotaBytes}} ({{$pct}}%)
+        {{- $r := nextResetIn .QuotaPeriodStart .QuotaPeriod -}}
+        {{- if $r}} · {{$r}}{{end -}}
+      </div>
+    {{else}}
+      <span class="muted">{{formatBytes .QuotaUsedBytes}}</span>
+    {{end}}
+  </td>
   <td>{{.CreatedAt.Format "2006-01-02"}}</td>
   <td>
     <form method="post" action="users/{{.ID}}/toggle" style="display:inline">
