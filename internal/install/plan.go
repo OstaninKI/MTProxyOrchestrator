@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component/versions"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/nginx"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
@@ -16,14 +17,10 @@ import (
 )
 
 const (
-	teleproxyLinuxAMD64URL    = "https://github.com/teleproxy/teleproxy/releases/download/v4.12.2/teleproxy-linux-amd64"
-	teleproxyLinuxAMD64SHA256 = "02d5e0e4f1f8f44c45eb4c9b3cf6e6bc88c9b4f7f1682622da96eede8f02089f"
-	singboxLinuxAMD64URL      = "https://github.com/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-linux-amd64.tar.gz"
-	singboxLinuxAMD64SHA256   = "10ff037632165ca4f6472a0ec21393280ef5a33677e05bcde7fbcf6f9737637b"
-	PanelBackendPort          = 18080
-	bridgeSOCKS5Addr          = "127.0.0.1:1080"
-	bridgeSOCKS5ListenAddr    = "127.0.0.1"
-	bridgeSOCKS5ListenPort    = 1080
+	PanelBackendPort       = 18080
+	bridgeSOCKS5Addr       = "127.0.0.1:1080"
+	bridgeSOCKS5ListenAddr = "127.0.0.1"
+	bridgeSOCKS5ListenPort = 1080
 )
 
 type StepKind string
@@ -54,14 +51,15 @@ type PanelBootstrap struct {
 }
 
 type Step struct {
-	Kind      StepKind
-	Target    string
-	Source    string
-	Content   []byte
-	Mode      os.FileMode
-	URL       string
-	SHA256    string
-	Bootstrap *PanelBootstrap
+	Kind        StepKind
+	Target      string
+	Source      string
+	Content     []byte
+	Mode        os.FileMode
+	URL         string
+	SHA256      string
+	Bootstrap   *PanelBootstrap
+	AptPackages []string
 }
 
 // GeneratedCreds holds fresh credentials produced during planning.
@@ -278,7 +276,7 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 	if bridgeMode != nil {
 		tpIdx := indexOfWriteTarget(steps, paths.TeleproxyTOML)
 		extra := []Step{
-			{Kind: StepDownloadBinary, Target: paths.SingboxBin, URL: singboxLinuxAMD64URL, SHA256: singboxLinuxAMD64SHA256, Mode: 0o755},
+			{Kind: StepDownloadBinary, Target: paths.SingboxBin, URL: versions.SingboxLinuxAMD64URL, SHA256: versions.SingboxLinuxAMD64SHA256, Mode: 0o755},
 			{Kind: StepWriteFile, Target: paths.OutboundsJSON, Content: bridgeMode.OutboundsJSON, Mode: 0o600},
 			{Kind: StepWriteFile, Target: paths.SingboxJSON, Content: bridgeMode.SingboxJSON, Mode: 0o600},
 			{Kind: StepWriteFile, Target: paths.SingboxService, Content: bridgeMode.SingboxUnit, Mode: 0o644},
@@ -363,11 +361,11 @@ func bridgePlanData(cfg config.Config, paths config.InstallPaths, node bridge.No
 }
 
 func teleproxyDownloadURL() string {
-	return teleproxyLinuxAMD64URL
+	return versions.TeleproxyLinuxAMD64URL
 }
 
 func teleproxyDownloadSHA256() string {
-	return teleproxyLinuxAMD64SHA256
+	return versions.TeleproxyLinuxAMD64SHA256
 }
 
 func minimalStubHTML() []byte {

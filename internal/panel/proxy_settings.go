@@ -27,7 +27,7 @@ func (s *Server) handleSettingsProxyGet(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	proxySettingsPage(w, proxySettingsData{
 		CSRFField:   CSRFField(),
@@ -50,18 +50,18 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 
 	// Validate mask_host.
 	if maskHost == "" {
-		renderProxySettingsError(w, r, s.Secure, maskHost, s.bridgeMTProtoPort(), "mask host is required")
+		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), "mask host is required")
 		return
 	}
 	if !isValidMaskHost(maskHost) {
-		renderProxySettingsError(w, r, s.Secure, maskHost, s.bridgeMTProtoPort(), "mask host must be a valid hostname")
+		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), "mask host must be a valid hostname")
 		return
 	}
 
 	// Validate port.
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
-		renderProxySettingsError(w, r, s.Secure, maskHost, s.bridgeMTProtoPort(), "port must be between 1 and 65535")
+		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), "port must be between 1 and 65535")
 		return
 	}
 
@@ -83,14 +83,14 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 
 	// Reload Teleproxy.
 	if err := s.reloadTeleproxy(); err != nil {
-		renderProxySettingsError(w, r, s.Secure, maskHost, port, "failed to reload teleproxy")
+		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, port, "failed to reload teleproxy")
 		return
 	}
 
 	audit.Log(s.DB, s.sessionAdminID(r), "settings.proxy", "", "", clientIP(r)) //nolint:errcheck
 
 	tok, _ := NewCSRFToken()
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	proxySettingsPage(w, proxySettingsData{
 		CSRFField:   CSRFField(),
@@ -108,7 +108,7 @@ func (s *Server) handleSettingsAdminPasswordGet(w http.ResponseWriter, r *http.R
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	adminPasswordPage(w, adminPasswordData{
 		CSRFField: CSRFField(),
@@ -130,13 +130,13 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 
 	// Validate new password.
 	if err := validateNewPassword(newPassword); err != nil {
-		renderAdminPasswordError(w, r, s.Secure, err.Error())
+		renderAdminPasswordError(w, r, s.Secure, s.PanelPath, err.Error())
 		return
 	}
 
 	// Validate passwords match.
 	if newPassword != confirmPassword {
-		renderAdminPasswordError(w, r, s.Secure, "passwords do not match")
+		renderAdminPasswordError(w, r, s.Secure, s.PanelPath, "passwords do not match")
 		return
 	}
 
@@ -150,7 +150,7 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 
 	// Verify current password.
 	if !CheckPassword(hash, currentPassword) {
-		renderAdminPasswordError(w, r, s.Secure, "current password is incorrect")
+		renderAdminPasswordError(w, r, s.Secure, s.PanelPath, "current password is incorrect")
 		return
 	}
 
@@ -179,7 +179,7 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 	audit.Log(s.DB, adminID, "admin.password_changed", "", "", clientIP(r)) //nolint:errcheck
 
 	tok, _ := NewCSRFToken()
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	adminPasswordPage(w, adminPasswordData{
 		CSRFField: CSRFField(),
@@ -195,7 +195,7 @@ func (s *Server) handleSettingsSystemGet(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 
 	// Load current settings with defaults.
 	panelPath := s.PanelPath
@@ -291,7 +291,7 @@ func (s *Server) handleSettingsSystemPost(w http.ResponseWriter, r *http.Request
 	audit.Log(s.DB, s.sessionAdminID(r), "settings.system", "", "", clientIP(r)) //nolint:errcheck
 
 	tok, _ := NewCSRFToken()
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	systemSettingsPage(w, systemSettingsData{
 		CSRFField:           CSRFField(),
@@ -377,9 +377,9 @@ func isValidMaskHost(host string) bool {
 
 // --- render error helpers ---
 
-func renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure bool, maskHost string, port int, errMsg string) {
+func renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, maskHost string, port int, errMsg string) {
 	tok, _ := NewCSRFToken()
-	SetCSRFCookie(w, tok, secure)
+	SetCSRFCookie(w, tok, secure, panelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	proxySettingsPage(w, proxySettingsData{
 		CSRFField:   CSRFField(),
@@ -390,9 +390,9 @@ func renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure boo
 	})
 }
 
-func renderAdminPasswordError(w http.ResponseWriter, r *http.Request, secure bool, errMsg string) {
+func renderAdminPasswordError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, errMsg string) {
 	tok, _ := NewCSRFToken()
-	SetCSRFCookie(w, tok, secure)
+	SetCSRFCookie(w, tok, secure, panelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	adminPasswordPage(w, adminPasswordData{
 		CSRFField: CSRFField(),
@@ -403,7 +403,7 @@ func renderAdminPasswordError(w http.ResponseWriter, r *http.Request, secure boo
 
 func renderSystemSettingsError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, logLevel string, retMin, retHour int, errMsg string) {
 	tok, _ := NewCSRFToken()
-	SetCSRFCookie(w, tok, secure)
+	SetCSRFCookie(w, tok, secure, panelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if retMin == 0 {

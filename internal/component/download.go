@@ -20,6 +20,8 @@ const (
 	MaxBinaryBytes = 200 * 1024 * 1024
 	// MaxArchiveBytes is the maximum size allowed for a tar.gz archive download (50 MB).
 	MaxArchiveBytes = 50 * 1024 * 1024
+	// MaxExtractedMemberBytes bounds the size of an individual file extracted from a tar.gz archive (200 MB).
+	MaxExtractedMemberBytes = 200 * 1024 * 1024
 
 	// DefaultHTTPTimeout is the timeout applied to each HTTP download request.
 	DefaultHTTPTimeout = 10 * time.Minute
@@ -222,8 +224,13 @@ func extractTarGzMember(archivePath, memberName string, dst io.Writer) error {
 		if hdr.Typeflag != tar.TypeReg || filepath.Base(hdr.Name) != memberName {
 			continue
 		}
-		if _, err := io.Copy(dst, tr); err != nil {
+		limited := io.LimitReader(tr, MaxExtractedMemberBytes+1)
+		written, err := io.Copy(dst, limited)
+		if err != nil {
 			return fmt.Errorf("extract %s: %w", memberName, err)
+		}
+		if written > MaxExtractedMemberBytes {
+			return fmt.Errorf("extracted file %s exceeds limit of %d bytes", memberName, MaxExtractedMemberBytes)
 		}
 		return nil
 	}

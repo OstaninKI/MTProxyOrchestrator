@@ -1,12 +1,15 @@
 package update
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
 )
@@ -181,25 +184,64 @@ func (a *Applier) rollback(destPath, backupPath, service string) error {
 
 // --- Production implementations ---
 
+const systemctlTimeout = 10 * time.Second
+
 // OSServiceController uses systemctl to restart services.
 type OSServiceController struct{}
 
 func (OSServiceController) Restart(service string) error {
-	cmd := exec.Command("systemctl", "restart", service)
+	ctx, cancel := context.WithTimeout(context.Background(), systemctlTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "systemctl", "restart", service)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("systemctl restart %s: %s: %w", service, out, err)
 	}
 	return nil
 }
 
-// OSHealthChecker checks service health via systemctl is-active.
+// OSHealthChecker checks service health via systemctl is-active. It tolerates
+// the brief `activating` window after a restart by polling for up to ~5s and
+// fails fast on `failed`.
 type OSHealthChecker struct{}
 
 func (OSHealthChecker) Check(service string) error {
-	if err := exec.Command("systemctl", "is-active", service).Run(); err != nil {
-		return fmt.Errorf("service %s is not active: %w", service, err)
+	const (
+		pollInterval = 250 * time.Millisecond
+		pollTimeout  = 5 * time.Second
+	)
+	deadline := time.Now().Add(pollTimeout)
+	var lastState string
+	for {
+		state, err := systemctlIsActive(service)
+		lastState = state
+		if err == nil && state == "active" {
+			return nil
+		}
+		if state == "failed" {
+			return fmt.Errorf("service %s is failed", service)
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(pollInterval)
 	}
-	return nil
+	if lastState == "" {
+		return fmt.Errorf("service %s is not active", service)
+	}
+	return fmt.Errorf("service %s is not active (state=%s)", service, lastState)
+}
+
+func systemctlIsActive(service string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), systemctlTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "systemctl", "is-active", service).Output()
+	state := strings.TrimSpace(string(out))
+	if state == "" && err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			state = strings.TrimSpace(string(ee.Stderr))
+		}
+	}
+	return state, err
 }
 
 // OSFileOps delegates to the real OS.

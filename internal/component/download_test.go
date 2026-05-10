@@ -267,6 +267,66 @@ func TestDownloadTimeout(t *testing.T) {
 	}
 }
 
+// TestDownloadTarGzMemberExtractedSizeLimit verifies the extractor refuses to write
+// past MaxExtractedMemberBytes when a malicious archive's member produces excessive output.
+func TestDownloadTarGzMemberExtractedSizeLimit(t *testing.T) {
+	const memberName = "sing-box"
+	const declaredSize = int64(component.MaxExtractedMemberBytes) + 100
+
+	var raw bytes.Buffer
+	gz := gzip.NewWriter(&raw)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     "sing-box-evil/" + memberName,
+		Mode:     0o755,
+		Size:     declaredSize,
+		Typeflag: tar.TypeReg,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	chunk := make([]byte, 1<<16)
+	var written int64
+	for written < declaredSize {
+		n := int64(len(chunk))
+		if remaining := declaredSize - written; remaining < n {
+			n = remaining
+		}
+		if _, err := tw.Write(chunk[:n]); err != nil {
+			t.Fatal(err)
+		}
+		written += n
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	archive := raw.Bytes()
+	h := sha256.Sum256(archive)
+	destPath := filepath.Join(t.TempDir(), "sing-box")
+
+	dl := component.Downloader{
+		Client: &fakeHTTPClient{
+			body: io.NopCloser(bytes.NewReader(archive)),
+		},
+		TmpDir:  t.TempDir(),
+		MaxSize: int64(len(archive)) + 1,
+	}
+
+	err := dl.DownloadTarGzBinary("https://example.test/sing-box.tar.gz", hex.EncodeToString(h[:]), memberName, destPath)
+	if err == nil {
+		t.Fatal("expected error for oversized extracted member, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds limit") {
+		t.Fatalf("expected 'exceeds limit' error, got: %v", err)
+	}
+	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+		t.Fatal("expected dest file to not exist after oversized extraction rejection")
+	}
+}
+
 func tarGz(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer

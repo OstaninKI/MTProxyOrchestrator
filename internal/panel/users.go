@@ -141,7 +141,7 @@ func (s *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	userListPage(w, users, tok, "")
 }
@@ -156,7 +156,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		repo := UserRepo{DB: s.DB}
 		users, _ := repo.List()
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		userListPage(w, users, tok, "Invalid label: "+err.Error())
 		return
@@ -173,7 +173,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		users, _ := repo.List()
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		userListPage(w, users, tok, err.Error())
 		return

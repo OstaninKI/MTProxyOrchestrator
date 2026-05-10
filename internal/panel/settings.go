@@ -3,10 +3,12 @@ package panel
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +17,16 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/stub"
 )
+
+const nginxReloadTimeout = 10 * time.Second
+
+// reloadNginx executes "systemctl reload nginx" with a bounded timeout.
+// Overridable in tests.
+var reloadNginx = func() error {
+	ctx, cancel := context.WithTimeout(context.Background(), nginxReloadTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "systemctl", "reload", "nginx").Run()
+}
 
 // maxUploadBytes is the request body size limit for stub ZIP uploads (5 MB).
 const maxUploadBytes = stub.MaxZipSize
@@ -146,9 +158,7 @@ var extractZip = func(r io.ReaderAt, size int64, destDir string) error {
 // applyStubTemplate applies a stub template directory using a default Applier.
 // In tests this can be replaced with a stub.
 var applyStubTemplate = func(webRoot, srcDir string) error {
-	applier := stub.DefaultApplier(webRoot, func() error {
-		return nil // nginx reload is best-effort in panel context
-	})
+	applier := stub.DefaultApplier(webRoot, reloadNginx)
 	return applier.Apply(srcDir)
 }
 
@@ -164,7 +174,7 @@ func (s *Server) handleSettingsStubList(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	settingsStubListPage(w, settingsStubListData{
 		CSRFField: CSRFField(),
@@ -209,7 +219,7 @@ func (s *Server) handleSettingsStubApply(w http.ResponseWriter, r *http.Request)
 
 	if err := applyStubTemplate(cfg.WebRoot, srcDir); err != nil {
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		settingsStubListPage(w, settingsStubListData{
 			CSRFField:  CSRFField(),
@@ -222,7 +232,7 @@ func (s *Server) handleSettingsStubApply(w http.ResponseWriter, r *http.Request)
 
 	audit.Log(s.DB, s.sessionAdminID(r), "stub.apply", name, "", clientIP(r)) //nolint:errcheck
 	tok, _ := NewCSRFToken()
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	settingsStubListPage(w, settingsStubListData{
 		CSRFField:    CSRFField(),
@@ -248,7 +258,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		settingsStubListPage(w, settingsStubListData{
 			CSRFField:   CSRFField(),
@@ -262,7 +272,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 	file, _, err := r.FormFile("stub_zip")
 	if err != nil {
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		settingsStubListPage(w, settingsStubListData{
 			CSRFField:   CSRFField(),
@@ -283,7 +293,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 	}
 	if n > maxUploadBytes {
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		settingsStubListPage(w, settingsStubListData{
 			CSRFField:   CSRFField(),
@@ -304,7 +314,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 			msgs = append(msgs, ve.Error())
 		}
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		settingsStubListPage(w, settingsStubListData{
 			CSRFField:        CSRFField(),
@@ -330,7 +340,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 
 	if err := applyStubTemplate(cfg.WebRoot, tmpDir); err != nil {
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		settingsStubListPage(w, settingsStubListData{
 			CSRFField:   CSRFField(),
@@ -343,7 +353,7 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 
 	audit.Log(s.DB, s.sessionAdminID(r), "stub.upload", "custom", "", clientIP(r)) //nolint:errcheck
 	tok, _ := NewCSRFToken()
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	settingsStubListPage(w, settingsStubListData{
 		CSRFField:    CSRFField(),

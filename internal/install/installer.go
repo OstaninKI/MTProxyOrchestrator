@@ -3,6 +3,7 @@ package install
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,48 +27,137 @@ type Executor interface {
 	EnableNginxSite(name string) error
 }
 
+// Rollbacker is an optional Executor extension that knows how to undo
+// previously applied steps. SystemExecutor implements it; tests may opt in.
+type Rollbacker interface {
+	RemoveFile(path string) error
+	RemoveDir(path string) error
+	RemoveService(name string) error
+	RemoveNginxSite(name string) error
+}
+
 // Installer runs a Plan using a given Executor.
 type Installer struct {
 	Executor Executor
 	Plan     Plan
+	Logger   *log.Logger
 }
 
-// Run applies Plan.Steps in order. Returns the first error encountered.
+func (i Installer) logger() *log.Logger {
+	if i.Logger != nil {
+		return i.Logger
+	}
+	return log.Default()
+}
+
+// Run applies Plan.Steps in order. On failure, previously-applied steps are
+// rolled back in reverse order on a best-effort basis.
 func (i Installer) Run() error {
-	for _, step := range i.Plan.Steps {
+	steps := coalesceAptInstalls(i.Plan.Steps)
+	journal := make([]Step, 0, len(steps))
+	for _, step := range steps {
+		if err := i.applyStep(step); err != nil {
+			i.rollbackJournal(journal)
+			return err
+		}
+		journal = append(journal, step)
+	}
+	return nil
+}
+
+func (i Installer) applyStep(step Step) error {
+	switch step.Kind {
+	case StepCreateDir:
+		return i.Executor.CreateDir(step.Target, step.Mode)
+	case StepWriteFile:
+		return i.Executor.WriteFile(step.Target, step.Content, step.Mode)
+	case StepDownloadBinary:
+		return i.Executor.Download(step.URL, step.SHA256, step.Target)
+	case StepInstallFile:
+		return i.Executor.InstallFile(step.Source, step.Target, step.Mode)
+	case StepInitPanelDB:
+		if step.Bootstrap == nil {
+			return fmt.Errorf("init-panel-db step missing bootstrap data")
+		}
+		return i.Executor.InitPanelDB(step.Target, *step.Bootstrap)
+	case StepAptInstall:
+		pkgs := step.AptPackages
+		if len(pkgs) == 0 && step.Target != "" {
+			pkgs = []string{step.Target}
+		}
+		return i.Executor.AptInstall(pkgs...)
+	case StepEnableService:
+		return i.Executor.EnableService(step.Target)
+	case StepStartService:
+		return i.Executor.StartService(step.Target)
+	case StepReloadService:
+		return i.Executor.ReloadService(step.Target)
+	case StepEnableNginxSite:
+		return i.Executor.EnableNginxSite(step.Target)
+	default:
+		return fmt.Errorf("unknown step kind: %s", step.Kind)
+	}
+}
+
+func coalesceAptInstalls(in []Step) []Step {
+	out := make([]Step, 0, len(in))
+	for idx := 0; idx < len(in); idx++ {
+		s := in[idx]
+		if s.Kind != StepAptInstall {
+			out = append(out, s)
+			continue
+		}
+		pkgs := []string{}
+		if len(s.AptPackages) > 0 {
+			pkgs = append(pkgs, s.AptPackages...)
+		} else if s.Target != "" {
+			pkgs = append(pkgs, s.Target)
+		}
+		j := idx + 1
+		for j < len(in) && in[j].Kind == StepAptInstall {
+			n := in[j]
+			if len(n.AptPackages) > 0 {
+				pkgs = append(pkgs, n.AptPackages...)
+			} else if n.Target != "" {
+				pkgs = append(pkgs, n.Target)
+			}
+			j++
+		}
+		out = append(out, Step{Kind: StepAptInstall, AptPackages: pkgs})
+		idx = j - 1
+	}
+	return out
+}
+
+func (i Installer) rollbackJournal(journal []Step) {
+	rb, ok := i.Executor.(Rollbacker)
+	for k := len(journal) - 1; k >= 0; k-- {
+		step := journal[k]
+		if !ok {
+			i.logger().Printf("rollback: executor does not support rollback for %s %s", step.Kind, step.Target)
+			continue
+		}
 		var err error
 		switch step.Kind {
 		case StepCreateDir:
-			err = i.Executor.CreateDir(step.Target, step.Mode)
-		case StepWriteFile:
-			err = i.Executor.WriteFile(step.Target, step.Content, step.Mode)
-		case StepDownloadBinary:
-			err = i.Executor.Download(step.URL, step.SHA256, step.Target)
-		case StepInstallFile:
-			err = i.Executor.InstallFile(step.Source, step.Target, step.Mode)
-		case StepInitPanelDB:
-			if step.Bootstrap == nil {
-				return fmt.Errorf("init-panel-db step missing bootstrap data")
-			}
-			err = i.Executor.InitPanelDB(step.Target, *step.Bootstrap)
-		case StepAptInstall:
-			err = i.Executor.AptInstall(step.Target)
-		case StepEnableService:
-			err = i.Executor.EnableService(step.Target)
-		case StepStartService:
-			err = i.Executor.StartService(step.Target)
-		case StepReloadService:
-			err = i.Executor.ReloadService(step.Target)
+			err = rb.RemoveDir(step.Target)
+		case StepWriteFile, StepDownloadBinary, StepInstallFile, StepInitPanelDB:
+			err = rb.RemoveFile(step.Target)
+		case StepEnableService, StepStartService:
+			err = rb.RemoveService(step.Target)
 		case StepEnableNginxSite:
-			err = i.Executor.EnableNginxSite(step.Target)
+			err = rb.RemoveNginxSite(step.Target)
+		case StepAptInstall, StepReloadService:
+			i.logger().Printf("rollback: skipping %s (no-op)", step.Kind)
+			continue
 		default:
-			return fmt.Errorf("unknown step kind: %s", step.Kind)
+			i.logger().Printf("rollback: unsupported step kind %s", step.Kind)
+			continue
 		}
 		if err != nil {
-			return err
+			i.logger().Printf("rollback: %s %s: %v", step.Kind, step.Target, err)
 		}
 	}
-	return nil
 }
 
 // SystemExecutor is the real Executor that mutates the host.
@@ -166,4 +256,43 @@ func (e *SystemExecutor) EnableNginxSite(name string) error {
 		return err
 	}
 	return os.Symlink(src, dst)
+}
+
+func (e *SystemExecutor) RemoveFile(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (e *SystemExecutor) RemoveDir(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// RemoveService disables and stops a unit, deletes its unit file from
+// /etc/systemd/system, and reloads the daemon. Errors are best-effort.
+func (e *SystemExecutor) RemoveService(name string) error {
+	unit := name
+	if !strings.Contains(unit, ".") {
+		unit = unit + ".service"
+	}
+	_ = exec.Command("systemctl", "stop", unit).Run()
+	_ = exec.Command("systemctl", "disable", unit).Run()
+	unitPath := filepath.Join("/etc/systemd/system", unit)
+	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	_ = exec.Command("systemctl", "daemon-reload").Run()
+	return nil
+}
+
+func (e *SystemExecutor) RemoveNginxSite(name string) error {
+	dst := filepath.Join("/etc/nginx/sites-enabled", filepath.Base(name))
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }

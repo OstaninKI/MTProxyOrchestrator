@@ -1,6 +1,9 @@
 package install_test
 
 import (
+	"errors"
+	"io"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -172,6 +175,115 @@ func TestInstallCopiesLocalBinaries(t *testing.T) {
 	}
 	if !strings.Contains(fe.installs[0], paths.PanelBin) && !strings.Contains(fe.installs[1], paths.PanelBin) {
 		t.Fatalf("expected tgproxy-panel install target %s in %v", paths.PanelBin, fe.installs)
+	}
+}
+
+type rollbackEvent struct {
+	Op     string
+	Target string
+}
+
+type rollbackExecutor struct {
+	failOn    int
+	calls     int
+	rollbacks []rollbackEvent
+}
+
+func (r *rollbackExecutor) record() error {
+	r.calls++
+	if r.calls == r.failOn {
+		return errors.New("forced failure")
+	}
+	return nil
+}
+
+func (r *rollbackExecutor) CreateDir(_ string, _ os.FileMode) error { return r.record() }
+
+func (r *rollbackExecutor) WriteFile(_ string, _ []byte, _ os.FileMode) error { return r.record() }
+
+func (r *rollbackExecutor) Download(_, _, _ string) error { return r.record() }
+
+func (r *rollbackExecutor) InstallFile(_, _ string, _ os.FileMode) error { return r.record() }
+
+func (r *rollbackExecutor) InitPanelDB(_ string, _ install.PanelBootstrap) error {
+	return r.record()
+}
+
+func (r *rollbackExecutor) AptInstall(_ ...string) error { return r.record() }
+
+func (r *rollbackExecutor) EnableService(_ string) error { return r.record() }
+
+func (r *rollbackExecutor) StartService(_ string) error { return r.record() }
+
+func (r *rollbackExecutor) ReloadService(_ string) error { return r.record() }
+
+func (r *rollbackExecutor) EnableNginxSite(_ string) error { return r.record() }
+
+func (r *rollbackExecutor) RemoveFile(path string) error {
+	r.rollbacks = append(r.rollbacks, rollbackEvent{Op: "RemoveFile", Target: path})
+	return nil
+}
+
+func (r *rollbackExecutor) RemoveDir(path string) error {
+	r.rollbacks = append(r.rollbacks, rollbackEvent{Op: "RemoveDir", Target: path})
+	return nil
+}
+
+func (r *rollbackExecutor) RemoveService(name string) error {
+	r.rollbacks = append(r.rollbacks, rollbackEvent{Op: "RemoveService", Target: name})
+	return nil
+}
+
+func (r *rollbackExecutor) RemoveNginxSite(name string) error {
+	r.rollbacks = append(r.rollbacks, rollbackEvent{Op: "RemoveNginxSite", Target: name})
+	return nil
+}
+
+func TestInstallRollsBackOnMidPlanFailure(t *testing.T) {
+	plan := install.Plan{Steps: []install.Step{
+		{Kind: install.StepCreateDir, Target: "/etc/tgproxy"},
+		{Kind: install.StepWriteFile, Target: "/etc/tgproxy/config.toml"},
+		{Kind: install.StepEnableService, Target: "tgproxy-panel"},
+		{Kind: install.StepStartService, Target: "tgproxy-panel"},
+	}}
+
+	re := &rollbackExecutor{failOn: 4}
+	inst := install.Installer{Executor: re, Plan: plan, Logger: log.New(io.Discard, "", 0)}
+	if err := inst.Run(); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	want := []rollbackEvent{
+		{Op: "RemoveService", Target: "tgproxy-panel"},
+		{Op: "RemoveFile", Target: "/etc/tgproxy/config.toml"},
+		{Op: "RemoveDir", Target: "/etc/tgproxy"},
+	}
+	if len(re.rollbacks) != len(want) {
+		t.Fatalf("rollback events: got %d (%+v), want %d", len(re.rollbacks), re.rollbacks, len(want))
+	}
+	for i, ev := range want {
+		if re.rollbacks[i] != ev {
+			t.Errorf("rollback[%d]: got %+v, want %+v", i, re.rollbacks[i], ev)
+		}
+	}
+}
+
+func TestInstallCoalescesAptInstall(t *testing.T) {
+	plan := install.Plan{Steps: []install.Step{
+		{Kind: install.StepAptInstall, Target: "nginx"},
+		{Kind: install.StepAptInstall, Target: "curl"},
+		{Kind: install.StepAptInstall, Target: "ca-certificates"},
+		{Kind: install.StepCreateDir, Target: "/etc/tgproxy"},
+	}}
+
+	fe := &fakeExecutor{}
+	inst := install.Installer{Executor: fe, Plan: plan}
+	if err := inst.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := len(fe.apts); got != 3 {
+		t.Fatalf("expected 3 packages installed in one call, got %d (%v)", got, fe.apts)
 	}
 }
 

@@ -73,7 +73,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	SetCSRFCookie(w, tok, s.Secure)
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	loginPage(w, tok, "")
 }
@@ -102,7 +102,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		s.RateLimiter.RecordFailure(ip)
 		audit.Log(s.DB, 0, "login_failed", login, "", ip) //nolint:errcheck
 		tok, _ := NewCSRFToken()
-		SetCSRFCookie(w, tok, s.Secure)
+		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		loginPage(w, tok, "Invalid login or password")
 		return

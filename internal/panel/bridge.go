@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"io"
@@ -16,15 +17,19 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component/versions"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/singbox"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
 
-const (
-	singboxLinuxAMD64URL    = "https://github.com/SagerNet/sing-box/releases/download/v1.13.11/sing-box-1.13.11-linux-amd64.tar.gz"
-	singboxLinuxAMD64SHA256 = "10ff037632165ca4f6472a0ec21393280ef5a33677e05bcde7fbcf6f9737637b"
-)
+const systemctlTimeout = 10 * time.Second
+
+func systemctlRun(args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), systemctlTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "systemctl", args...).Run()
+}
 
 // BridgeConfig holds panel-level settings for Bridge mode operations.
 // Populated from installation config; injected via Server.BridgeCfg.
@@ -39,7 +44,7 @@ type BridgeConfig struct {
 func (s *Server) handleBridgePage(w http.ResponseWriter, r *http.Request) {
 	nl, _ := bridge.Load(s.nodePath())
 	csrfToken, _ := NewCSRFToken()
-	SetCSRFCookie(w, csrfToken, s.Secure)
+	SetCSRFCookie(w, csrfToken, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	bridgePage(w, bridgePageData{
 		CSRFField: CSRFField(),
@@ -253,8 +258,7 @@ func (s *Server) singboxIsActive() bool {
 	if s.SingboxActive != nil {
 		return s.SingboxActive()
 	}
-	err := exec.Command("systemctl", "is-active", "sing-box.service").Run()
-	return err == nil
+	return systemctlRun("is-active", "sing-box.service") == nil
 }
 
 // realBridgeExecutor implements bridge.Executor using real OS calls.
@@ -280,36 +284,59 @@ func (realBridgeExecutor) Download(url, sha256hex, destPath string) error {
 }
 
 func singboxDownloadURL() string {
-	return singboxLinuxAMD64URL
+	return versions.SingboxLinuxAMD64URL
 }
 
 func singboxDownloadSHA256() string {
-	return singboxLinuxAMD64SHA256
+	return versions.SingboxLinuxAMD64SHA256
 }
 
 func (realBridgeExecutor) EnableService(name string) error {
-	return exec.Command("systemctl", "enable", name).Run()
+	return systemctlRun("enable", name)
 }
 
 func (realBridgeExecutor) StartService(name string) error {
-	return exec.Command("systemctl", "restart", name).Run()
+	if err := systemctlRun("restart", name); err != nil {
+		return err
+	}
+	return verifyServiceHealthy(name)
 }
 
 func (realBridgeExecutor) StopService(name string) error {
-	return exec.Command("systemctl", "stop", name).Run()
+	return systemctlRun("stop", name)
 }
 
 func (realBridgeExecutor) DisableService(name string) error {
-	return exec.Command("systemctl", "disable", name).Run()
+	return systemctlRun("disable", name)
 }
 
 func (realBridgeExecutor) ReloadService(name string) error {
-	return teleproxy.ExecCommand("systemctl", "reload-or-restart", name)
+	return systemctlRun("reload-or-restart", name)
 }
 
 func (realBridgeExecutor) ServiceActive(name string) (bool, error) {
-	err := exec.Command("systemctl", "is-active", name).Run()
-	return err == nil, nil
+	return systemctlRun("is-active", name) == nil, nil
+}
+
+// verifyServiceHealthy polls is-failed/is-active for up to 5s after a restart
+// to catch services that crash shortly after entering the activating state.
+func verifyServiceHealthy(name string) error {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if systemctlRun("is-failed", "--quiet", name) == nil {
+			return fmt.Errorf("service %s is in failed state after restart", name)
+		}
+		if systemctlRun("is-active", "--quiet", name) == nil && time.Now().After(deadline.Add(-3*time.Second)) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if systemctlRun("is-active", "--quiet", name) == nil {
+				return nil
+			}
+			return fmt.Errorf("service %s did not become active within 5s", name)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func cloneNodeList(nl bridge.NodeList) bridge.NodeList {
@@ -714,7 +741,7 @@ func (s *Server) handleBridgeEditNodeForm(w http.ResponseWriter, r *http.Request
 	}
 
 	csrfToken, _ := NewCSRFToken()
-	SetCSRFCookie(w, csrfToken, s.Secure)
+	SetCSRFCookie(w, csrfToken, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	editNodePage(w, editNodePageData{
 		CSRFField: CSRFField(),

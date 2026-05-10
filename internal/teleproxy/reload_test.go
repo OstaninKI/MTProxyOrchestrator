@@ -1,6 +1,7 @@
 package teleproxy_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -65,14 +66,12 @@ func TestDefaultControllerServiceName(t *testing.T) {
 
 func TestSystemdControllerUsesReloadOrRestart(t *testing.T) {
 	var captured []string
-	orig := teleproxy.ExecCommand
-	defer func() { teleproxy.ExecCommand = orig }()
-	teleproxy.ExecCommand = func(name string, args ...string) error {
+	runner := func(_ context.Context, name string, args ...string) error {
 		captured = append([]string{name}, args...)
 		return nil
 	}
 
-	c := &teleproxy.SystemdController{ServiceName: "teleproxy.service"}
+	c := &teleproxy.SystemdController{ServiceName: "teleproxy.service", Runner: runner}
 	if err := c.Reload(); err != nil {
 		t.Fatal(err)
 	}
