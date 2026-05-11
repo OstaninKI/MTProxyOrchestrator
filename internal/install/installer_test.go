@@ -83,6 +83,10 @@ func (f *fakeExecutor) EnableNginxSite(name string) error {
 	return nil
 }
 
+func (f *fakeExecutor) DisableNginxSite(name string) error {
+	return nil
+}
+
 func TestInstallUnattendedSingleNoBridge(t *testing.T) {
 	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {
@@ -244,6 +248,8 @@ func (r *rollbackExecutor) StartService(_ string) error { return r.record() }
 func (r *rollbackExecutor) ReloadService(_ string) error { return r.record() }
 
 func (r *rollbackExecutor) EnableNginxSite(_ string) error { return r.record() }
+
+func (r *rollbackExecutor) DisableNginxSite(_ string) error { return nil }
 
 func (r *rollbackExecutor) RemoveFile(path string) error {
 	r.rollbacks = append(r.rollbacks, rollbackEvent{Op: "RemoveFile", Target: path})

@@ -1,6 +1,7 @@
 package reconcile
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -64,7 +65,10 @@ func Reconcile(opts Options) error {
 		SOCKS5Addr: socks5Addr,
 		Users:      users,
 	}
-	if err := writeFile(opts.Paths.TeleproxyTOML, tpCfg.Render(), 0o600); err != nil {
+	newTpCfg := tpCfg.Render()
+	oldTpCfg, _ := os.ReadFile(opts.Paths.TeleproxyTOML)
+	teleproxyChanged := !bytes.Equal(oldTpCfg, newTpCfg)
+	if err := writeFile(opts.Paths.TeleproxyTOML, newTpCfg, 0o600); err != nil {
 		return fmt.Errorf("write teleproxy config: %w", err)
 	}
 
@@ -87,14 +91,14 @@ func Reconcile(opts Options) error {
 		MaskHost:    effectiveMaskHost,
 		StatsPort:   9091,
 		LogPath:     opts.Paths.PanelLog,
-		ConfigDir:  opts.Paths.ConfigDir,
-		LogDir:     opts.Paths.LogDir,
-		BinDir:     opts.Paths.BinDir,
-		SystemdDir: opts.Paths.SystemdDir,
-		StubDir:    opts.Paths.StubDir,
-		CertDir:    opts.Paths.CertDir,
-		Domain:     cfg.PanelDomain,
-		ACMEEmail:  cfg.ACMEEmail,
+		ConfigDir:   opts.Paths.ConfigDir,
+		LogDir:      opts.Paths.LogDir,
+		BinDir:      opts.Paths.BinDir,
+		SystemdDir:  opts.Paths.SystemdDir,
+		StubDir:     opts.Paths.StubDir,
+		CertDir:     opts.Paths.CertDir,
+		Domain:      cfg.PanelDomain,
+		ACMEEmail:   cfg.ACMEEmail,
 	}
 	if err := writeFile(opts.Paths.PanelService, panelUnit.Render(), 0o644); err != nil {
 		return fmt.Errorf("write panel unit: %w", err)
@@ -162,9 +166,18 @@ func Reconcile(opts Options) error {
 		return fmt.Errorf("migrate stub: %w", err)
 	}
 
+	// Remove the Ubuntu default nginx site to prevent it from shadowing tgproxy-stub on port 80.
+	_ = os.Remove("/etc/nginx/sites-enabled/default")
+
 	mgr := service.NewManager(opts.Paths)
 	if err := mgr.DaemonReload(); err != nil {
 		return fmt.Errorf("daemon reload: %w", err)
+	}
+
+	if teleproxyChanged {
+		if err := mgr.Restart("teleproxy.service"); err != nil {
+			return fmt.Errorf("restart teleproxy: %w", err)
+		}
 	}
 
 	if err := mgr.ReloadNginx(); err != nil {

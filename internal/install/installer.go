@@ -26,6 +26,7 @@ type Executor interface {
 	StartService(name string) error
 	ReloadService(name string) error
 	EnableNginxSite(name string) error
+	DisableNginxSite(name string) error
 }
 
 // Rollbacker is an optional Executor extension that knows how to undo
@@ -97,6 +98,8 @@ func (i Installer) applyStep(step Step) error {
 		return i.Executor.ReloadService(step.Target)
 	case StepEnableNginxSite:
 		return i.Executor.EnableNginxSite(step.Target)
+	case StepDisableNginxSite:
+		return i.Executor.DisableNginxSite(step.Target)
 	default:
 		return fmt.Errorf("unknown step kind: %s", step.Kind)
 	}
@@ -150,7 +153,7 @@ func (i Installer) rollbackJournal(journal []Step) {
 			err = rb.RemoveService(step.Target)
 		case StepEnableNginxSite:
 			err = rb.RemoveNginxSite(step.Target)
-		case StepAptInstall, StepEnsureSystemUser, StepReloadService:
+		case StepAptInstall, StepEnsureSystemUser, StepReloadService, StepDisableNginxSite:
 			i.logger().Printf("rollback: skipping %s (no-op)", step.Kind)
 			continue
 		default:
@@ -306,6 +309,14 @@ func (e *SystemExecutor) RemoveService(name string) error {
 }
 
 func (e *SystemExecutor) RemoveNginxSite(name string) error {
+	dst := filepath.Join("/etc/nginx/sites-enabled", filepath.Base(name))
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (e *SystemExecutor) DisableNginxSite(name string) error {
 	dst := filepath.Join("/etc/nginx/sites-enabled", filepath.Base(name))
 	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
 		return err

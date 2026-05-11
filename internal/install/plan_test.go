@@ -722,6 +722,69 @@ func TestSinglePlanPanelUnitHasACMEFlagsWhenConfigured(t *testing.T) {
 	t.Fatalf("panel service unit step not found at %s", paths.PanelService)
 }
 
+func TestSinglePlanDisablesDefaultNginxSite(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range plan.Steps {
+		if s.Kind == install.StepDisableNginxSite && s.Target == "default" {
+			return
+		}
+	}
+	t.Fatal("Single plan must disable the default nginx site to prevent port 80 conflict with tgproxy-stub")
+}
+
+func TestSinglePlanReloadsNginxAfterEnablingStubSite(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	enableIdx, reloadIdx := -1, -1
+	for i, s := range plan.Steps {
+		if s.Kind == install.StepEnableNginxSite && s.Target == "tgproxy-stub" {
+			enableIdx = i
+		}
+		if enableIdx >= 0 && s.Kind == install.StepReloadService && s.Target == "nginx" && i > enableIdx {
+			reloadIdx = i
+			break
+		}
+	}
+	if enableIdx < 0 {
+		t.Fatal("Single plan must enable tgproxy-stub nginx site")
+	}
+	if reloadIdx < 0 {
+		t.Fatalf("Single plan must reload nginx after enabling tgproxy-stub (enable at step %d, no reload found after)", enableIdx)
+	}
+}
+
+func TestSinglePlanDisablesDefaultSiteBeforeEnablingStub(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	disableIdx, enableIdx := -1, -1
+	for i, s := range plan.Steps {
+		if s.Kind == install.StepDisableNginxSite && s.Target == "default" {
+			disableIdx = i
+		}
+		if s.Kind == install.StepEnableNginxSite && s.Target == "tgproxy-stub" {
+			enableIdx = i
+		}
+	}
+	if disableIdx < 0 {
+		t.Fatal("plan must include StepDisableNginxSite for default")
+	}
+	if enableIdx < 0 {
+		t.Fatal("plan must include StepEnableNginxSite for tgproxy-stub")
+	}
+	if disableIdx > enableIdx {
+		t.Fatalf("default nginx site must be disabled (step %d) before tgproxy-stub is enabled (step %d)", disableIdx, enableIdx)
+	}
+}
+
 func TestSinglePlanNoACMESnippetWithoutEmail(t *testing.T) {
 	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {

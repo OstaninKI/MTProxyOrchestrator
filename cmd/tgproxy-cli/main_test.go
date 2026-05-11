@@ -28,6 +28,7 @@ func (stubExecutor) EnableService(string) error                       { return n
 func (stubExecutor) StartService(string) error                        { return nil }
 func (stubExecutor) ReloadService(string) error                       { return nil }
 func (stubExecutor) EnableNginxSite(string) error                     { return nil }
+func (stubExecutor) DisableNginxSite(string) error                    { return nil }
 
 type stubPreflightRunner struct {
 	result     install.CheckResult

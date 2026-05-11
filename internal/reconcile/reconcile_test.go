@@ -293,6 +293,33 @@ func TestReconcileBridgeTomlContainsSOCKS5(t *testing.T) {
 	}
 }
 
+func TestReconcileOverwritesStaleTeleproxyToml(t *testing.T) {
+	_, paths := setupReconcileEnv(t, "single")
+
+	// Pre-write a stale teleproxy.toml to simulate an outdated config on disk.
+	stale := []byte(`port = 9999
+domain = "stale.example.com"
+`)
+	if err := os.WriteFile(paths.TeleproxyTOML, stale, 0o600); err != nil {
+		t.Fatalf("pre-write stale toml: %v", err)
+	}
+
+	opts := reconcile.Options{
+		ConfigFile: paths.ConfigFile,
+		PanelDB:    paths.PanelDB,
+		Paths:      paths,
+	}
+	callReconcileExpectNginxError(t, opts)
+
+	content := readFile(t, paths.TeleproxyTOML)
+	if strings.Contains(content, "9999") {
+		t.Errorf("reconcile must overwrite stale teleproxy.toml (port 9999 still present):\n%s", content)
+	}
+	if !strings.Contains(content, "port = 443") {
+		t.Errorf("reconcile must write correct port to teleproxy.toml:\n%s", content)
+	}
+}
+
 func TestReconcileDBSettingsOverrideConfig(t *testing.T) {
 	_, paths := setupReconcileEnv(t, "single")
 
