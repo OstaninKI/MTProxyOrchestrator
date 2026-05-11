@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 )
 
 func TestFormatBytes(t *testing.T) {
@@ -103,5 +105,37 @@ func TestUserListDashboardLinkUsesPanelPath(t *testing.T) {
 	}
 	if strings.Contains(html, `href="../"`) {
 		t.Fatalf("users page must not use parent-relative dashboard link:\n%s", html)
+	}
+}
+
+func TestUserRepoListUsesRecordedTrafficForUnlimitedUsers(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Exec(
+		`INSERT INTO users(label, secret_hex, quota_used_bytes) VALUES(?,?,0)`,
+		"alice", "deadbeef",
+	); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if _, err := d.Exec(
+		`INSERT INTO traffic_daily(user_label, day_ts, bytes_in, bytes_out, connections) VALUES(?,?,?,?,?)`,
+		"alice", int64(0), int64(150), int64(350), int64(2),
+	); err != nil {
+		t.Fatalf("insert traffic: %v", err)
+	}
+
+	users, err := UserRepo{DB: d}.List()
+	if err != nil {
+		t.Fatalf("list users: %v", err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("len(users) = %d, want 1", len(users))
+	}
+	if users[0].QuotaUsedBytes != 500 {
+		t.Fatalf("QuotaUsedBytes = %d, want 500", users[0].QuotaUsedBytes)
 	}
 }

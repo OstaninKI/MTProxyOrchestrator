@@ -15,7 +15,17 @@ var migrations = []migration{
 	{"005_sessions_idle_timeout", `ALTER TABLE sessions ADD COLUMN last_seen_at DATETIME;`},
 	{"006_user_quotas", sqlUserQuotas},
 	{"007_admin_totp", sqlAdminTOTP},
+	{"008_traffic_counters", sqlTrafficCounters},
 }
+
+const sqlTrafficCounters = `
+CREATE TABLE IF NOT EXISTS traffic_counters (
+    user_label TEXT PRIMARY KEY,
+    bytes_in   INTEGER NOT NULL,
+    bytes_out  INTEGER NOT NULL,
+    updated_ts INTEGER NOT NULL
+);
+`
 
 const sqlAdminTOTP = `
 ALTER TABLE admin ADD COLUMN totp_secret TEXT NOT NULL DEFAULT '';

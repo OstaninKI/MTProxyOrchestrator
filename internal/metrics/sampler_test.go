@@ -190,6 +190,77 @@ func TestDBStoreFnDeduplicates(t *testing.T) {
 	}
 }
 
+func TestDBStoreFnStoresCounterDeltas(t *testing.T) {
+	t.Parallel()
+
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	store := DBStoreFn(database)
+
+	if err := store([]Sample{
+		{UserLabel: "alice", BytesIn: 1000, BytesOut: 2000, Connections: 2},
+	}, 3600); err != nil {
+		t.Fatalf("first store: %v", err)
+	}
+	if err := store([]Sample{
+		{UserLabel: "alice", BytesIn: 1250, BytesOut: 2600, Connections: 3},
+	}, 3660); err != nil {
+		t.Fatalf("second store: %v", err)
+	}
+
+	var bytesIn, bytesOut, connections int64
+	if err := database.QueryRow(
+		`SELECT bytes_in, bytes_out, connections FROM traffic_samples WHERE user_label='alice' AND ts=3660`,
+	).Scan(&bytesIn, &bytesOut, &connections); err != nil {
+		t.Fatalf("query second sample: %v", err)
+	}
+	if bytesIn != 250 || bytesOut != 600 || connections != 3 {
+		t.Fatalf("second stored sample = in:%d out:%d conns:%d, want in:250 out:600 conns:3",
+			bytesIn, bytesOut, connections)
+	}
+}
+
+func TestDBStoreFnUpdatesDailyTraffic(t *testing.T) {
+	t.Parallel()
+
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	store := DBStoreFn(database)
+
+	if err := store([]Sample{
+		{UserLabel: "alice", BytesIn: 100, BytesOut: 200, Connections: 1},
+	}, 3600); err != nil {
+		t.Fatalf("first store: %v", err)
+	}
+	if err := store([]Sample{
+		{UserLabel: "alice", BytesIn: 180, BytesOut: 260, Connections: 4},
+	}, 7200); err != nil {
+		t.Fatalf("second store: %v", err)
+	}
+
+	var dayTS, bytesIn, bytesOut, connections int64
+	if err := database.QueryRow(
+		`SELECT day_ts, bytes_in, bytes_out, connections FROM traffic_daily WHERE user_label='alice'`,
+	).Scan(&dayTS, &bytesIn, &bytesOut, &connections); err != nil {
+		t.Fatalf("query traffic_daily: %v", err)
+	}
+	if dayTS != 0 {
+		t.Fatalf("day_ts = %d, want 0", dayTS)
+	}
+	if bytesIn != 180 || bytesOut != 260 || connections != 4 {
+		t.Fatalf("daily traffic = in:%d out:%d conns:%d, want in:180 out:260 conns:4",
+			bytesIn, bytesOut, connections)
+	}
+}
+
 // TestDBStoreFnSkipsEmpty verifies that calling DBStoreFn with an empty slice
 // inserts no rows.
 func TestDBStoreFnSkipsEmpty(t *testing.T) {

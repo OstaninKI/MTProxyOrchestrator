@@ -24,8 +24,8 @@ func TestMigrationsIdempotent(t *testing.T) {
 	if err := d.QueryRow(`SELECT COUNT(*) FROM migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 7 {
-		t.Errorf("expected 7 migrations recorded, got %d", count)
+	if count != 8 {
+		t.Errorf("expected 8 migrations recorded, got %d", count)
 	}
 }
 
@@ -35,7 +35,7 @@ func TestSchemaTablesExist(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	tables := []string{"admin", "sessions", "users", "audit_log", "migrations", "settings"}
+	tables := []string{"admin", "sessions", "users", "audit_log", "migrations", "settings", "traffic_counters"}
 	for _, tbl := range tables {
 		var name string
 		err := d.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, tbl).Scan(&name)

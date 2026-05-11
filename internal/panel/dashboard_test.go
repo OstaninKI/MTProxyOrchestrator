@@ -178,3 +178,23 @@ func TestDashboardNoLiveConnectionsNoSection(t *testing.T) {
 		t.Error("dashboard should not show 'Active Connections' section when no live data")
 	}
 }
+
+func TestDashboardTopUsersFormatsTrafficBytes(t *testing.T) {
+	data := DashboardData{
+		TopUsers: []metrics.UserTraffic{
+			{UserLabel: "alice", BytesIn: 1024, BytesOut: 2 * 1024 * 1024, Connections: 2},
+		},
+		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	if !strings.Contains(html, "1.0 KB") {
+		t.Error("dashboard should format bytes in with binary units")
+	}
+	if !strings.Contains(html, "2.0 MB") {
+		t.Error("dashboard should format bytes out with binary units")
+	}
+}

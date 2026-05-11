@@ -39,7 +39,14 @@ button:hover{background:rgba(56,189,248,.25)}
 </html>
 `))
 
-var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!DOCTYPE html>
+var dashboardTmpl = template.Must(template.New("dashboard").Funcs(template.FuncMap{
+	"formatBytes": func(n int64) string {
+		if n < 0 {
+			return "0 B"
+		}
+		return formatBytes(uint64(n))
+	},
+}).Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -153,8 +160,8 @@ a{color:inherit}.shell{position:relative;max-width:1240px;margin:0 auto;padding:
 {{range .TopUsers}}
 <tr>
   <td>{{.UserLabel}}</td>
-  <td>{{.BytesIn}}</td>
-  <td>{{.BytesOut}}</td>
+  <td>{{formatBytes .BytesIn}}</td>
+  <td>{{formatBytes .BytesOut}}</td>
   <td>{{.Connections}}</td>
 </tr>
 {{end}}

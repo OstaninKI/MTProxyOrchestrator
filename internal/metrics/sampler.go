@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"time"
 
@@ -67,7 +68,8 @@ func (s Sampler) Run(ctx context.Context) error {
 }
 
 // DBStoreFn returns a StoreFn that writes samples to traffic_samples,
-// skipping rows with duplicate (user_label, ts).
+// skipping rows with duplicate (user_label, ts). Teleproxy exposes cumulative
+// counters, so this stores per-scrape deltas for traffic reports and quotas.
 func DBStoreFn(database *db.DB) StoreFn {
 	return func(samples []Sample, ts int64) error {
 		if len(samples) == 0 {
@@ -80,7 +82,7 @@ func DBStoreFn(database *db.DB) StoreFn {
 		}
 		defer tx.Rollback() //nolint:errcheck
 
-		stmt, err := tx.Prepare(`
+		sampleStmt, err := tx.Prepare(`
 			INSERT INTO traffic_samples(user_label, ts, bytes_in, bytes_out, connections)
 			SELECT ?, ?, ?, ?, ?
 			WHERE NOT EXISTS (
@@ -90,17 +92,87 @@ func DBStoreFn(database *db.DB) StoreFn {
 		if err != nil {
 			return err
 		}
-		defer stmt.Close()
+		defer sampleStmt.Close()
+
+		dailyStmt, err := tx.Prepare(`
+			INSERT INTO traffic_daily(user_label, day_ts, bytes_in, bytes_out, connections)
+			VALUES(?, ?, ?, ?, ?)
+			ON CONFLICT(user_label, day_ts) DO UPDATE SET
+			    bytes_in = bytes_in + excluded.bytes_in,
+			    bytes_out = bytes_out + excluded.bytes_out,
+			    connections = MAX(connections, excluded.connections)
+		`)
+		if err != nil {
+			return err
+		}
+		defer dailyStmt.Close()
+
+		counterStmt, err := tx.Prepare(`
+			INSERT INTO traffic_counters(user_label, bytes_in, bytes_out, updated_ts)
+			VALUES(?, ?, ?, ?)
+			ON CONFLICT(user_label) DO UPDATE SET
+			    bytes_in = excluded.bytes_in,
+			    bytes_out = excluded.bytes_out,
+			    updated_ts = excluded.updated_ts
+		`)
+		if err != nil {
+			return err
+		}
+		defer counterStmt.Close()
 
 		for _, sample := range samples {
-			if _, err := stmt.Exec(
-				sample.UserLabel, ts, sample.BytesIn, sample.BytesOut, sample.Connections,
+			deltaIn, deltaOut, err := counterDelta(tx, sample)
+			if err != nil {
+				return err
+			}
+			res, err := sampleStmt.Exec(
+				sample.UserLabel, ts, deltaIn, deltaOut, sample.Connections,
 				sample.UserLabel, ts,
-			); err != nil {
+			)
+			if err != nil {
+				return err
+			}
+			inserted, err := res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if inserted == 0 {
+				continue
+			}
+			dayTS := ts - (ts % 86400)
+			if _, err := dailyStmt.Exec(sample.UserLabel, dayTS, deltaIn, deltaOut, sample.Connections); err != nil {
+				return err
+			}
+			if _, err := counterStmt.Exec(sample.UserLabel, sample.BytesIn, sample.BytesOut, ts); err != nil {
 				return err
 			}
 		}
 
 		return tx.Commit()
 	}
+}
+
+func counterDelta(tx interface {
+	QueryRow(query string, args ...any) *sql.Row
+}, sample Sample) (int64, int64, error) {
+	var prevIn, prevOut int64
+	err := tx.QueryRow(
+		`SELECT bytes_in, bytes_out FROM traffic_counters WHERE user_label=?`,
+		sample.UserLabel,
+	).Scan(&prevIn, &prevOut)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, 0, err
+	}
+	if err == sql.ErrNoRows {
+		return sample.BytesIn, sample.BytesOut, nil
+	}
+	deltaIn := sample.BytesIn
+	if sample.BytesIn >= prevIn {
+		deltaIn = sample.BytesIn - prevIn
+	}
+	deltaOut := sample.BytesOut
+	if sample.BytesOut >= prevOut {
+		deltaOut = sample.BytesOut - prevOut
+	}
+	return deltaIn, deltaOut, nil
 }

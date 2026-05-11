@@ -119,7 +119,14 @@ func (r UserRepo) List() ([]UserRow, error) {
 		        strftime('%Y-%m-%d %H:%M:%S', created_at),
 		        strftime('%Y-%m-%d %H:%M:%S', rotated_at),
 		        quota_bytes, quota_period, quota_warn_pct, quota_suspended,
-		        quota_period_start, quota_used_bytes, quota_warned
+		        quota_period_start,
+		        COALESCE((
+		            SELECT SUM(bytes_in) + SUM(bytes_out)
+		            FROM traffic_daily
+		            WHERE user_label = users.label
+		              AND day_ts >= users.quota_period_start
+		        ), quota_used_bytes),
+		        quota_warned
 		 FROM users WHERE deleted_at IS NULL ORDER BY created_at ASC`,
 	)
 	if err != nil {
