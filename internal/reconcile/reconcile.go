@@ -144,6 +144,11 @@ func Reconcile(opts Options) error {
 		return fmt.Errorf("write nginx stub: %w", err)
 	}
 	nginxChanged = nginxChanged || changed
+	enabled, err := ensureNginxSiteEnabled("tgproxy-stub")
+	if err != nil {
+		return fmt.Errorf("enable nginx stub: %w", err)
+	}
+	nginxChanged = nginxChanged || enabled
 
 	if hasTLSStubBackend {
 		tlsStub := nginx.TLSStubConfig{
@@ -158,6 +163,11 @@ func Reconcile(opts Options) error {
 			return fmt.Errorf("write nginx tls stub: %w", err)
 		}
 		nginxChanged = nginxChanged || changed
+		enabled, err := ensureNginxSiteEnabled("tgproxy-stub-tls")
+		if err != nil {
+			return fmt.Errorf("enable nginx tls stub: %w", err)
+		}
+		nginxChanged = nginxChanged || enabled
 	}
 
 	if cfg.PanelDomain != "" && cfg.PanelCertPath != "" && cfg.PanelKeyPath != "" {
@@ -173,6 +183,11 @@ func Reconcile(opts Options) error {
 			return fmt.Errorf("write nginx panel proxy: %w", err)
 		}
 		nginxChanged = nginxChanged || changed
+		enabled, err = ensureNginxSiteEnabled("tgproxy-panel")
+		if err != nil {
+			return fmt.Errorf("enable nginx panel: %w", err)
+		}
+		nginxChanged = nginxChanged || enabled
 	}
 
 	stubMigrated, err := stub.MigrateStubIfLegacy(opts.Paths.StubDir + "/index.html")
@@ -225,6 +240,18 @@ func readUsers(path string) ([]teleproxy.UserEntry, error) {
 		return nil, err
 	}
 	return uf.Users, nil
+}
+
+func ensureNginxSiteEnabled(name string) (bool, error) {
+	src := filepath.Join("/etc/nginx/sites-available", name)
+	dst := filepath.Join("/etc/nginx/sites-enabled", name)
+	if _, err := os.Lstat(dst); err == nil {
+		return false, nil
+	}
+	if err := os.Symlink(src, dst); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func writeFileIfChanged(path string, data []byte, mode os.FileMode) (bool, error) {
