@@ -28,7 +28,7 @@ type PanelUnitConfig struct {
 	LogDir      string // /var/log/tgproxy
 	BinDir      string // /usr/local/bin
 	SystemdDir  string // /etc/systemd/system
-	StubDir string // /var/www/tgproxy-stub
+	StubDir     string // /var/www/tgproxy-stub
 	// Optional ACME fields — when non-empty the panel starts the renewal loop.
 	CertDir   string // /etc/tgproxy/certs
 	Domain    string // proxy.example.com
