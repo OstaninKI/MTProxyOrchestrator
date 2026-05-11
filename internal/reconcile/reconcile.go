@@ -100,7 +100,10 @@ func Reconcile(opts Options) error {
 		Domain:      cfg.PanelDomain,
 		ACMEEmail:   cfg.ACMEEmail,
 	}
-	if err := writeFile(opts.Paths.PanelService, panelUnit.Render(), 0o644); err != nil {
+	newPanelUnit := panelUnit.Render()
+	oldPanelUnit, _ := os.ReadFile(opts.Paths.PanelService)
+	panelUnitChanged := !bytes.Equal(oldPanelUnit, newPanelUnit)
+	if err := writeFile(opts.Paths.PanelService, newPanelUnit, 0o644); err != nil {
 		return fmt.Errorf("write panel unit: %w", err)
 	}
 
@@ -177,6 +180,12 @@ func Reconcile(opts Options) error {
 	if teleproxyChanged {
 		if err := mgr.Restart("teleproxy.service"); err != nil {
 			return fmt.Errorf("restart teleproxy: %w", err)
+		}
+	}
+
+	if panelUnitChanged {
+		if err := mgr.Restart("tgproxy-panel.service"); err != nil {
+			return fmt.Errorf("restart panel: %w", err)
 		}
 	}
 

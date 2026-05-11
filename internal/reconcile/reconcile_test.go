@@ -293,6 +293,34 @@ func TestReconcileBridgeTomlContainsSOCKS5(t *testing.T) {
 	}
 }
 
+func TestReconcileOverwritesStalePanelUnit(t *testing.T) {
+	_, paths := setupReconcileEnv(t, "single")
+
+	// Pre-write a panel unit without --stub-dir (simulates old install before the flag was added).
+	stale := []byte(`[Service]
+ExecStart=/usr/local/bin/tgproxy-panel serve --db /etc/tgproxy/panel.db
+ReadWritePaths=/etc/tgproxy /var/log/tgproxy
+`)
+	if err := os.WriteFile(paths.PanelService, stale, 0o644); err != nil {
+		t.Fatalf("pre-write stale panel unit: %v", err)
+	}
+
+	opts := reconcile.Options{
+		ConfigFile: paths.ConfigFile,
+		PanelDB:    paths.PanelDB,
+		Paths:      paths,
+	}
+	callReconcileExpectNginxError(t, opts)
+
+	content := readFile(t, paths.PanelService)
+	if !strings.Contains(content, "--stub-dir") {
+		t.Errorf("reconcile must overwrite stale panel unit with --stub-dir flag:\n%s", content)
+	}
+	if !strings.Contains(content, paths.StubDir) {
+		t.Errorf("reconcile must write stub dir path %q into panel unit:\n%s", paths.StubDir, content)
+	}
+}
+
 func TestReconcileOverwritesStaleTeleproxyToml(t *testing.T) {
 	_, paths := setupReconcileEnv(t, "single")
 
