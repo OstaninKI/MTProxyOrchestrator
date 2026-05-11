@@ -2,7 +2,6 @@ package reconcile
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -226,20 +225,12 @@ func Reconcile(opts Options) error {
 	return nil
 }
 
-type usersFile struct {
-	Users []teleproxy.UserEntry `json:"users"`
-}
-
 func readUsers(path string) ([]teleproxy.UserEntry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var uf usersFile
-	if err := json.Unmarshal(data, &uf); err != nil {
-		return nil, err
-	}
-	return uf.Users, nil
+	return teleproxy.UnmarshalUsersJSON(data)
 }
 
 func ensureNginxSiteEnabled(name string) (bool, error) {

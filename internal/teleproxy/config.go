@@ -2,6 +2,7 @@ package teleproxy
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"text/template"
 )
@@ -9,8 +10,26 @@ import (
 // UserEntry holds a Teleproxy user label and their hex secret.
 // The label is safe to log; the secret is not.
 type UserEntry struct {
-	Label  string
-	Secret string // hex-encoded, 32 chars
+	Label  string `json:"label"`
+	Secret string `json:"secret"` // hex-encoded, 32 chars
+}
+
+type usersFile struct {
+	Users []UserEntry `json:"users"`
+}
+
+// MarshalUsersJSON serialises entries to the users.json format consumed by reconcile.
+func MarshalUsersJSON(entries []UserEntry) ([]byte, error) {
+	return json.Marshal(usersFile{Users: entries})
+}
+
+// UnmarshalUsersJSON parses the users.json format written by install and reloadTeleproxy.
+func UnmarshalUsersJSON(data []byte) ([]UserEntry, error) {
+	var uf usersFile
+	if err := json.Unmarshal(data, &uf); err != nil {
+		return nil, err
+	}
+	return uf.Users, nil
 }
 
 // Config holds all fields required to render teleproxy.toml.

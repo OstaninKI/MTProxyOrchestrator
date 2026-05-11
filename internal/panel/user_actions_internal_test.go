@@ -23,6 +23,11 @@ func newInternalTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { d.Close() })
+
+	oldSync := SyncUsersJSONHook
+	SyncUsersJSONHook = func(_ string, _ []byte) error { return nil }
+	t.Cleanup(func() { SyncUsersJSONHook = oldSync })
+
 	return &Server{
 		DB:          d,
 		PanelPath:   "/p-example/",
@@ -80,6 +85,39 @@ func withWriteAndReloadError(t *testing.T, err error) {
 		return err
 	}
 	t.Cleanup(func() { WriteAndReloadHook = old })
+}
+
+func TestReloadTeleproxySyncsUsersJSON(t *testing.T) {
+	srv := newInternalTestServer(t)
+	repo := UserRepo{DB: srv.DB}
+	if _, err := repo.Create("alice", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err != nil {
+		t.Fatal(err)
+	}
+
+	withWriteAndReloadHook(t, func(_ []byte) {})
+
+	var syncedPath string
+	var syncedData []byte
+	old := SyncUsersJSONHook
+	SyncUsersJSONHook = func(path string, data []byte) error {
+		syncedPath = path
+		syncedData = append([]byte(nil), data...)
+		return nil
+	}
+	t.Cleanup(func() { SyncUsersJSONHook = old })
+
+	if err := srv.reloadTeleproxy(); err != nil {
+		t.Fatalf("reloadTeleproxy error: %v", err)
+	}
+	if syncedPath == "" {
+		t.Fatal("reloadTeleproxy must write users.json")
+	}
+	if !strings.Contains(string(syncedData), `"alice"`) {
+		t.Fatalf("users.json missing alice: %s", syncedData)
+	}
+	if !strings.Contains(string(syncedData), `"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`) {
+		t.Fatalf("users.json missing secret: %s", syncedData)
+	}
 }
 
 func TestReloadTeleproxyAppliesOnlyEnabledNonDeletedUsers(t *testing.T) {

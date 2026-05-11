@@ -324,6 +324,13 @@ func (s *Server) reloadTeleproxy() error {
 			entries = append(entries, teleproxy.UserEntry{Label: u.Label, Secret: u.SecretHex})
 		}
 	}
+	usersData, err := teleproxy.MarshalUsersJSON(entries)
+	if err != nil {
+		return err
+	}
+	if err := SyncUsersJSONHook(s.bridgePaths().UsersJSON, usersData); err != nil {
+		return err
+	}
 	cfg := teleproxy.Config{
 		Port:       s.bridgeMTProtoPort(),
 		MaskHost:   s.bridgeMaskHost(),
@@ -333,6 +340,11 @@ func (s *Server) reloadTeleproxy() error {
 	}
 	data := cfg.Render()
 	return WriteAndReloadHook(s.bridgePaths().TeleproxyTOML, data)
+}
+
+// SyncUsersJSONHook is a hook for tests; production writes to the real path.
+var SyncUsersJSONHook = func(path string, data []byte) error {
+	return os.WriteFile(path, data, 0o600)
 }
 
 // WriteAndReloadHook is a hook for tests; production writes to the real path.
