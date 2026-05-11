@@ -118,15 +118,19 @@ func Reconcile(opts Options) error {
 		}
 	}
 
+	nginxChanged := false
+
 	acmeSnippetPath := ""
 	if cfg.ACMEEmail != "" && cfg.PanelDomain != "" {
 		acmeSnippetPath = opts.Paths.NginxSnippetDir + "/acme-challenge.conf"
 		acmeData := nginx.ACMEChallengeConfig{
 			WebRootDir: opts.Paths.CertDir + "/.well-known-webroot",
 		}.Render()
-		if err := writeFile(acmeSnippetPath, acmeData, 0o644); err != nil {
+		changed, err := writeFileIfChanged(acmeSnippetPath, acmeData, 0o644)
+		if err != nil {
 			return fmt.Errorf("write acme snippet: %w", err)
 		}
+		nginxChanged = nginxChanged || changed
 	}
 
 	ngCfg := nginx.StubConfig{
@@ -135,9 +139,11 @@ func Reconcile(opts Options) error {
 		StubRoot:        opts.Paths.StubDir,
 		ACMESnippetPath: acmeSnippetPath,
 	}
-	if err := writeFile("/etc/nginx/sites-available/tgproxy-stub", ngCfg.Render(), 0o644); err != nil {
+	changed, err := writeFileIfChanged("/etc/nginx/sites-available/tgproxy-stub", ngCfg.Render(), 0o644)
+	if err != nil {
 		return fmt.Errorf("write nginx stub: %w", err)
 	}
+	nginxChanged = nginxChanged || changed
 
 	if hasTLSStubBackend {
 		tlsStub := nginx.TLSStubConfig{
@@ -147,9 +153,11 @@ func Reconcile(opts Options) error {
 			CertPath:   cfg.PanelCertPath,
 			KeyPath:    cfg.PanelKeyPath,
 		}
-		if err := writeFile("/etc/nginx/sites-available/tgproxy-stub-tls", tlsStub.Render(), 0o644); err != nil {
+		changed, err := writeFileIfChanged("/etc/nginx/sites-available/tgproxy-stub-tls", tlsStub.Render(), 0o644)
+		if err != nil {
 			return fmt.Errorf("write nginx tls stub: %w", err)
 		}
+		nginxChanged = nginxChanged || changed
 	}
 
 	if cfg.PanelDomain != "" && cfg.PanelCertPath != "" && cfg.PanelKeyPath != "" {
@@ -160,17 +168,22 @@ func Reconcile(opts Options) error {
 			KeyPath:     cfg.PanelKeyPath,
 			BackendAddr: fmt.Sprintf("127.0.0.1:%d", panelBackendPort),
 		}
-		if err := writeFile("/etc/nginx/sites-available/tgproxy-panel", panelProxy.Render(), 0o644); err != nil {
+		changed, err := writeFileIfChanged("/etc/nginx/sites-available/tgproxy-panel", panelProxy.Render(), 0o644)
+		if err != nil {
 			return fmt.Errorf("write nginx panel proxy: %w", err)
 		}
+		nginxChanged = nginxChanged || changed
 	}
 
-	if _, err := stub.MigrateStubIfLegacy(opts.Paths.StubDir + "/index.html"); err != nil {
+	stubMigrated, err := stub.MigrateStubIfLegacy(opts.Paths.StubDir + "/index.html")
+	if err != nil {
 		return fmt.Errorf("migrate stub: %w", err)
 	}
 
 	// Remove the Ubuntu default nginx site to prevent it from shadowing tgproxy-stub on port 80.
-	_ = os.Remove("/etc/nginx/sites-enabled/default")
+	if removeErr := os.Remove("/etc/nginx/sites-enabled/default"); removeErr == nil {
+		nginxChanged = true
+	}
 
 	mgr := service.NewManager(opts.Paths)
 	if err := mgr.DaemonReload(); err != nil {
@@ -189,8 +202,10 @@ func Reconcile(opts Options) error {
 		}
 	}
 
-	if err := mgr.ReloadNginx(); err != nil {
-		return fmt.Errorf("reload nginx: %w", err)
+	if nginxChanged || stubMigrated {
+		if err := mgr.ReloadNginx(); err != nil {
+			return fmt.Errorf("reload nginx: %w", err)
+		}
 	}
 
 	return nil
@@ -210,6 +225,14 @@ func readUsers(path string) ([]teleproxy.UserEntry, error) {
 		return nil, err
 	}
 	return uf.Users, nil
+}
+
+func writeFileIfChanged(path string, data []byte, mode os.FileMode) (bool, error) {
+	old, _ := os.ReadFile(path)
+	if bytes.Equal(old, data) {
+		return false, nil
+	}
+	return true, writeFile(path, data, mode)
 }
 
 func writeFile(path string, data []byte, mode os.FileMode) error {
