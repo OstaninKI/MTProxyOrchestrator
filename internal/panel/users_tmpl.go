@@ -143,6 +143,8 @@ type userListData struct {
 }
 
 type userCreatedData struct {
+	CSRFField   string
+	CSRFToken   string
 	Label       string
 	TelegramURL string
 	PanelPath   string
@@ -158,7 +160,7 @@ func userListPage(w io.Writer, users []UserRow, csrfToken, errMsg, panelPath str
 	})
 }
 
-func userCreatedPage(w io.Writer, label, secretHex, serverAddr string, port int, maskHost, panelPath string) {
+func userCreatedPage(w io.Writer, label, secretHex, serverAddr string, port int, maskHost, panelPath, csrfToken string) {
 	link := ProxyLink{
 		Server:    serverAddr,
 		Port:      port,
@@ -166,6 +168,8 @@ func userCreatedPage(w io.Writer, label, secretHex, serverAddr string, port int,
 		MaskHost:  maskHost,
 	}
 	userCreatedTmpl.Execute(w, userCreatedData{
+		CSRFField:   CSRFField(),
+		CSRFToken:   csrfToken,
 		Label:       label,
 		TelegramURL: link.TelegramURL(),
 		PanelPath:   panelPath,

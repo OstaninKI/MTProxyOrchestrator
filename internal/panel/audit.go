@@ -2,7 +2,6 @@ package panel
 
 import (
 	"net/http"
-	"strings"
 )
 
 type auditEntry struct {
@@ -33,7 +32,14 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		entries = append(entries, e)
 	}
 
+	tok, err := NewCSRFToken()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
+	setStrictPanelCSP(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	panelPath := strings.TrimSuffix(s.PanelPath, "/")
-	auditPage(w, panelPath, entries)
+	w.Header().Set("Cache-Control", "no-store")
+	auditPage(w, s.PanelPath, entries, tok)
 }

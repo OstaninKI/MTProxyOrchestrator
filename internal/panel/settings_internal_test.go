@@ -3,13 +3,20 @@ package panel
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/stub"
 )
 
@@ -148,5 +155,107 @@ func TestStubUploadRejectsActiveContent(t *testing.T) {
 
 	if !strings.Contains(w.Body.String(), "active content is not allowed") {
 		t.Fatalf("expected active content validation error, got status %d body: %s", w.Code, w.Body.String())
+	}
+}
+
+type fakeRemoteClient struct {
+	tree []githubTreeEntry
+	raw  map[string]string
+}
+
+func (c fakeRemoteClient) Do(req *http.Request) (*http.Response, error) {
+	body, err := json.Marshal(githubTreeResponse{Tree: c.tree})
+	if err != nil {
+		return nil, err
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader(body)),
+		Header:     make(http.Header),
+	}, nil
+}
+
+func (c fakeRemoteClient) Get(url string) (*http.Response, error) {
+	body, ok := c.raw[url]
+	if !ok {
+		return nil, fmt.Errorf("unexpected raw URL %s", url)
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}, nil
+}
+
+func resetRemoteTreeCacheForTest(t *testing.T) {
+	t.Helper()
+	treeCacheMu.Lock()
+	treeCacheEntries = nil
+	treeCachedAt = time.Time{}
+	treeCacheMu.Unlock()
+}
+
+func TestDownloadRemoteTemplateRejectsTraversalPaths(t *testing.T) {
+	resetRemoteTreeCacheForTest(t)
+	client := fakeRemoteClient{
+		tree: []githubTreeEntry{{Path: "sample/../escape.html", Type: "blob"}},
+		raw: map[string]string{
+			githubRawBase + "sample/../escape.html": "<html></html>",
+		},
+	}
+	tmp := t.TempDir()
+
+	err := downloadRemoteTemplate(client, "sample", tmp)
+	if err == nil {
+		t.Fatal("expected traversal path to be rejected")
+	}
+	if _, statErr := os.Stat(filepath.Join(tmp, "..", "escape.html")); !os.IsNotExist(statErr) {
+		t.Fatalf("remote traversal wrote outside destination: %v", statErr)
+	}
+}
+
+func TestRemoteStubApplyRejectsActiveContentBeforeApply(t *testing.T) {
+	resetRemoteTreeCacheForTest(t)
+	oldClient := remoteHTTPClient
+	oldApply := applyStubTemplate
+	t.Cleanup(func() {
+		remoteHTTPClient = oldClient
+		applyStubTemplate = oldApply
+		resetRemoteTreeCacheForTest(t)
+	})
+	remoteHTTPClient = fakeRemoteClient{
+		tree: []githubTreeEntry{
+			{Path: "sample", Type: "tree"},
+			{Path: "sample/index.html", Type: "blob"},
+		},
+		raw: map[string]string{
+			githubRawBase + "sample/index.html": `<html><body><script>fetch('/p-example/users')</script></body></html>`,
+		},
+	}
+	applied := false
+	applyStubTemplate = func(_, _ string) error {
+		applied = true
+		return nil
+	}
+
+	testDB, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testDB.Close() })
+	srv := &Server{DB: testDB, Secure: false, PanelPath: "/p-example/", SettingsCfg: &SettingsConfig{WebRoot: t.TempDir()}}
+	form := url.Values{CSRFField(): {"tok"}, "template": {"sample"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/stubs/remote-apply", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "tok"})
+	rec := httptest.NewRecorder()
+
+	srv.handleSettingsStubRemoteApply(rec, req)
+
+	if applied {
+		t.Fatal("remote stub with active content reached applyStubTemplate")
+	}
+	if !strings.Contains(rec.Body.String(), "active content is not allowed") {
+		t.Fatalf("expected validation error, got status %d body: %s", rec.Code, rec.Body.String())
 	}
 }

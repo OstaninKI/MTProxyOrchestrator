@@ -162,6 +162,66 @@ var applyStubTemplate = func(webRoot, srcDir string) error {
 	return applier.Apply(srcDir)
 }
 
+func validateExtractedStubTemplate(srcDir string) []stub.ValidationError {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	walkErr := filepath.WalkDir(srcDir, func(filePath string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(srcDir, filePath)
+		if err != nil {
+			return err
+		}
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+		header.Name = filepath.ToSlash(rel)
+		header.Method = zip.Store
+		writer, err := zw.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		src, err := os.Open(filePath)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(writer, src)
+		closeErr := src.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
+	closeErr := zw.Close()
+	if walkErr != nil {
+		return []stub.ValidationError{{Reason: fmt.Sprintf("failed to inspect template: %v", walkErr)}}
+	}
+	if closeErr != nil {
+		return []stub.ValidationError{{Reason: fmt.Sprintf("failed to inspect template: %v", closeErr)}}
+	}
+	return stub.Validate(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+}
+
+func formatValidationErrors(errs []stub.ValidationError) string {
+	msgs := make([]string, 0, len(errs))
+	for _, ve := range errs {
+		msgs = append(msgs, ve.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
 // --- handlers ---
 
 // handleSettingsStubList renders the stub templates list page.
@@ -375,8 +435,16 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 // handleSettingsCertificates renders the certificate state page.
 func (s *Server) handleSettingsCertificates(w http.ResponseWriter, r *http.Request) {
 	cfg := s.settingsConfig()
+	tok, err := NewCSRFToken()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 
 	data := settingsCertData{
+		CSRFField: CSRFField(),
+		CSRFToken: tok,
 		HasDomain: cfg.Domain != "",
 		Domain:    cfg.Domain,
 		ServerIP:  cfg.ServerIP,
@@ -423,7 +491,9 @@ func (s *Server) handleSettingsCertificates(w http.ResponseWriter, r *http.Reque
 		data.Renewals = loadRecentRenewals(s, cfg.Domain)
 	}
 
+	setStrictPanelCSP(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	settingsCertPage(w, data)
 }
 
@@ -549,6 +619,10 @@ func (s *Server) handleSettingsStubRemoteApply(w http.ResponseWriter, r *http.Re
 
 	if err := downloadRemoteTemplate(remoteHTTPClient, name, tmpDir); err != nil {
 		renderRemoteErr(fmt.Sprintf("Download failed: %v", err))
+		return
+	}
+	if validationErrs := validateExtractedStubTemplate(tmpDir); len(validationErrs) > 0 {
+		renderRemoteErr("Validation failed: " + formatValidationErrors(validationErrs))
 		return
 	}
 

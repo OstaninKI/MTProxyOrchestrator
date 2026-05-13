@@ -26,6 +26,8 @@ type settingsStubRemoteData struct {
 }
 
 type settingsCertData struct {
+	CSRFField    string
+	CSRFToken    string
 	HasDomain    bool
 	Domain       string
 	ServerIP     string
@@ -157,7 +159,7 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
 {{if not .IssuedAt.IsZero}}<tr><td>Issued</td><td>{{.IssuedAt.Format "2006-01-02 15:04 UTC"}}</td></tr>{{end}}
 <tr>
   <td>Valid</td>
-  <td>{{if .IsValid}}<span class="ok">Yes</span>{{else}}<span class="error" style="margin:0">No</span>{{end}}</td>
+  <td>{{if .IsValid}}<span class="ok">Yes</span>{{else}}<span class="error inline-status">No</span>{{end}}</td>
 </tr>
 {{if and .HasDomain .NeedsRenewal}}
 <tr>
@@ -176,7 +178,7 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
 {{range .Renewals}}
 <tr>
   <td>{{.Domain}}</td>
-  <td>{{if .Success}}<span class="ok">success</span>{{else}}<span class="error" style="margin:0">failed</span>{{end}}</td>
+  <td>{{if .Success}}<span class="ok">success</span>{{else}}<span class="error inline-status">failed</span>{{end}}</td>
   <td>{{.ErrorMsg}}</td>
   <td>{{.CreatedAt}}</td>
 </tr>

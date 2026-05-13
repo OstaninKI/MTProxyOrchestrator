@@ -2,6 +2,7 @@ package panel
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -165,11 +166,17 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	tok, err := NewCSRFToken()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	serverAddr := s.settingsConfig().Domain
 	if serverAddr == "" {
 		serverAddr = s.settingsConfig().ServerIP
 	}
-	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.PanelPath)
+	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.PanelPath, tok)
 }
 
 // ReloadTeleproxyForQuota is exposed so the quota service can rebuild teleproxy
@@ -186,15 +193,28 @@ func (s *Server) handleUserQuotaSet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	gb, _ := strconv.ParseFloat(r.FormValue("gb"), 64)
+	gb, err := strconv.ParseFloat(r.FormValue("gb"), 64)
+	if err != nil || math.IsNaN(gb) || math.IsInf(gb, 0) {
+		http.Error(w, "invalid quota size", http.StatusBadRequest)
+		return
+	}
 	if gb < 0 {
 		gb = 0
 	}
+	if gb > float64(math.MaxInt64)/(1024*1024*1024) {
+		http.Error(w, "quota size too large", http.StatusBadRequest)
+		return
+	}
 	bytes := int64(gb * 1024 * 1024 * 1024)
 	period := r.FormValue("period")
-	warn, _ := strconv.Atoi(r.FormValue("warn_pct"))
-	if warn == 0 {
-		warn = 80
+	warnRaw := r.FormValue("warn_pct")
+	warn := 80
+	if warnRaw != "" {
+		warn, err = strconv.Atoi(warnRaw)
+		if err != nil {
+			http.Error(w, "invalid warning percentage", http.StatusBadRequest)
+			return
+		}
 	}
 	repo := UserRepo{DB: s.DB}
 	users, _ := repo.List()

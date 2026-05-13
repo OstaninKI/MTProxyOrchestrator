@@ -38,9 +38,6 @@ func TestSecurityHeadersPresent(t *testing.T) {
 		if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 			t.Errorf("GET %s: X-Content-Type-Options = %q, want nosniff", path, got)
 		}
-		if got := w.Header().Get("Content-Security-Policy"); got == "" {
-			t.Errorf("GET %s: Content-Security-Policy header missing", path)
-		}
 	}
 
 	// Routes outside the panel path must NOT expose the security headers
@@ -86,6 +83,9 @@ func TestHealthEndpointUnderPanelPath(t *testing.T) {
 	if w2.Code != http.StatusNoContent {
 		t.Fatalf("GET /p-example/health: want 204, got %d", w2.Code)
 	}
+	if got := w2.Header().Get("Content-Security-Policy"); got != "" {
+		t.Fatalf("GET /p-example/health: Content-Security-Policy = %q, want empty", got)
+	}
 }
 
 func TestLoginPageServedUnderPanelPath(t *testing.T) {
@@ -97,6 +97,59 @@ func TestLoginPageServedUnderPanelPath(t *testing.T) {
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Errorf("GET /p-example/login: want 200, got %d", w.Code)
+	}
+}
+
+func TestLoginPageUsesLocalCSSWithoutInlineStyle(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	h := srv.Handler()
+
+	r := httptest.NewRequest(http.MethodGet, "/p-example/login", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /p-example/login: want 200, got %d", w.Code)
+	}
+
+	html := w.Body.String()
+	if !strings.Contains(html, `href="/p-example/assets/panel.css"`) {
+		t.Fatalf("login page should load local CSS asset, got:\n%s", html)
+	}
+	if strings.Contains(html, "<style>") {
+		t.Fatalf("login page must not use inline style blocks")
+	}
+
+	csp := w.Header().Get("Content-Security-Policy")
+	for _, forbidden := range []string{"'unsafe-inline'", "wss:"} {
+		if strings.Contains(csp, forbidden) {
+			t.Fatalf("login CSP %q contains forbidden token %q", csp, forbidden)
+		}
+	}
+	for _, required := range []string{"default-src 'self'", "script-src 'self'", "style-src 'self'", "connect-src 'self'"} {
+		if !strings.Contains(csp, required) {
+			t.Fatalf("login CSP %q missing %q", csp, required)
+		}
+	}
+}
+
+func TestPanelPathWithoutTrailingSlashServesLoginAssets(t *testing.T) {
+	srv := newTestServer(t, "/p-example")
+	h := srv.Handler()
+
+	r := httptest.NewRequest(http.MethodGet, "/p-example/login", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /p-example/login: want 200, got %d", w.Code)
+	}
+	html := w.Body.String()
+	if !strings.Contains(html, `href="/p-example/assets/panel.css"`) {
+		t.Fatalf("login page missing normalized CSS path:\n%s", html)
+	}
+	if strings.Contains(html, "/p-exampleassets/") {
+		t.Fatalf("login page contains malformed asset path:\n%s", html)
 	}
 }
 
@@ -172,6 +225,40 @@ func TestCertificateRenewRequiresCSRF(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("want 403 without CSRF, got %d body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSettingsCertificatesPageUsesNoStore(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	srv.SettingsCfg = &panel.SettingsConfig{
+		CertDir:  t.TempDir(),
+		Domain:   "proxy.example.com",
+		ServerIP: "203.0.113.10",
+	}
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	req := httptest.NewRequest(http.MethodGet, "/p-example/settings/certificates", nil)
+	req.AddCookie(sessionCookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body: %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+	csp := w.Header().Get("Content-Security-Policy")
+	if strings.Contains(csp, "'unsafe-inline'") || strings.Contains(csp, "wss:") {
+		t.Fatalf("certificates CSP = %q, want strict CSP without inline or wss", csp)
+	}
+	if !strings.Contains(w.Body.String(), `name="_csrf" value="`) {
+		t.Fatalf("certificates page must render logout CSRF server-side:\n%s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `style="`) {
+		t.Fatalf("certificates page must not render inline styles under strict CSP:\n%s", w.Body.String())
 	}
 }
 

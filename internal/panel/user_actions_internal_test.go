@@ -724,6 +724,82 @@ func TestUserQuotaSetRestoresDBWhenTeleproxyApplyFails(t *testing.T) {
 	}
 }
 
+func TestUserQuotaSetRejectsMalformedNumericInputs(t *testing.T) {
+	tests := []struct {
+		name string
+		form url.Values
+	}{
+		{
+			name: "non numeric gb",
+			form: url.Values{
+				CSRFField(): {"token"},
+				"gb":        {"nope"},
+				"period":    {"weekly"},
+				"warn_pct":  {"80"},
+			},
+		},
+		{
+			name: "nan gb",
+			form: url.Values{
+				CSRFField(): {"token"},
+				"gb":        {"NaN"},
+				"period":    {"weekly"},
+				"warn_pct":  {"80"},
+			},
+		},
+		{
+			name: "infinite gb",
+			form: url.Values{
+				CSRFField(): {"token"},
+				"gb":        {"Inf"},
+				"period":    {"weekly"},
+				"warn_pct":  {"80"},
+			},
+		},
+		{
+			name: "non numeric warning",
+			form: url.Values{
+				CSRFField(): {"token"},
+				"gb":        {"5"},
+				"period":    {"weekly"},
+				"warn_pct":  {"many"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newInternalTestServer(t)
+			repo := UserRepo{DB: srv.DB}
+			id, err := repo.Create("alice", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := repo.SetQuota(id, 1024*1024*1024, "daily", 70, 1000); err != nil {
+				t.Fatal(err)
+			}
+			users, _ := repo.List()
+			prev := users[0]
+
+			rec := httptest.NewRecorder()
+			srv.handleUserQuotaSet(rec, quotaPostReq(id, tt.form))
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+			}
+			users, err = repo.List()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := users[0]
+			if got.QuotaBytes != prev.QuotaBytes || got.QuotaPeriod != prev.QuotaPeriod ||
+				got.QuotaWarnPct != prev.QuotaWarnPct || got.QuotaPeriodStart != prev.QuotaPeriodStart {
+				t.Fatalf("quota changed after invalid input: got=%+v want=%+v", got, prev)
+			}
+		})
+	}
+}
+
 func TestUserQuotaResetRestoresDBWhenTeleproxyApplyFails(t *testing.T) {
 	srv := newInternalTestServer(t)
 	repo := UserRepo{DB: srv.DB}

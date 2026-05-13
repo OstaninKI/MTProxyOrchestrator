@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
+	panelassets "github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel/assets"
 )
 
 // Server holds the HTTP server and its dependencies.
@@ -30,12 +31,13 @@ type Server struct {
 
 // Handler returns the root http.Handler. All requests outside PanelPath return 404.
 func (s *Server) Handler() http.Handler {
+	s.PanelPath = normalizePanelPath(s.PanelPath)
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
 	// 404 for everything outside the configured panel path.
-	panelPath := strings.TrimSuffix(s.PanelPath, "/")
+	panelPath := panelMountPath(s.PanelPath)
 	r.Mount(panelPath, s.panelRouter())
 
 	// Catch-all: return 404 so no information is leaked outside the configured path.
@@ -46,6 +48,28 @@ func (s *Server) Handler() http.Handler {
 	return r
 }
 
+func normalizePanelPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+	return path
+}
+
+func panelMountPath(path string) string {
+	path = strings.TrimSuffix(normalizePanelPath(path), "/")
+	if path == "" {
+		return "/"
+	}
+	return path
+}
+
 // secureHeaders sets security-related response headers on every panel response.
 // These mirror the headers already set by the nginx reverse proxy so they are
 // present even when the panel is accessed directly (development, direct TCP).
@@ -53,10 +77,25 @@ func secureHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func setStrictPanelCSP(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none';")
+}
+
+func setLegacyPanelCSP(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';")
+}
+
+func withLegacyPanelCSP(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		setLegacyPanelCSP(w)
+		next(w, r)
+	}
 }
 
 func (s *Server) panelRouter() http.Handler {
@@ -65,57 +104,60 @@ func (s *Server) panelRouter() http.Handler {
 
 	r.Get("/login", s.handleLoginForm)
 	r.Post("/login", s.handleLoginSubmit)
-	r.Get("/totp/verify", s.handleTOTPVerifyForm)
-	r.Post("/totp/verify", s.handleTOTPVerifySubmit)
+	r.Get("/totp/verify", withLegacyPanelCSP(s.handleTOTPVerifyForm))
+	r.Post("/totp/verify", withLegacyPanelCSP(s.handleTOTPVerifySubmit))
 	r.Post("/logout", s.handleLogout)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
+	r.Handle("/assets/*", http.StripPrefix(strings.TrimSuffix(s.PanelPath, "/")+"/assets/", panelassets.Handler()))
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireAuth)
 		r.Get("/", s.handleDashboard)
 		r.Get("/dashboard", s.handleDashboard)
-		r.Get("/users", s.handleUserList)
-		r.Post("/users/create", s.handleUserCreate)
-		r.Post("/users/{id}/toggle", s.handleUserToggle)
-		r.Post("/users/{id}/rotate", s.handleUserRotate)
-		r.Post("/users/{id}/delete", s.handleUserDelete)
-		r.Post("/users/{id}/quota", s.handleUserQuotaSet)
-		r.Post("/users/{id}/quota/reset", s.handleUserQuotaReset)
-		r.Post("/users/{id}/suspend", s.handleUserSuspendToggle)
-		r.Get("/bridge", s.handleBridgePage)
-		r.Post("/bridge/enable", s.handleBridgeEnable)
-		r.Post("/bridge/disable", s.handleBridgeDisable)
-		r.Post("/bridge/nodes/add", s.handleBridgeAddNode)
-		r.Post("/bridge/nodes/add-manual", s.handleBridgeAddNodeManual)
-		r.Get("/bridge/nodes/{id}/edit", s.handleBridgeEditNodeForm)
-		r.Post("/bridge/nodes/{id}/edit", s.handleBridgeEditNode)
-		r.Post("/bridge/nodes/{id}/ping", s.handleBridgePingNode)
-		r.Post("/bridge/nodes/{id}/toggle", s.handleBridgeToggleNode)
-		r.Post("/bridge/nodes/{id}/delete", s.handleBridgeDeleteNode)
-		r.Post("/bridge/strategy", s.handleBridgeSetStrategy)
-		r.Get("/settings/stubs", s.handleSettingsStubList)
-		r.Post("/settings/stubs/apply", s.handleSettingsStubApply)
-		r.Post("/settings/stubs/upload", s.handleSettingsStubUpload)
-		r.Get("/settings/stubs/remote", s.handleSettingsStubRemote)
-		r.Post("/settings/stubs/remote-apply", s.handleSettingsStubRemoteApply)
+		r.Get("/dashboard/fragments/{name}", s.handleDashboardFragment)
+		r.Get("/dashboard/events", s.handleDashboardEvents)
+		r.Get("/users", withLegacyPanelCSP(s.handleUserList))
+		r.Post("/users/create", withLegacyPanelCSP(s.handleUserCreate))
+		r.Post("/users/{id}/toggle", withLegacyPanelCSP(s.handleUserToggle))
+		r.Post("/users/{id}/rotate", withLegacyPanelCSP(s.handleUserRotate))
+		r.Post("/users/{id}/delete", withLegacyPanelCSP(s.handleUserDelete))
+		r.Post("/users/{id}/quota", withLegacyPanelCSP(s.handleUserQuotaSet))
+		r.Post("/users/{id}/quota/reset", withLegacyPanelCSP(s.handleUserQuotaReset))
+		r.Post("/users/{id}/suspend", withLegacyPanelCSP(s.handleUserSuspendToggle))
+		r.Get("/bridge", withLegacyPanelCSP(s.handleBridgePage))
+		r.Post("/bridge/enable", withLegacyPanelCSP(s.handleBridgeEnable))
+		r.Post("/bridge/disable", withLegacyPanelCSP(s.handleBridgeDisable))
+		r.Post("/bridge/nodes/add", withLegacyPanelCSP(s.handleBridgeAddNode))
+		r.Post("/bridge/nodes/add-manual", withLegacyPanelCSP(s.handleBridgeAddNodeManual))
+		r.Get("/bridge/nodes/{id}/edit", withLegacyPanelCSP(s.handleBridgeEditNodeForm))
+		r.Post("/bridge/nodes/{id}/edit", withLegacyPanelCSP(s.handleBridgeEditNode))
+		r.Post("/bridge/nodes/{id}/ping", withLegacyPanelCSP(s.handleBridgePingNode))
+		r.Post("/bridge/nodes/{id}/toggle", withLegacyPanelCSP(s.handleBridgeToggleNode))
+		r.Post("/bridge/nodes/{id}/delete", withLegacyPanelCSP(s.handleBridgeDeleteNode))
+		r.Post("/bridge/strategy", withLegacyPanelCSP(s.handleBridgeSetStrategy))
+		r.Get("/settings/stubs", withLegacyPanelCSP(s.handleSettingsStubList))
+		r.Post("/settings/stubs/apply", withLegacyPanelCSP(s.handleSettingsStubApply))
+		r.Post("/settings/stubs/upload", withLegacyPanelCSP(s.handleSettingsStubUpload))
+		r.Get("/settings/stubs/remote", withLegacyPanelCSP(s.handleSettingsStubRemote))
+		r.Post("/settings/stubs/remote-apply", withLegacyPanelCSP(s.handleSettingsStubRemoteApply))
 		r.Get("/settings/certificates", s.handleSettingsCertificates)
-		r.Post("/settings/certificates/renew", s.handleSettingsCertRenew)
-		r.Get("/settings/proxy", s.handleSettingsProxyGet)
-		r.Post("/settings/proxy", s.handleSettingsProxyPost)
-		r.Get("/settings/admin-password", s.handleSettingsAdminPasswordGet)
-		r.Post("/settings/admin-password", s.handleSettingsAdminPasswordPost)
-		r.Get("/settings/system", s.handleSettingsSystemGet)
-		r.Post("/settings/system", s.handleSettingsSystemPost)
-		r.Get("/settings/totp", s.handleSettingsTOTPGet)
-		r.Post("/settings/totp/begin", s.handleSettingsTOTPBegin)
-		r.Post("/settings/totp/confirm", s.handleSettingsTOTPConfirm)
-		r.Post("/settings/totp/disable", s.handleSettingsTOTPDisable)
-		r.Post("/settings/totp/regenerate", s.handleSettingsTOTPRegenerate)
-		r.Get("/logs", s.handleLogsPage)
-		r.Get("/logs/stream", s.handleLogsStream)
-		r.Get("/logs/download", s.handleLogsDownload)
+		r.Post("/settings/certificates/renew", withLegacyPanelCSP(s.handleSettingsCertRenew))
+		r.Get("/settings/proxy", withLegacyPanelCSP(s.handleSettingsProxyGet))
+		r.Post("/settings/proxy", withLegacyPanelCSP(s.handleSettingsProxyPost))
+		r.Get("/settings/admin-password", withLegacyPanelCSP(s.handleSettingsAdminPasswordGet))
+		r.Post("/settings/admin-password", withLegacyPanelCSP(s.handleSettingsAdminPasswordPost))
+		r.Get("/settings/system", withLegacyPanelCSP(s.handleSettingsSystemGet))
+		r.Post("/settings/system", withLegacyPanelCSP(s.handleSettingsSystemPost))
+		r.Get("/settings/totp", withLegacyPanelCSP(s.handleSettingsTOTPGet))
+		r.Post("/settings/totp/begin", withLegacyPanelCSP(s.handleSettingsTOTPBegin))
+		r.Post("/settings/totp/confirm", withLegacyPanelCSP(s.handleSettingsTOTPConfirm))
+		r.Post("/settings/totp/disable", withLegacyPanelCSP(s.handleSettingsTOTPDisable))
+		r.Post("/settings/totp/regenerate", withLegacyPanelCSP(s.handleSettingsTOTPRegenerate))
+		r.Get("/logs", withLegacyPanelCSP(s.handleLogsPage))
+		r.Get("/logs/stream", withLegacyPanelCSP(s.handleLogsStream))
+		r.Get("/logs/download", withLegacyPanelCSP(s.handleLogsDownload))
 		r.Get("/audit", s.handleAuditLog)
 	})
 

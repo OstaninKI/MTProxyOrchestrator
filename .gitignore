@@ -42,6 +42,7 @@ Thumbs.db
 
 # Claude Code local state
 .claude/
+.superpowers/
 
 # Go module cache (local override)
 .gocache/

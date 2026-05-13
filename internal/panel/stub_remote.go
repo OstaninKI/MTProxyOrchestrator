@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -123,6 +124,11 @@ func downloadRemoteTemplate(client HTTPDoer, name, destDir string) error {
 			continue
 		}
 		relPath := strings.TrimPrefix(e.Path, prefix)
+		cleanRelPath, err := cleanRemoteTemplatePath(relPath)
+		if err != nil {
+			return err
+		}
+		relPath = cleanRelPath
 		destPath := filepath.Join(destDir, relPath)
 
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
@@ -144,6 +150,18 @@ func downloadRemoteTemplate(client HTTPDoer, name, destDir string) error {
 		return fmt.Errorf("template %q not found in repository", name)
 	}
 	return nil
+}
+
+func cleanRemoteTemplatePath(relPath string) (string, error) {
+	if relPath == "" || strings.Contains(relPath, "\\") {
+		return "", fmt.Errorf("unsafe remote template path %q", relPath)
+	}
+	clean := path.Clean(relPath)
+	if clean == "." || clean != relPath || path.IsAbs(clean) ||
+		clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("unsafe remote template path %q", relPath)
+	}
+	return clean, nil
 }
 
 // downloadFileTo fetches url and writes it to destPath, returning bytes written.

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
@@ -26,6 +27,8 @@ type DashboardData struct {
 	BridgeSteps     []health.BridgeStepStatus // populated in Bridge mode
 	IsBridge        bool
 	PanelPath       string
+	CSRFField       string
+	CSRFToken       string
 	Period          metrics.Period
 	TopUsers        []metrics.UserTraffic
 	LiveConnections []metrics.Sample // latest per-user active connection counts
@@ -89,33 +92,41 @@ func (s *Server) scrapeLiveConnections() []metrics.Sample {
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	period := metrics.ParsePeriod(r.URL.Query().Get("period"))
-
-	checker := health.DefaultChecker()
-	isBridge := s.isBridgeMode()
-
-	var services []health.ServiceState
-	var bridgeSteps []health.BridgeStepStatus
-
-	if isBridge {
-		bs := checker.CheckBridge()
-		bridgeSteps = bs.Steps
-	} else {
-		status := checker.CheckSingle()
-		services = status.Services
+	csrfToken, err := NewCSRFToken()
+	if err != nil {
+		http.Error(w, "failed to create csrf token", http.StatusInternalServerError)
+		return
 	}
+	SetCSRFCookie(w, csrfToken, s.Secure, s.PanelPath)
 
-	topUsers, _ := metrics.QueryTopUsers(s.DB, period, 5, nil)
-	liveConns := s.scrapeLiveConnections()
+	data := s.collectDashboardData(period)
+	data.CSRFField = CSRFField()
+	data.CSRFToken = csrfToken
 
+	setStrictPanelCSP(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	dashboardPage(w, DashboardData{
-		Services:        services,
-		BridgeSteps:     bridgeSteps,
-		IsBridge:        isBridge,
-		PanelPath:       s.PanelPath,
-		Period:          period,
-		TopUsers:        topUsers,
-		LiveConnections: liveConns,
-		Components:      collectComponentVersions(),
-	})
+	w.Header().Set("Cache-Control", "no-store")
+	dashboardPage(w, data)
+}
+
+func (s *Server) handleDashboardFragment(w http.ResponseWriter, r *http.Request) {
+	period := metrics.ParsePeriod(r.URL.Query().Get("period"))
+	data := s.collectDashboardData(period)
+
+	setStrictPanelCSP(w)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+
+	switch chi.URLParam(r, "name") {
+	case "health":
+		dashboardHealthFragment(w, data)
+	case "connections":
+		dashboardConnectionsFragment(w, data)
+	case "traffic":
+		dashboardTrafficFragment(w, data)
+	case "components":
+		dashboardComponentsFragment(w, data)
+	default:
+		http.NotFound(w, r)
+	}
 }

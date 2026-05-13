@@ -29,7 +29,7 @@ const auditContent = `{{define "page_title"}}Audit Log{{end}}
 <td>{{.CreatedAt}}</td>
 </tr>
 {{else}}
-<tr><td colspan="6" class="muted" style="text-align:center;padding:2rem">No entries.</td></tr>
+<tr><td colspan="6" class="muted empty-row">No entries.</td></tr>
 {{end}}
 </tbody>
 </table></div>
@@ -38,9 +38,11 @@ const auditContent = `{{define "page_title"}}Audit Log{{end}}
 
 var auditTmpl = layoutTemplate("audit", auditContent, nil)
 
-func auditPage(w io.Writer, panelPath string, entries []auditEntry) {
+func auditPage(w io.Writer, panelPath string, entries []auditEntry, csrfToken string) {
 	auditTmpl.Execute(w, map[string]any{
 		"PanelPath": panelPath,
 		"Entries":   entries,
+		"CSRFField": CSRFField(),
+		"CSRFToken": csrfToken,
 	})
 }

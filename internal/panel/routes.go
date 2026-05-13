@@ -32,15 +32,28 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			http.Redirect(w, r, strings.TrimSuffix(s.PanelPath, "/")+"/login", http.StatusSeeOther)
 			return
 		}
-		// Update last_seen_at on each authenticated request
-		if cookie, err := r.Cookie(sessionCookieName); err == nil {
-			s.DB.Exec( //nolint:errcheck
-				`UPDATE sessions SET last_seen_at=? WHERE id=?`,
-				time.Now().UTC().Format(time.RFC3339), cookie.Value,
-			)
+		if s.shouldTouchSession(r) {
+			if cookie, err := r.Cookie(sessionCookieName); err == nil {
+				s.DB.Exec( //nolint:errcheck
+					`UPDATE sessions SET last_seen_at=? WHERE id=?`,
+					time.Now().UTC().Format(time.RFC3339), cookie.Value,
+				)
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) shouldTouchSession(r *http.Request) bool {
+	base := strings.TrimSuffix(s.PanelPath, "/")
+	path := r.URL.Path
+	if path == base+"/dashboard/events" {
+		return false
+	}
+	if strings.HasPrefix(path, base+"/dashboard/fragments/") {
+		return false
+	}
+	return true
 }
 
 func (s *Server) isAuthenticated(r *http.Request) bool {
@@ -74,8 +87,9 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
+	setStrictPanelCSP(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	loginPage(w, tok, "")
+	loginPage(w, s.PanelPath, tok, "")
 }
 
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +117,9 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		audit.Log(s.DB, 0, "login_failed", login, "", ip) //nolint:errcheck
 		tok, _ := NewCSRFToken()
 		SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
+		setStrictPanelCSP(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		loginPage(w, tok, "Invalid login or password")
+		loginPage(w, s.PanelPath, tok, "Invalid login or password")
 		return
 	}
 
