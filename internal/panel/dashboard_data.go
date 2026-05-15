@@ -17,7 +17,7 @@ func (s *Server) collectDashboardData(period metrics.Period) DashboardData {
 		services = checker.CheckSingle().Services
 	}
 
-	topUsers, _ := metrics.QueryTopUsers(s.DB, period, 5, nil)
+	topUsers, _ := metrics.QueryTopUsers(s.DB, period, maxActiveUsers, nil)
 
 	return DashboardData{
 		Services:        services,

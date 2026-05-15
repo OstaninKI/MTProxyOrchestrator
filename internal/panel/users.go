@@ -18,6 +18,14 @@ import (
 // maxActiveUsers mirrors Teleproxy's 16-secret limit.
 const maxActiveUsers = 16
 
+type UserConnectionStatus string
+
+const (
+	UserConnectionNever   UserConnectionStatus = "not_connected"
+	UserConnectionOffline UserConnectionStatus = "offline"
+	UserConnectionOnline  UserConnectionStatus = "online"
+)
+
 // formatBytes renders a byte count with binary units (KB = 1024 B).
 // One decimal place is shown for KB and above when the value is below 10
 // in its unit; otherwise the value is rounded to integer.
@@ -105,6 +113,12 @@ type UserRow struct {
 	QuotaPeriodStart int64
 	QuotaUsedBytes   int64
 	QuotaWarned      bool
+
+	TrafficUploadedBytes   int64
+	TrafficDownloadedBytes int64
+	TrafficTotalBytes      int64
+	ActiveConnections      int64
+	ConnectionStatus       UserConnectionStatus
 }
 
 // UserRepo wraps DB operations for users.
@@ -126,7 +140,31 @@ func (r UserRepo) List() ([]UserRow, error) {
 		            WHERE user_label = users.label
 		              AND day_ts >= users.quota_period_start
 		        ), quota_used_bytes),
-		        quota_warned
+		        quota_warned,
+		        COALESCE((SELECT SUM(bytes_in) FROM traffic_daily WHERE user_label = users.label), 0),
+		        COALESCE((SELECT SUM(bytes_out) FROM traffic_daily WHERE user_label = users.label), 0),
+		        COALESCE((SELECT SUM(bytes_in) + SUM(bytes_out) FROM traffic_daily WHERE user_label = users.label), 0),
+		        COALESCE((
+		            SELECT connections
+		            FROM traffic_samples
+		            WHERE user_label = users.label
+		            ORDER BY ts DESC, id DESC
+		            LIMIT 1
+		        ), 0),
+		        CASE
+		            WHEN COALESCE((
+		                SELECT connections
+		                FROM traffic_samples
+		                WHERE user_label = users.label
+		                ORDER BY ts DESC, id DESC
+		                LIMIT 1
+		            ), 0) > 0 THEN 'online'
+		            WHEN EXISTS (SELECT 1 FROM traffic_samples WHERE user_label = users.label)
+		              OR EXISTS (SELECT 1 FROM traffic_daily WHERE user_label = users.label)
+		              OR EXISTS (SELECT 1 FROM traffic_counters WHERE user_label = users.label)
+		            THEN 'offline'
+		            ELSE 'not_connected'
+		        END
 		 FROM users WHERE deleted_at IS NULL ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -138,11 +176,15 @@ func (r UserRepo) List() ([]UserRow, error) {
 		var u UserRow
 		var rotated sql.NullString
 		var created string
+		var status string
 		if err := rows.Scan(&u.ID, &u.Label, &u.SecretHex, &u.Enabled, &created, &rotated,
 			&u.QuotaBytes, &u.QuotaPeriod, &u.QuotaWarnPct, &u.QuotaSuspended,
-			&u.QuotaPeriodStart, &u.QuotaUsedBytes, &u.QuotaWarned); err != nil {
+			&u.QuotaPeriodStart, &u.QuotaUsedBytes, &u.QuotaWarned,
+			&u.TrafficUploadedBytes, &u.TrafficDownloadedBytes, &u.TrafficTotalBytes,
+			&u.ActiveConnections, &status); err != nil {
 			return nil, err
 		}
+		u.ConnectionStatus = UserConnectionStatus(status)
 		u.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", created)
 		if rotated.Valid {
 			t, _ := time.Parse("2006-01-02 15:04:05", rotated.String)

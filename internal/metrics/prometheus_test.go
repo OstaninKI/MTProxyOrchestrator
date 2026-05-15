@@ -25,6 +25,20 @@ mtproto_secret_connections_total{label="alice"} 2
 mtproto_secret_connections_total{label="bob"} 5
 `
 
+const teleproxyFixtureMetrics = `# HELP teleproxy_secret_connections Current connections per configured secret.
+# TYPE teleproxy_secret_connections gauge
+teleproxy_secret_connections{secret="alice"} 2
+teleproxy_secret_connections{secret="bob"} 0
+# HELP teleproxy_secret_bytes_received_total Bytes received by proxy from clients (i.e. client uploads) per secret. Direct mode only.
+# TYPE teleproxy_secret_bytes_received_total counter
+teleproxy_secret_bytes_received_total{secret="alice"} 100
+teleproxy_secret_bytes_received_total{secret="bob"} 200
+# HELP teleproxy_secret_bytes_sent_total Bytes sent by proxy to clients (i.e. client downloads) per secret. Direct mode only.
+# TYPE teleproxy_secret_bytes_sent_total counter
+teleproxy_secret_bytes_sent_total{secret="alice"} 300
+teleproxy_secret_bytes_sent_total{secret="bob"} 400
+`
+
 func newScraper(srv *httptest.Server) metrics.Scraper {
 	return metrics.Scraper{
 		Client:    srv.Client(),
@@ -79,6 +93,41 @@ func TestScrapeParsesSamples(t *testing.T) {
 	}
 	if bob.Connections != 5 {
 		t.Errorf("bob Connections: want 5, got %d", bob.Connections)
+	}
+}
+
+func TestScrapeParsesCurrentTeleproxyMetrics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(teleproxyFixtureMetrics)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	samples, err := newScraper(srv).Scrape()
+	if err != nil {
+		t.Fatalf("Scrape() error: %v", err)
+	}
+	if len(samples) != 2 {
+		t.Fatalf("expected 2 samples, got %d", len(samples))
+	}
+
+	sort.Slice(samples, func(i, j int) bool {
+		return samples[i].UserLabel < samples[j].UserLabel
+	})
+
+	alice := samples[0]
+	if alice.UserLabel != "alice" {
+		t.Errorf("want alice, got %q", alice.UserLabel)
+	}
+	if alice.BytesIn != 100 {
+		t.Errorf("alice BytesIn: want 100, got %d", alice.BytesIn)
+	}
+	if alice.BytesOut != 300 {
+		t.Errorf("alice BytesOut: want 300, got %d", alice.BytesOut)
+	}
+	if alice.Connections != 2 {
+		t.Errorf("alice Connections: want 2, got %d", alice.Connections)
 	}
 }
 

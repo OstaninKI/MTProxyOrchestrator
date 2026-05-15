@@ -12,6 +12,15 @@ var dashboardFragmentFuncs = template.FuncMap{
 		}
 		return formatBytes(uint64(n))
 	},
+	"trafficTotal": func(in, out int64) int64 {
+		if in < 0 {
+			in = 0
+		}
+		if out < 0 {
+			out = 0
+		}
+		return in + out
+	},
 }
 
 const dashboardFragments = `
@@ -88,7 +97,7 @@ const dashboardFragments = `
   hx-get="{{.PanelPath}}dashboard/fragments/traffic?period={{.Period}}"
   hx-trigger="sse:dashboard-traffic"
   hx-swap="outerHTML">
-<h2>Top Users</h2>
+<h2>Usage by User</h2>
 <div class="periods">
   <a href="?period=1h"{{if eq .Period "1h"}} class="active"{{end}}>1h</a>
   <a href="?period=24h"{{if eq .Period "24h"}} class="active"{{end}}>24h</a>
@@ -97,13 +106,14 @@ const dashboardFragments = `
 </div>
 {{if .TopUsers}}
 <div class="table-wrap"><table>
-<thead><tr><th>User</th><th>Bytes In</th><th>Bytes Out</th><th>Connections</th></tr></thead>
+<thead><tr><th>User</th><th>Downloaded</th><th>Uploaded</th><th>Total</th><th>Connections</th></tr></thead>
 <tbody>
 {{range .TopUsers}}
 <tr>
   <td>{{.UserLabel}}</td>
-  <td>{{formatBytes .BytesIn}}</td>
   <td>{{formatBytes .BytesOut}}</td>
+  <td>{{formatBytes .BytesIn}}</td>
+  <td>{{formatBytes (trafficTotal .BytesIn .BytesOut)}}</td>
   <td>{{.Connections}}</td>
 </tr>
 {{end}}

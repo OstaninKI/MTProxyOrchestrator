@@ -12,11 +12,15 @@ import (
 )
 
 const (
-	metricBytesIn      = "mtproto_secret_traffic_bytes_in"
-	metricBytesOut     = "mtproto_secret_traffic_bytes_out"
-	metricConnections  = "mtproto_secret_connections_total"
-	labelKey           = "label"
-	defaultHTTPTimeout = 10 * time.Second
+	metricBytesInLegacy     = "mtproto_secret_traffic_bytes_in"
+	metricBytesOutLegacy    = "mtproto_secret_traffic_bytes_out"
+	metricConnectionsLegacy = "mtproto_secret_connections_total"
+	metricBytesIn           = "teleproxy_secret_bytes_received_total"
+	metricBytesOut          = "teleproxy_secret_bytes_sent_total"
+	metricConnections       = "teleproxy_secret_connections"
+	labelKeyLegacy          = "label"
+	labelKeySecret          = "secret"
+	defaultHTTPTimeout      = 10 * time.Second
 )
 
 // MaxResponseBytes caps a single Prometheus scrape response.
@@ -106,11 +110,13 @@ func parseMetrics(r io.Reader) ([]Sample, error) {
 
 		// Process all metrics in this family.
 		for _, m := range mf.Metric {
-			// Extract label value.
 			userLabel := ""
 			for _, lp := range m.Label {
-				if lp.GetName() == labelKey {
+				switch lp.GetName() {
+				case labelKeySecret, labelKeyLegacy:
 					userLabel = lp.GetValue()
+				}
+				if userLabel != "" {
 					break
 				}
 			}
@@ -121,7 +127,7 @@ func parseMetrics(r io.Reader) ([]Sample, error) {
 			s := getOrCreate(userLabel)
 
 			switch name {
-			case metricBytesIn:
+			case metricBytesIn, metricBytesInLegacy:
 				if m.Counter != nil {
 					s.BytesIn = int64(m.Counter.GetValue())
 				} else if m.Gauge != nil {
@@ -129,7 +135,7 @@ func parseMetrics(r io.Reader) ([]Sample, error) {
 				} else if m.Untyped != nil {
 					s.BytesIn = int64(m.Untyped.GetValue())
 				}
-			case metricBytesOut:
+			case metricBytesOut, metricBytesOutLegacy:
 				if m.Counter != nil {
 					s.BytesOut = int64(m.Counter.GetValue())
 				} else if m.Gauge != nil {
@@ -137,7 +143,7 @@ func parseMetrics(r io.Reader) ([]Sample, error) {
 				} else if m.Untyped != nil {
 					s.BytesOut = int64(m.Untyped.GetValue())
 				}
-			case metricConnections:
+			case metricConnections, metricConnectionsLegacy:
 				if m.Gauge != nil {
 					s.Connections = int64(m.Gauge.GetValue())
 				} else if m.Counter != nil {

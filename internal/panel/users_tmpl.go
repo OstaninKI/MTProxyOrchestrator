@@ -25,29 +25,41 @@ var userListFuncs = template.FuncMap{
 	"nextResetIn": func(periodStart int64, period string) string {
 		return nextResetIn(periodStart, period, time.Now())
 	},
+	"connectionStatusLabel": func(status UserConnectionStatus) string {
+		switch status {
+		case UserConnectionOnline:
+			return "online"
+		case UserConnectionOffline:
+			return "offline"
+		default:
+			return "not connected"
+		}
+	},
+	"connectionStatusClass": func(status UserConnectionStatus) string {
+		switch status {
+		case UserConnectionOnline:
+			return "status-online"
+		case UserConnectionOffline:
+			return "status-offline"
+		default:
+			return "status-never"
+		}
+	},
 }
 
 const userListContent = `{{define "page_title"}}Users{{end}}
 {{define "content"}}
-<style>
-.badge-on{color:var(--good)}.badge-off{color:var(--bad)}
-.qbar{position:relative;width:160px;height:10px;background:var(--border);border-radius:5px;overflow:hidden}
-.qbar>span{display:block;height:100%;border-radius:5px;transition:width .2s}
-.qbar-green>span{background:var(--good)}.qbar-amber>span{background:#d97706}.qbar-red>span{background:var(--bad)}
-.qmeta{font-size:.8rem;color:var(--muted);margin-top:.15rem}
-input[type=number],select{display:inline;width:auto}
-form.inline{display:inline}
-</style>
 <h1>Users</h1>
 <a href="{{.PanelPath}}dashboard">← Dashboard</a>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="post" action="{{.PanelPath}}users/create">
+<form method="post" action="{{.PanelPath}}users/create" class="user-create-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <input type="text" name="label" placeholder="label (a-z0-9_)" required>
 <button type="submit">Add user</button>
 </form>
-<table>
-<thead><tr><th>Label</th><th>Status</th><th>Quota</th><th>Used</th><th>Created</th><th>Actions</th></tr></thead>
+<div class="table-wrap users-table-wrap">
+<table class="users-table">
+<thead><tr><th>Label</th><th>Status</th><th>Quota</th><th>Usage</th><th>Created</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Users}}
 <tr>
@@ -55,6 +67,9 @@ form.inline{display:inline}
   <td>
     {{if .Enabled}}<span class="badge-on">enabled</span>{{else}}<span class="badge-off">disabled</span>{{end}}
     {{if .QuotaSuspended}} <span class="badge-off">suspended</span>{{end}}
+    <div class="user-connection {{connectionStatusClass .ConnectionStatus}}">
+      {{connectionStatusLabel .ConnectionStatus}}{{if gt .ActiveConnections 0}} · {{.ActiveConnections}} conn{{end}}
+    </div>
   </td>
   <td>{{if gt .QuotaBytes 0}}{{formatBytes .QuotaBytes}} / {{.QuotaPeriod}}{{else}}<span class="muted">unlimited</span>{{end}}</td>
   <td>
@@ -74,11 +89,17 @@ form.inline{display:inline}
         {{- if $r}} · {{$r}}{{end -}}
       </div>
     {{else}}
-      <span class="muted">{{formatBytes .QuotaUsedBytes}}</span>
+      <div class="usage-stack">
+        <strong>{{formatBytes .TrafficDownloadedBytes}}</strong>
+        <span>Downloaded</span>
+        <span>{{formatBytes .TrafficUploadedBytes}} Uploaded</span>
+        <span>{{formatBytes .TrafficTotalBytes}} Total</span>
+      </div>
     {{end}}
   </td>
   <td>{{.CreatedAt.Format "2006-01-02"}}</td>
   <td>
+    <div class="user-actions">
     <form method="post" action="{{$.PanelPath}}users/{{.ID}}/toggle" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
@@ -95,26 +116,28 @@ form.inline{display:inline}
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">Reset quota</button>
     </form>
-    <form method="post" action="{{$.PanelPath}}users/{{.ID}}/quota" class="inline">
+    <form method="post" action="{{$.PanelPath}}users/{{.ID}}/quota" class="quota-form">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-      <input type="number" step="0.1" min="0" name="gb" placeholder="GB" style="width:5em">
+      <input type="number" step="0.1" min="0" name="gb" placeholder="GB" inputmode="decimal" class="quota-number quota-gb">
       <select name="period">
         <option value="daily">daily</option>
         <option value="weekly">weekly</option>
         <option value="monthly" selected>monthly</option>
       </select>
-      <input type="number" min="0" max="100" name="warn_pct" value="80" style="width:4em">
+      <input type="number" min="0" max="100" name="warn_pct" value="80" inputmode="numeric" class="quota-number quota-warn">
       <button type="submit">Set quota</button>
     </form>
     <form method="post" action="{{$.PanelPath}}users/{{.ID}}/delete" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit" onclick="return confirm('Delete {{.Label}}?')">Delete</button>
     </form>
+    </div>
   </td>
 </tr>
 {{end}}
 </tbody>
 </table>
+</div>
 {{end}}
 {{template "base" .}}`
 

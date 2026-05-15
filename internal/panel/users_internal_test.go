@@ -108,6 +108,49 @@ func TestUserListDashboardLinkUsesPanelPath(t *testing.T) {
 	}
 }
 
+func TestUserListShowsTrafficBreakdownAndConnectionStatus(t *testing.T) {
+	users := []UserRow{
+		{
+			Label:                  "alice",
+			Enabled:                true,
+			QuotaBytes:             0,
+			TrafficUploadedBytes:   1024,
+			TrafficDownloadedBytes: 2 * 1024 * 1024,
+			TrafficTotalBytes:      2*1024*1024 + 1024,
+			ActiveConnections:      2,
+			ConnectionStatus:       UserConnectionOnline,
+			CreatedAt:              time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			Label:            "bob",
+			Enabled:          true,
+			ConnectionStatus: UserConnectionNever,
+			CreatedAt:        time.Date(2026, 5, 11, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	var buf bytes.Buffer
+	userListPage(&buf, users, "csrf", "", "/p-example/")
+	html := buf.String()
+
+	for _, want := range []string{
+		"Downloaded",
+		"Uploaded",
+		"Total",
+		"2.0 MB",
+		"1.0 KB",
+		"online",
+		"not connected",
+		`class="quota-form"`,
+		`class="quota-number quota-gb"`,
+		`inputmode="decimal"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("users page missing %q:\n%s", want, html)
+		}
+	}
+}
+
 func TestUserRepoListUsesRecordedTrafficForUnlimitedUsers(t *testing.T) {
 	d, err := db.Open(":memory:")
 	if err != nil {
@@ -137,5 +180,61 @@ func TestUserRepoListUsesRecordedTrafficForUnlimitedUsers(t *testing.T) {
 	}
 	if users[0].QuotaUsedBytes != 500 {
 		t.Fatalf("QuotaUsedBytes = %d, want 500", users[0].QuotaUsedBytes)
+	}
+}
+
+func TestUserRepoListReturnsUsageAndStatus(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer d.Close()
+
+	if _, err := d.Exec(
+		`INSERT INTO users(label, secret_hex) VALUES
+		    ('alice', 'deadbeef'),
+		    ('bob', 'feedface'),
+		    ('carol', 'cafebabe')`,
+	); err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+	if _, err := d.Exec(
+		`INSERT INTO traffic_daily(user_label, day_ts, bytes_in, bytes_out, connections) VALUES
+		    ('alice', 0, 100, 300, 2),
+		    ('bob', 0, 50, 70, 0)`,
+	); err != nil {
+		t.Fatalf("insert daily traffic: %v", err)
+	}
+	if _, err := d.Exec(
+		`INSERT INTO traffic_samples(user_label, ts, bytes_in, bytes_out, connections) VALUES
+		    ('alice', 1000, 100, 300, 2),
+		    ('bob', 1000, 50, 70, 0)`,
+	); err != nil {
+		t.Fatalf("insert samples: %v", err)
+	}
+
+	users, err := UserRepo{DB: d}.List()
+	if err != nil {
+		t.Fatalf("list users: %v", err)
+	}
+
+	byLabel := map[string]UserRow{}
+	for _, user := range users {
+		byLabel[user.Label] = user
+	}
+	alice := byLabel["alice"]
+	if alice.TrafficUploadedBytes != 100 || alice.TrafficDownloadedBytes != 300 || alice.TrafficTotalBytes != 400 {
+		t.Fatalf("alice traffic = upload %d download %d total %d, want 100/300/400",
+			alice.TrafficUploadedBytes, alice.TrafficDownloadedBytes, alice.TrafficTotalBytes)
+	}
+	if alice.ActiveConnections != 2 || alice.ConnectionStatus != UserConnectionOnline {
+		t.Fatalf("alice status = %q with %d connections, want online with 2",
+			alice.ConnectionStatus, alice.ActiveConnections)
+	}
+	if bob := byLabel["bob"]; bob.ConnectionStatus != UserConnectionOffline {
+		t.Fatalf("bob status = %q, want offline", bob.ConnectionStatus)
+	}
+	if carol := byLabel["carol"]; carol.ConnectionStatus != UserConnectionNever {
+		t.Fatalf("carol status = %q, want never", carol.ConnectionStatus)
 	}
 }

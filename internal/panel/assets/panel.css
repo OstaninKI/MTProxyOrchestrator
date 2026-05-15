@@ -78,6 +78,153 @@ input, select, textarea {
 label { display: block; margin-top: 1rem; font-weight: 700; color: var(--muted); font-size: .86rem; }
 form.inline { display: inline; }
 
+.user-create-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin: 14px 0 18px;
+}
+
+.user-create-form input {
+  margin-top: 0;
+  max-width: 340px;
+}
+
+.users-table-wrap {
+  border-radius: 0;
+}
+
+.users-table {
+  min-width: 1060px;
+}
+
+.users-table td {
+  vertical-align: top;
+}
+
+.badge-on,
+.badge-off,
+.user-connection {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 9px;
+  font-size: .78rem;
+  border: 1px solid transparent;
+}
+
+.badge-on {
+  color: var(--good);
+  background: rgba(40,199,111,.08);
+  border-color: rgba(40,199,111,.22);
+}
+
+.badge-off {
+  color: var(--bad);
+  background: rgba(255,77,109,.08);
+  border-color: rgba(255,77,109,.22);
+}
+
+.user-connection {
+  margin-top: 6px;
+}
+
+.status-online {
+  color: var(--good);
+  background: rgba(40,199,111,.1);
+  border-color: rgba(40,199,111,.24);
+}
+
+.status-offline {
+  color: var(--warn);
+  background: rgba(255,176,32,.1);
+  border-color: rgba(255,176,32,.24);
+}
+
+.status-never {
+  color: var(--muted);
+  background: rgba(255,255,255,.03);
+  border-color: var(--border);
+}
+
+.usage-stack {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.usage-stack strong {
+  color: var(--text);
+  font-size: .95rem;
+}
+
+.qbar {
+  position: relative;
+  width: 160px;
+  height: 10px;
+  background: var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.qbar > span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  transition: width .2s;
+}
+
+.qbar-green > span { background: var(--good); }
+.qbar-amber > span { background: #d97706; }
+.qbar-red > span { background: var(--bad); }
+
+.qmeta {
+  font-size: .8rem;
+  color: var(--muted);
+  margin-top: .15rem;
+}
+
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.quota-form {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.quota-form select,
+.quota-number {
+  width: auto;
+  margin-top: 0;
+  min-height: 34px;
+}
+
+.quota-gb {
+  width: 76px;
+}
+
+.quota-warn {
+  width: 54px;
+}
+
+.quota-number {
+  padding-right: .55rem;
+  appearance: textfield;
+}
+
+.quota-number::-webkit-inner-spin-button,
+.quota-number::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
 body.login-page {
   display: flex;
   align-items: center;
