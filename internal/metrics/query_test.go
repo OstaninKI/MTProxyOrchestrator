@@ -138,3 +138,72 @@ func TestQueryTopUsersExcludesOldData(t *testing.T) {
 		t.Error("recent sample should be in results")
 	}
 }
+
+func insertTrafficHourly(t *testing.T, d *db.DB, label string, hourTS, in, out, conns int64) {
+	t.Helper()
+	_, err := d.Exec(
+		`INSERT INTO traffic_hourly(user_label,hour_ts,bytes_in,bytes_out,connections) VALUES(?,?,?,?,?)`,
+		label, hourTS, in, out, conns)
+	if err != nil {
+		t.Fatalf("insert hourly: %v", err)
+	}
+}
+
+func TestQueryTrafficSeriesBucketsSamples(t *testing.T) {
+	d := openTestDB(t)
+	const now int64 = 1_700_000_000
+
+	insertTrafficSample(t, d, "alice", now-120, 10, 4, 1)
+	insertTrafficSample(t, d, "bob", now-60, 20, 6, 2)
+
+	series, err := metrics.QueryTrafficSeries(d, metrics.Period1h, 60, func() int64 { return now })
+	if err != nil {
+		t.Fatalf("QueryTrafficSeries: %v", err)
+	}
+	if len(series) != 60 {
+		t.Fatalf("len(series) = %d, want 60", len(series))
+	}
+
+	if series[57].BytesIn != 0 || series[57].BytesOut != 0 || series[57].Connections != 0 {
+		t.Fatalf("bucket[57] = %+v, want zero-filled gap", series[57])
+	}
+	if series[58].BytesIn != 10 || series[58].BytesOut != 4 || series[58].Connections != 1 {
+		t.Fatalf("bucket[58] = %+v, want alice sample", series[58])
+	}
+	last := series[len(series)-1]
+	if last.BytesIn != 20 || last.BytesOut != 6 || last.Connections != 2 {
+		t.Fatalf("last bucket = %+v, want latest sample totals", last)
+	}
+}
+
+func TestQueryTrafficSeriesUsesHourlyDataFor30d(t *testing.T) {
+	d := openTestDB(t)
+	const now int64 = 1_700_000_000
+
+	insertTrafficHourly(t, d, "alice", now-25*24*3600, 100, 40, 3)
+	insertTrafficHourly(t, d, "bob", now-10*24*3600, 250, 80, 5)
+
+	series, err := metrics.QueryTrafficSeries(d, metrics.Period30d, 60, func() int64 { return now })
+	if err != nil {
+		t.Fatalf("QueryTrafficSeries: %v", err)
+	}
+	if len(series) != 60 {
+		t.Fatalf("len(series) = %d, want 60", len(series))
+	}
+
+	var foundAlice, foundBob bool
+	for _, bucket := range series {
+		if bucket.BytesIn == 100 && bucket.BytesOut == 40 && bucket.Connections == 3 {
+			foundAlice = true
+		}
+		if bucket.BytesIn == 250 && bucket.BytesOut == 80 && bucket.Connections == 5 {
+			foundBob = true
+		}
+	}
+	if !foundAlice {
+		t.Fatal("expected hourly alice bucket in 30d series")
+	}
+	if !foundBob {
+		t.Fatal("expected hourly bob bucket in 30d series")
+	}
+}

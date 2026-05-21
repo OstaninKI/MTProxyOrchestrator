@@ -1,32 +1,66 @@
 package panel
 
 import (
+	"log/slog"
+
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
 )
 
+var dashboardHealthChecker = health.DefaultChecker
+
 func (s *Server) collectDashboardData(period metrics.Period) DashboardData {
-	checker := health.DefaultChecker()
+	checker := dashboardHealthChecker()
 	isBridge := s.isBridgeMode()
 
 	var services []health.ServiceState
 	var bridgeSteps []health.BridgeStepStatus
+	healthy := false
+	healthLabel := "unhealthy"
 	if isBridge {
-		bridgeSteps = checker.CheckBridge().Steps
+		status := checker.CheckBridge()
+		bridgeSteps = status.Steps
+		healthy = status.OK
+		healthLabel = status.Summary
 	} else {
-		services = checker.CheckSingle().Services
+		status := checker.CheckSingle()
+		services = status.Services
+		healthy = status.OK
+		healthLabel = status.Summary
 	}
 
-	topUsers, _ := metrics.QueryTopUsers(s.DB, period, maxActiveUsers, nil)
+	users, err := UserRepo{DB: s.DB}.List()
+	if err != nil {
+		slog.Warn("dashboard users query failed", "err", err)
+	}
+	topUsers, err := metrics.QueryTopUsers(s.DB, period, maxActiveUsers, nil)
+	if err != nil {
+		slog.Warn("dashboard top users query failed", "err", err)
+	}
+	trafficSeries, err := metrics.QueryTrafficSeries(s.DB, period, 60, nil)
+	if err != nil {
+		slog.Warn("dashboard traffic series query failed", "err", err)
+	}
+	nodeList, err := bridge.Load(s.nodePath())
+	if err != nil {
+		slog.Warn("dashboard bridge node load failed", "err", err)
+	}
 
 	return DashboardData{
 		Services:        services,
 		BridgeSteps:     bridgeSteps,
 		IsBridge:        isBridge,
+		Healthy:         healthy,
+		HealthLabel:     healthLabel,
 		PanelPath:       s.PanelPath,
 		Period:          period,
 		TopUsers:        topUsers,
+		TrafficSeries:   trafficSeries,
 		LiveConnections: s.scrapeLiveConnections(),
 		Components:      collectComponentVersions(),
+		Users:           users,
+		BridgeNodes:     nodeList.Nodes,
+		System:          collectSystemSnapshot(),
 	}
 }

@@ -1,10 +1,16 @@
 package panel
 
 import (
+	"bufio"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
@@ -26,13 +32,29 @@ type DashboardData struct {
 	Services        []health.ServiceState
 	BridgeSteps     []health.BridgeStepStatus // populated in Bridge mode
 	IsBridge        bool
+	Healthy         bool
+	HealthLabel     string
+	CurrentNav      string
 	PanelPath       string
 	CSRFField       string
 	CSRFToken       string
 	Period          metrics.Period
 	TopUsers        []metrics.UserTraffic
+	TrafficSeries   []metrics.TrafficBucket
 	LiveConnections []metrics.Sample // latest per-user active connection counts
 	Components      []ComponentVersion
+	Users           []UserRow
+	BridgeNodes     []bridge.Node
+	System          SystemSnapshot
+}
+
+// SystemSnapshot holds best-effort host stats for the dashboard.
+type SystemSnapshot struct {
+	MemoryPercent float64
+	DiskPercent   float64
+	LoadAvg       string
+	Uptime        string
+	Kernel        string
 }
 
 // collectComponentVersions returns installed versions for all known components.
@@ -88,6 +110,109 @@ func (s *Server) scrapeLiveConnections() []metrics.Sample {
 		return nil
 	}
 	return samples
+}
+
+func collectSystemSnapshot() SystemSnapshot {
+	snapshot := SystemSnapshot{
+		MemoryPercent: -1,
+		DiskPercent:   -1,
+		LoadAvg:       "unknown",
+		Uptime:        "unknown",
+		Kernel:        "unknown",
+	}
+
+	if out, err := exec.Command("uname", "-r").Output(); err == nil {
+		snapshot.Kernel = strings.TrimSpace(string(out))
+	}
+
+	if file, err := os.Open("/proc/loadavg"); err == nil {
+		defer file.Close()
+		var load string
+		if _, err := fmt.Fscan(file, &load); err == nil && load != "" {
+			snapshot.LoadAvg = load
+		}
+	}
+
+	if file, err := os.Open("/proc/uptime"); err == nil {
+		defer file.Close()
+		var uptimeSeconds float64
+		if _, err := fmt.Fscan(file, &uptimeSeconds); err == nil {
+			snapshot.Uptime = humanDuration(time.Duration(uptimeSeconds) * time.Second)
+		}
+	}
+
+	if meminfo, err := readMemInfo("/proc/meminfo"); err == nil {
+		total := meminfo["MemTotal"]
+		available := meminfo["MemAvailable"]
+		if total > 0 && available >= 0 {
+			used := total - available
+			snapshot.MemoryPercent = percent(float64(used), float64(total))
+		}
+	}
+
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(filepath.Clean("/"), &stat); err == nil && stat.Blocks > 0 {
+		total := float64(stat.Blocks) * float64(stat.Bsize)
+		free := float64(stat.Bavail) * float64(stat.Bsize)
+		used := total - free
+		snapshot.DiskPercent = percent(used, total)
+	}
+
+	return snapshot
+}
+
+func readMemInfo(path string) (map[string]int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	values := make(map[string]int64)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		value, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		values[strings.TrimSuffix(parts[0], ":")] = value
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func percent(used, total float64) float64 {
+	if total <= 0 {
+		return -1
+	}
+	return (used / total) * 100
+}
+
+func humanDuration(d time.Duration) string {
+	if d <= 0 {
+		return "0m"
+	}
+	days := int(d / (24 * time.Hour))
+	d -= time.Duration(days) * 24 * time.Hour
+	hours := int(d / time.Hour)
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+	minutes := int(d / time.Minute)
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes%60)
+	}
+	return fmt.Sprintf("%dm", minutes)
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {

@@ -91,6 +91,171 @@ func TestLoginWithTOTPWrongCode(t *testing.T) {
 	}
 }
 
+func TestTOTPVerifyPageUsesSharedLoginShellWithoutInlineStyle(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	secret, _, _ := totp.GenerateSecret("admin")
+	if _, err := srv.DB.Exec(`UPDATE admin SET totp_secret=?, totp_enabled=1 WHERE id=1`, secret); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+
+	login := postLoginForm(h, "admin", "correcthorsebatterystaple")
+	var pending *http.Cookie
+	for _, c := range login.Result().Cookies() {
+		if c.Name == "pending_totp" {
+			pending = c
+		}
+	}
+	if pending == nil || pending.Value == "" {
+		t.Fatal("pending_totp cookie missing")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/p-example/totp/verify", nil)
+	req.AddCookie(pending)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /p-example/totp/verify: want 200, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	for _, want := range []string{
+		`href="/p-example/assets/panel.css"`,
+		`class="login-page"`,
+		`class="app login-app"`,
+		`class="login-shell"`,
+		`class="card login-card"`,
+		`action="/p-example/totp/verify"`,
+		`name="_csrf" value="`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("totp verify page missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "<style>") {
+		t.Fatalf("totp verify page must not render inline styles:\n%s", body)
+	}
+}
+
+func TestSettingsTOTPPageUsesSummaryFirstLayout(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	req := httptest.NewRequest(http.MethodGet, "/p-example/settings/totp", nil)
+	req.AddCookie(sessionCookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /p-example/settings/totp: want 200, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="settings-tabs"`,
+		`class="summary-grid"`,
+		`Protection status`,
+		`Enable Two-Factor`,
+		`Setup Notes`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("totp settings page missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `<style>`) {
+		t.Fatalf("totp settings page must not render inline style:\n%s", body)
+	}
+}
+
+func TestSettingsTOTPBeginUsesSplitEnrollLayout(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	form := url.Values{"_csrf": {"tok"}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/settings/totp/begin", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookie)
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "tok"})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST /p-example/settings/totp/begin: want 200, got %d body: %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="summary-grid"`,
+		`class="stack-split"`,
+		`Authenticator Setup`,
+		`Confirm enrollment`,
+		`data:image/png;base64,`,
+		`otpauth://`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("totp enroll page missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestSettingsTOTPConfirmShowsRecoveryCodesCard(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	beginForm := url.Values{"_csrf": {"tok"}}
+	beginReq := httptest.NewRequest(http.MethodPost, "/p-example/settings/totp/begin", strings.NewReader(beginForm.Encode()))
+	beginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	beginReq.AddCookie(sessionCookie)
+	beginReq.AddCookie(&http.Cookie{Name: "csrf_token", Value: "tok"})
+	beginW := httptest.NewRecorder()
+	h.ServeHTTP(beginW, beginReq)
+	if beginW.Code != http.StatusOK {
+		t.Fatalf("POST /p-example/settings/totp/begin: want 200, got %d body: %s", beginW.Code, beginW.Body.String())
+	}
+
+	var secret string
+	if err := srv.DB.QueryRow(`SELECT totp_secret FROM admin WHERE id=1`).Scan(&secret); err != nil {
+		t.Fatal(err)
+	}
+	code, err := pquerna.GenerateCode(secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	confirmForm := url.Values{"_csrf": {"tok2"}, "code": {code}}
+	confirmReq := httptest.NewRequest(http.MethodPost, "/p-example/settings/totp/confirm", strings.NewReader(confirmForm.Encode()))
+	confirmReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	confirmReq.AddCookie(sessionCookie)
+	confirmReq.AddCookie(&http.Cookie{Name: "csrf_token", Value: "tok2"})
+	confirmW := httptest.NewRecorder()
+	h.ServeHTTP(confirmW, confirmReq)
+
+	if confirmW.Code != http.StatusOK {
+		t.Fatalf("POST /p-example/settings/totp/confirm: want 200, got %d body: %s", confirmW.Code, confirmW.Body.String())
+	}
+
+	body := confirmW.Body.String()
+	for _, want := range []string{
+		`Two-factor authentication enabled`,
+		`Save these codes now.`,
+		`class="summary-grid"`,
+		`class="card"`,
+		`class="codes"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("totp recovery page missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestLoginWithTOTPRecoveryCode(t *testing.T) {
 	srv := newTestServer(t, "/p-example/")
 	seedAdmin(t, srv.DB)

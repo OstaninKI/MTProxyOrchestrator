@@ -49,6 +49,93 @@ func TestSystemSettingsPageRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestSettingsPagesUsePanelScopedLinksWithoutInlineStyle(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	for _, path := range []string{
+		"/p-example/settings/proxy",
+		"/p-example/settings/admin-password",
+		"/p-example/settings/system",
+		"/p-example/settings/totp",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.AddCookie(sessionCookie)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want 200", path, rec.Code)
+			}
+			body := rec.Body.String()
+			if strings.Contains(body, `href="../`) {
+				t.Fatalf("%s must not use parent-relative links:\n%s", path, body)
+			}
+			if strings.Contains(body, "<style>") {
+				t.Fatalf("%s must not render inline styles:\n%s", path, body)
+			}
+			for _, want := range []string{
+				`href="/p-example/dashboard"`,
+				`class="page-head"`,
+				`class="settings-tabs"`,
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("%s missing %q:\n%s", path, want, body)
+				}
+			}
+			if strings.Contains(path, "/settings/") && strings.Contains(body, `class="page-nav"`) {
+				t.Fatalf("%s must use settings tabs instead of duplicated page-nav:\n%s", path, body)
+			}
+			if strings.Contains(path, "/settings/") && !strings.Contains(body, `class="nav-item" data-active="true" href="/p-example/settings/proxy"`) {
+				t.Fatalf("%s must mark settings nav item active:\n%s", path, body)
+			}
+			if strings.Contains(path, "/settings/admin-password") {
+				for _, want := range []string{
+					`class="summary-grid"`,
+					`data-password-page`,
+					`data-password-role="toggle"`,
+					`data-password-role="strength-meter"`,
+					`data-password-role="match-note"`,
+					`>Rotate Credentials</h2>`,
+					`>Rotation Notes</h2>`,
+				} {
+					if !strings.Contains(body, want) {
+						t.Fatalf("%s missing %q:\n%s", path, want, body)
+					}
+				}
+			}
+			if strings.Contains(path, "/settings/proxy") {
+				for _, want := range []string{
+					`class="summary-grid"`,
+					`>Public Endpoint</h2>`,
+					`>Endpoint Preview</h2>`,
+					`tg://proxy?server=`,
+				} {
+					if !strings.Contains(body, want) {
+						t.Fatalf("%s missing %q:\n%s", path, want, body)
+					}
+				}
+			}
+			if strings.Contains(path, "/settings/system") {
+				for _, want := range []string{
+					`class="summary-grid"`,
+					`class="page-stack settings-form-grid"`,
+					`>Panel Access</h2>`,
+					`>Logging</h2>`,
+					`class="settings-submit-row"`,
+					`>Operational Notes</h2>`,
+				} {
+					if !strings.Contains(body, want) {
+						t.Fatalf("%s missing %q:\n%s", path, want, body)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestProxySettingsPostRequiresCSRF(t *testing.T) {
 	srv := newTestServer(t, "/p-example/")
 	seedAdmin(t, srv.DB)

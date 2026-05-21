@@ -6,7 +6,18 @@ import (
 
 const auditContent = `{{define "page_title"}}Audit Log{{end}}
 {{define "content"}}
-<h1>Audit Log</h1>
+<section class="page-head">
+  <div class="titles">
+    <p class="page-eyebrow">Security</p>
+    <h1 class="page-title">Audit Log</h1>
+    <p class="page-sub">Review administrator actions without exposing raw secrets.</p>
+  </div>
+  <nav class="page-nav" aria-label="Audit navigation">
+    <a href="{{.PanelPath}}dashboard">Dashboard</a>
+    <a href="{{.PanelPath}}settings/system">System settings</a>
+  </nav>
+</section>
+<div class="card table-card">
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -33,6 +44,7 @@ const auditContent = `{{define "page_title"}}Audit Log{{end}}
 {{end}}
 </tbody>
 </table></div>
+</div>
 {{end}}
 {{template "base" .}}`
 
@@ -40,9 +52,10 @@ var auditTmpl = layoutTemplate("audit", auditContent, nil)
 
 func auditPage(w io.Writer, panelPath string, entries []auditEntry, csrfToken string) {
 	auditTmpl.Execute(w, map[string]any{
-		"PanelPath": panelPath,
-		"Entries":   entries,
-		"CSRFField": CSRFField(),
-		"CSRFToken": csrfToken,
+		"PanelPath":  panelPath,
+		"Entries":    entries,
+		"CSRFField":  CSRFField(),
+		"CSRFToken":  csrfToken,
+		"CurrentNav": "settings",
 	})
 }

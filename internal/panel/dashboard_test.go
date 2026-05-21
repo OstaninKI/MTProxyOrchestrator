@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
@@ -95,6 +99,58 @@ func TestDashboardIncludesSSEFragmentRefreshMarkup(t *testing.T) {
 	}
 	if strings.Contains(html, "<style>") || strings.Contains(html, "<script>(function()") {
 		t.Fatalf("dashboard must not use inline CSS or inline CSRF script")
+	}
+}
+
+func TestDashboardStatusStripIncludesHealthAndCounts(t *testing.T) {
+	data := DashboardData{
+		PanelPath:   "/p-example/",
+		Period:      "24h",
+		IsBridge:    true,
+		HealthLabel: "All systems operational",
+		System:      SystemSnapshot{Uptime: "3d 4h"},
+		Users: []UserRow{
+			{Label: "alice", Enabled: true},
+			{Label: "bob", Enabled: false},
+		},
+		BridgeNodes: []bridge.Node{
+			{Tag: "de-1", Enabled: true},
+			{Tag: "nl-1", Enabled: true},
+		},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	for _, want := range []string{
+		`<span class="k">Mode</span>`,
+		`Bridge`,
+		`<span class="k">Uptime</span>`,
+		`<span class="k">Heartbeat</span>`,
+		`connecting`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard status strip missing %q:\n%s", want, html)
+		}
+	}
+	if got := strings.Count(html, `<div class="item">`); got != 3 {
+		t.Fatalf("dashboard status strip must render exactly 3 items, got %d:\n%s", got, html)
+	}
+}
+
+func TestDashboardUsesSharedTopbarActiveState(t *testing.T) {
+	data := DashboardData{
+		PanelPath:  "/p-example/",
+		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	if !strings.Contains(html, `class="nav-item" data-active="true" href="/p-example/dashboard"`) {
+		t.Fatalf("dashboard topbar must use shared active-state markup:\n%s", html)
 	}
 }
 
@@ -213,6 +269,97 @@ func TestCollectComponentVersionsSelfVersionMatchesPackage(t *testing.T) {
 				t.Errorf("component %q version = %q, want %q", c.Name, c.Version, version.Version)
 			}
 		}
+	}
+}
+
+func TestCollectDashboardDataIncludesUsersAndTrafficSeries(t *testing.T) {
+	s := newDashboardTestServer(t)
+	now := time.Now().Unix()
+	_, err := s.DB.Exec(`INSERT INTO users(label, secret_hex, enabled) VALUES('alice', '00112233445566778899aabbccddeeff', 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.DB.Exec(
+		`INSERT INTO traffic_samples(user_label, ts, bytes_in, bytes_out, connections) VALUES(?,?,?,?,?)`,
+		"alice", now-60, 20, 6, 2,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prev := dashboardHealthChecker
+	dashboardHealthChecker = func() health.Checker {
+		return health.Checker{
+			Systemd: func(string) (bool, error) { return true, nil },
+			HTTP:    func(string) error { return nil },
+			SOCKS5:  func(string, string) (time.Duration, error) { return 0, nil },
+		}
+	}
+	t.Cleanup(func() { dashboardHealthChecker = prev })
+
+	data := s.collectDashboardData(metrics.Period1h)
+
+	if data.IsBridge {
+		t.Fatal("expected single mode")
+	}
+	if len(data.Users) != 1 || data.Users[0].Label != "alice" {
+		t.Fatalf("users = %+v, want alice row", data.Users)
+	}
+	if len(data.TrafficSeries) != 60 {
+		t.Fatalf("len(TrafficSeries) = %d, want 60", len(data.TrafficSeries))
+	}
+	if !data.Healthy || data.HealthLabel == "" {
+		t.Fatalf("healthy summary = (%v, %q), want true and non-empty label", data.Healthy, data.HealthLabel)
+	}
+
+	var found bool
+	for _, bucket := range data.TrafficSeries {
+		if bucket.BytesIn == 20 && bucket.BytesOut == 6 && bucket.Connections == 2 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected traffic sample bucket in dashboard data")
+	}
+}
+
+func TestCollectDashboardDataLoadsBridgeNodes(t *testing.T) {
+	s := newDashboardTestServer(t)
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	writeNodeList(t, nodePath, bridge.NodeList{
+		Nodes: []bridge.Node{
+			{ID: 1, Type: bridge.NodeTypeTrojan, Tag: "de-1", Host: "de.example", Port: 443, Enabled: true, LastLatency: 42},
+		},
+		Strategy: "roundrobin",
+	})
+	s.BridgeCfg = &BridgeConfig{
+		Paths: config.InstallPaths{
+			OutboundsJSON: nodePath,
+		},
+	}
+
+	prev := dashboardHealthChecker
+	dashboardHealthChecker = func() health.Checker {
+		return health.Checker{
+			Systemd: func(string) (bool, error) { return true, nil },
+			HTTP:    func(string) error { return nil },
+			SOCKS5:  func(string, string) (time.Duration, error) { return 0, nil },
+		}
+	}
+	t.Cleanup(func() { dashboardHealthChecker = prev })
+
+	data := s.collectDashboardData(metrics.Period1h)
+
+	if !data.IsBridge {
+		t.Fatal("expected bridge mode")
+	}
+	if len(data.BridgeNodes) != 1 || data.BridgeNodes[0].Tag != "de-1" {
+		t.Fatalf("bridge nodes = %+v, want de-1", data.BridgeNodes)
+	}
+	if !data.Healthy || data.HealthLabel == "" {
+		t.Fatalf("healthy summary = (%v, %q), want true and non-empty label", data.Healthy, data.HealthLabel)
 	}
 }
 
@@ -360,6 +507,222 @@ func TestDashboardTopUsersFormatsTrafficBytes(t *testing.T) {
 	}
 	if !strings.Contains(html, "2.0 MB") {
 		t.Error("dashboard should format bytes out with binary units")
+	}
+}
+
+func TestDashboardTrafficFragmentRendersSeriesOverview(t *testing.T) {
+	var buf bytes.Buffer
+	dashboardTrafficFragment(&buf, DashboardData{
+		PanelPath: "/p-example/",
+		Period:    "24h",
+		TrafficSeries: []metrics.TrafficBucket{
+			{TS: 1, BytesIn: 1024, BytesOut: 512},
+			{TS: 2, BytesIn: 2048, BytesOut: 1024},
+		},
+	})
+
+	html := buf.String()
+	for _, want := range []string{
+		`class="traffic-overview"`,
+		`class="traffic-chart"`,
+		`traffic-chart-line-out`,
+		`traffic-chart-line-in`,
+		`Transferred`,
+		`4.5 KB`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("traffic fragment missing %q:\n%s", want, html)
+		}
+	}
+}
+
+func TestDashboardPageRendersKPIAndQuickActions(t *testing.T) {
+	data := DashboardData{
+		PanelPath:   "/p-example/",
+		Period:      "24h",
+		Healthy:     true,
+		HealthLabel: "All systems operational",
+		Users:       []UserRow{{Label: "alice"}, {Label: "bob"}},
+		LiveConnections: []metrics.Sample{
+			{UserLabel: "alice", Connections: 2},
+		},
+		TrafficSeries: []metrics.TrafficBucket{
+			{TS: 1, BytesIn: 1024, BytesOut: 512},
+		},
+		BridgeNodes: []bridge.Node{
+			{Tag: "de-1", Type: bridge.NodeTypeTrojan, Host: "de.example", Enabled: true, LastLatency: 42},
+		},
+		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	for _, want := range []string{
+		`class="kpi-grid"`,
+		`Throughput`,
+		`Active users`,
+		`Quick Actions`,
+		`href="/p-example/logs"`,
+		`data-action="users"`,
+		`data-action="bridge"`,
+		`Bridge Nodes`,
+		`ready`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard page missing %q:\n%s", want, html)
+		}
+	}
+}
+
+func TestDashboardBridgeSummaryLimitsPreviewAndLinksToBridge(t *testing.T) {
+	data := DashboardData{
+		PanelPath: "/p-example/",
+		Period:    "24h",
+		BridgeNodes: []bridge.Node{
+			{Tag: "de-1", Type: bridge.NodeTypeTrojan, Host: "de.example", Enabled: true, LastLatency: 42},
+			{Tag: "nl-1", Type: bridge.NodeTypeTrojan, Host: "nl.example", Enabled: true, LastLatency: 51},
+			{Tag: "fr-1", Type: bridge.NodeTypeTrojan, Host: "fr.example", Enabled: true, LastLatency: 66},
+			{Tag: "us-1", Type: bridge.NodeTypeTrojan, Host: "us.example", Enabled: true, LastLatency: 73},
+		},
+		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	for _, want := range []string{
+		`href="/p-example/bridge"`,
+		`Open Bridge`,
+		`de-1`,
+		`nl-1`,
+		`fr-1`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard bridge summary missing %q:\n%s", want, html)
+		}
+	}
+	if strings.Contains(html, `us-1`) {
+		t.Fatalf("dashboard bridge summary must limit preview nodes:\n%s", html)
+	}
+}
+
+func TestDashboardHealthFragmentIncludesSystemPanel(t *testing.T) {
+	var buf bytes.Buffer
+	dashboardHealthFragment(&buf, DashboardData{
+		PanelPath:   "/p-example/",
+		Period:      "24h",
+		HealthLabel: "All systems operational",
+		System:      SystemSnapshot{MemoryPercent: 62, DiskPercent: 41, LoadAvg: "0.42", Uptime: "3d 4h", Kernel: "6.8.0"},
+		Users:       []UserRow{{Label: "alice", Enabled: true}, {Label: "bob", Enabled: false}},
+		BridgeNodes: []bridge.Node{{Tag: "de-1", Enabled: true}},
+		Services:    []health.ServiceState{{Name: "teleproxy.service", Active: true, Message: "running"}},
+		IsBridge:    false,
+	})
+
+	html := buf.String()
+	for _, want := range []string{
+		`class="ops-health-grid"`,
+		`class="ops-system-panel"`,
+		`class="ops-system-metrics"`,
+		`Memory`,
+		`Disk`,
+		`Load avg`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("health fragment missing %q:\n%s", want, html)
+		}
+	}
+}
+
+func TestDashboardConnectionsFragmentIncludesSummaryMetrics(t *testing.T) {
+	var buf bytes.Buffer
+	dashboardConnectionsFragment(&buf, DashboardData{
+		PanelPath: "/p-example/",
+		Period:    "24h",
+		Users:     []UserRow{{Label: "alice"}, {Label: "bob"}, {Label: "carol"}},
+		LiveConnections: []metrics.Sample{
+			{UserLabel: "alice", Connections: 3},
+			{UserLabel: "bob", Connections: 1},
+		},
+	})
+
+	html := buf.String()
+	for _, want := range []string{
+		`class="ops-card-head"`,
+		`Users live`,
+		`class="connection-summary"`,
+		`Connections`,
+		`Configured`,
+		`Peak / user`,
+		`Open Users`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("connections fragment missing %q:\n%s", want, html)
+		}
+	}
+}
+
+func TestDashboardTrafficFragmentRendersDualSeriesChartAndLegend(t *testing.T) {
+	var buf bytes.Buffer
+	dashboardTrafficFragment(&buf, DashboardData{
+		PanelPath: "/p-example/",
+		Period:    "24h",
+		TrafficSeries: []metrics.TrafficBucket{
+			{TS: 1, BytesIn: 1024, BytesOut: 512},
+			{TS: 2, BytesIn: 2048, BytesOut: 1024},
+		},
+	})
+
+	html := buf.String()
+	for _, want := range []string{
+		`class="ops-card-title-row traffic-head"`,
+		`href="?period=1h"`,
+		`href="?period=24h" class="active"`,
+		`href="?period=7d"`,
+		`href="?period=30d"`,
+		`class="traffic-legend"`,
+		`traffic-chart-area traffic-chart-area-out`,
+		`traffic-chart-line traffic-chart-line-out`,
+		`traffic-chart-area traffic-chart-area-in`,
+		`traffic-chart-line traffic-chart-line-in`,
+		`Download`,
+		`Upload`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("traffic fragment missing %q:\n%s", want, html)
+		}
+	}
+}
+
+func TestDashboardComponentsFragmentIncludesComponentStatusGrid(t *testing.T) {
+	var buf bytes.Buffer
+	dashboardComponentsFragment(&buf, DashboardData{
+		PanelPath: "/p-example/",
+		Period:    "24h",
+		IsBridge:  false,
+		System:    SystemSnapshot{Kernel: "6.8.0", LoadAvg: "0.42"},
+		BridgeNodes: []bridge.Node{
+			{Tag: "de-1", Enabled: true},
+		},
+		Components: []ComponentVersion{
+			{Name: "tgproxy-panel", Version: "v0.0.0-test"},
+			{Name: "sing-box", Version: "unknown"},
+		},
+	})
+
+	html := buf.String()
+	for _, want := range []string{
+		`class="component-grid"`,
+		`class="component-card"`,
+		`Installed components`,
+		`Optional in Single mode`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("components fragment missing %q:\n%s", want, html)
+		}
 	}
 }
 

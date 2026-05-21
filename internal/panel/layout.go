@@ -5,6 +5,31 @@ import (
 	"reflect"
 )
 
+const sharedTopbar = `<header class="topbar">
+  <a class="brand" href="{{.PanelPath}}dashboard">
+    <span class="brand-mark">M</span>
+    <span class="brand-copy">
+      <span class="brand-name">MTProto Orchestrator</span>
+      <span class="brand-sub">Admin Panel</span>
+    </span>
+  </a>
+  <nav class="nav" aria-label="Primary">
+    <a class="nav-item"{{if navIsCurrent . "dashboard"}} data-active="true"{{end}} href="{{.PanelPath}}dashboard">Dashboard</a>
+    <a class="nav-item"{{if navIsCurrent . "users"}} data-active="true"{{end}} href="{{.PanelPath}}users">Users</a>
+    <a class="nav-item"{{if navIsCurrent . "bridge"}} data-active="true"{{end}} href="{{.PanelPath}}bridge">Bridge</a>
+    <a class="nav-item"{{if navIsCurrent . "logs"}} data-active="true"{{end}} href="{{.PanelPath}}logs">Logs</a>
+    <a class="nav-item"{{if navIsCurrent . "stubs"}} data-active="true"{{end}} href="{{.PanelPath}}settings/stubs">Stubs</a>
+    <a class="nav-item"{{if navIsCurrent . "certificates"}} data-active="true"{{end}} href="{{.PanelPath}}settings/certificates">Certificates</a>
+    <a class="nav-item"{{if navIsCurrent . "settings"}} data-active="true"{{end}} href="{{.PanelPath}}settings/proxy">Settings</a>
+  </nav>
+  <div class="nav-spacer"></div>
+  <form method="post" action="{{.PanelPath}}logout" class="inline logout-form">
+    <input type="hidden" name="{{csrfField .}}" value="{{csrfToken .}}" class="js-csrf">
+    <button type="submit" class="topbar-icon-btn" title="Sign out"><span aria-hidden="true">&rarr;</span><span class="sr-only">Sign out</span></button>
+  </form>
+  <div class="avatar" aria-hidden="true">AD</div>
+</header>`
+
 const baseLayout = `{{define "page_title"}}MTProto Orchestrator{{end}}
 {{define "base"}}<!DOCTYPE html>
 <html lang="en">
@@ -20,20 +45,12 @@ const baseLayout = `{{define "page_title"}}MTProto Orchestrator{{end}}
 {{block "head" .}}{{end}}
 </head>
 <body>
-<main class="shell">
-<nav class="nav" aria-label="Primary">
-    <a href="{{.PanelPath}}users">Users</a>
-    <a href="{{.PanelPath}}bridge">Bridge</a>
-    <a href="{{.PanelPath}}logs">Logs</a>
-    <a href="{{.PanelPath}}settings/stubs">Stubs</a>
-    <a href="{{.PanelPath}}settings/certificates">Certificates</a>
-    <a href="{{.PanelPath}}settings/proxy">Proxy</a>
-    <a href="{{.PanelPath}}settings/admin-password">Password</a>
-    <a href="{{.PanelPath}}settings/system">System</a>
-    <form method="post" action="{{.PanelPath}}logout" class="inline"><input type="hidden" name="{{csrfField .}}" value="{{csrfToken .}}" class="js-csrf"><button type="submit" class="logout">Logout</button></form>
-</nav>
+<div class="app">
+` + sharedTopbar + `
+<main class="page">
 {{block "content" .}}{{end}}
 </main>
+</div>
 </body>
 </html>
 {{end}}`
@@ -41,6 +58,7 @@ const baseLayout = `{{define "page_title"}}MTProto Orchestrator{{end}}
 var baseLayoutFuncs = template.FuncMap{
 	"csrfField": layoutCSRFField,
 	"csrfToken": layoutCSRFToken,
+	"navIsCurrent": layoutNavIsCurrent,
 }
 
 func layoutTemplate(name, content string, funcMap template.FuncMap) *template.Template {
@@ -61,6 +79,10 @@ func layoutCSRFField(_ any) string {
 
 func layoutCSRFToken(data any) string {
 	return stringField(data, "CSRFToken")
+}
+
+func layoutNavIsCurrent(data any, section string) bool {
+	return stringField(data, "CurrentNav") == section
 }
 
 func stringField(data any, name string) string {

@@ -3,6 +3,7 @@ package panel
 import (
 	"context"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -362,39 +363,157 @@ func saveNodeListWithRerenderRollback(s *Server, current bridge.NodeList, update
 // --- templates ---
 
 type bridgePageData struct {
-	CSRFField string
-	CSRFToken string
-	Nodes     []bridge.Node
-	Strategy  string
-	Flash     string // optional informational message
-	PanelPath string
+	CSRFField  string
+	CSRFToken  string
+	Nodes      []bridge.Node
+	Strategy   string
+	Flash      string // optional informational message
+	CurrentNav string
+	PanelPath  string
+}
+
+var bridgeTemplateFuncs = template.FuncMap{
+	"countEnabledBridgeNodes": func(nodes []bridge.Node) int {
+		count := 0
+		for _, node := range nodes {
+			if node.Enabled {
+				count++
+			}
+		}
+		return count
+	},
+	"countTestedBridgeNodes": func(nodes []bridge.Node) int {
+		count := 0
+		for _, node := range nodes {
+			if node.LastLatency > 0 {
+				count++
+			}
+		}
+		return count
+	},
+	"avgBridgeLatency": func(nodes []bridge.Node) int {
+		var sum, count int
+		for _, node := range nodes {
+			if node.LastLatency > 0 {
+				sum += int(node.LastLatency)
+				count++
+			}
+		}
+		if count == 0 {
+			return 0
+		}
+		return sum / count
+	},
+	"bridgeTypeTone": func(nodeType any) string {
+		switch fmt.Sprint(nodeType) {
+		case "vless-reality":
+			return "ok"
+		case "trojan", "hysteria2":
+			return "warn bridge-badge-warn"
+		case "shadowsocks", "tuic":
+			return "bridge-badge-neutral"
+		default:
+			return "bridge-badge-neutral"
+		}
+	},
+	"bridgeStatusTone": func(enabled bool) string {
+		if enabled {
+			return "ok"
+		}
+		return "down"
+	},
+	"bridgeLatencyTone": func(latency int64) string {
+		switch {
+		case latency <= 0:
+			return "neutral"
+		case latency <= 150:
+			return "success"
+		case latency <= 300:
+			return "warn"
+		default:
+			return "danger"
+		}
+	},
+	"bridgeLatencyPct": func(latency int64) int {
+		switch {
+		case latency <= 0:
+			return 0
+		case latency <= 100:
+			return 92
+		case latency <= 150:
+			return 78
+		case latency <= 250:
+			return 58
+		case latency <= 350:
+			return 38
+		default:
+			return 22
+		}
+	},
 }
 
 var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{end}}
 {{define "content"}}
-<style>
-.btn-warn{background:rgba(217,119,6,.15);color:#d97706;border-color:rgba(217,119,6,.3)}
-.btn-warn:hover{background:rgba(217,119,6,.25)}
-.flash{color:var(--accent);background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.2);padding:.75rem;border-radius:4px;margin-bottom:1rem}
-details{margin-bottom:1rem}
-summary{cursor:pointer;color:var(--accent)}
-</style>
-<h1>Bridge Mode</h1>
-
+<section class="page-head">
+  <div class="titles">
+    <p class="page-eyebrow">Routing</p>
+    <h1 class="page-title">Bridge Mode</h1>
+    <p class="page-sub">Manage outbound nodes, routing strategy, and the switch between Single and Bridge mode.</p>
+  </div>
+  <div class="actions">
+    <a class="page-cta" href="#add-node">Add node</a>
+    <nav class="page-nav" aria-label="Bridge navigation">
+      <a href="{{.PanelPath}}dashboard">Dashboard</a>
+      <a href="{{.PanelPath}}settings/proxy">Proxy settings</a>
+    </nav>
+  </div>
+</section>
+<section class="page-stack">
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+<section class="bridge-banner">
+  <div class="summary-grid">
+    <article class="summary-card">
+      <span class="summary-label">Nodes total</span>
+      <strong class="summary-value mono">{{len .Nodes}}</strong>
+      <span class="summary-note">Configured outbounds</span>
+    </article>
+    <article class="summary-card">
+      <span class="summary-label">Enabled</span>
+      <strong class="summary-value mono">{{countEnabledBridgeNodes .Nodes}}</strong>
+      <span class="summary-note">Eligible for routing</span>
+    </article>
+    <article class="summary-card">
+      <span class="summary-label">Latency tested</span>
+      <strong class="summary-value mono">{{countTestedBridgeNodes .Nodes}}</strong>
+      <span class="summary-note">Nodes with measured RTT</span>
+    </article>
+    <article class="summary-card">
+      <span class="summary-label">Avg latency</span>
+      <strong class="summary-value mono">{{if gt (avgBridgeLatency .Nodes) 0}}{{avgBridgeLatency .Nodes}}ms{{else}}—{{end}}</strong>
+      <span class="summary-note">{{if .Strategy}}{{.Strategy}}{{else}}urltest{{end}} strategy</span>
+    </article>
+  </div>
+  <nav class="settings-tabs" aria-label="Bridge sections">
+    <a class="active" href="#nodes">Nodes</a>
+    <a href="#add-node">Add node</a>
+    <a href="#routing-strategy">Routing</a>
+    <a href="#mode-control">Mode control</a>
+  </nav>
+</section>
 
-<h2>Add outbound node via share URL</h2>
-<form method="post" action="bridge/nodes/add" style="max-width:600px">
+<div id="add-node" class="card form-panel">
+<h2>Add Outbound Node via Share URL</h2>
+<form method="post" action="{{.PanelPath}}bridge/nodes/add" class="bridge-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Share URL (vless://, trojan://, ss://, hysteria2://, tuic://)</label>
 <input type="text" name="share_url" placeholder="vless://uuid@host:port?...#tag" required>
 <button type="submit">Add Node</button>
 </form>
+</div>
 
-<h2 style="margin-top:1.5rem">Add node manually</h2>
-<details>
-<summary>Expand manual add form</summary>
-<form method="post" action="bridge/nodes/add-manual" style="margin-top:1rem;max-width:600px">
+<details class="card disclosure">
+<summary>Add Node Manually</summary>
+<form method="post" action="{{.PanelPath}}bridge/nodes/add-manual" class="bridge-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Protocol</label>
 <select name="protocol" required>
@@ -431,41 +550,63 @@ summary{cursor:pointer;color:var(--accent)}
 </details>
 
 {{if .Nodes}}
-<h2 style="margin-top:2rem">Outbound nodes</h2>
+<div id="nodes" class="card table-card">
+<div class="card-body">
+<h2>Outbound Nodes</h2>
+<p class="panel-note">Status reflects whether the node is enabled in the Bridge config. Latency is shown only after a test run.</p>
+</div>
 <div class="table-wrap"><table>
 <thead><tr><th>Tag</th><th>Type</th><th>Host</th><th>Port</th><th>Status</th><th>Latency</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Nodes}}
 <tr>
-  <td>{{.Tag}}</td>
-  <td>{{.Type}}</td>
+  <td>
+    <strong>{{.Tag}}</strong>
+    {{if .SNI}}<div class="panel-note">{{.SNI}}</div>{{end}}
+  </td>
+  <td><span class="badge {{bridgeTypeTone .Type}}">{{.Type}}</span></td>
   <td>{{.Host}}</td>
   <td>{{.Port}}</td>
-  <td>{{if .Enabled}}<span class="ok">enabled</span>{{else}}<span class="muted">disabled</span>{{end}}</td>
-  <td>{{if .LastLatency}}{{.LastLatency}}ms{{else}}—{{end}}</td>
+  <td><span class="badge {{bridgeStatusTone .Enabled}}">{{if .Enabled}}enabled{{else}}disabled{{end}}</span></td>
   <td>
-    <form method="post" action="bridge/nodes/{{.ID}}/toggle" class="inline">
+    {{if .LastLatency}}
+      <div class="bridge-latency">
+        <span class="mono">{{.LastLatency}}ms</span>
+        <div class="ops-meter bridge-latency-meter" data-tone="{{bridgeLatencyTone .LastLatency}}">
+          <span style="width: {{bridgeLatencyPct .LastLatency}}%"></span>
+        </div>
+      </div>
+    {{else}}
+      <span class="muted">—</span>
+    {{end}}
+  </td>
+  <td>
+    <div class="bridge-actions">
+    <form method="post" action="{{$.PanelPath}}bridge/nodes/{{.ID}}/toggle" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit" class="btn-warn">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
     </form>
-    <form method="post" action="bridge/nodes/{{.ID}}/ping" class="inline">
+    <form method="post" action="{{$.PanelPath}}bridge/nodes/{{.ID}}/ping" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit">Test Latency</button>
     </form>
-    <a href="bridge/nodes/{{.ID}}/edit"><button type="button">Edit</button></a>
-    <form method="post" action="bridge/nodes/{{.ID}}/delete" class="inline"
+    <a href="{{$.PanelPath}}bridge/nodes/{{.ID}}/edit"><button type="button">Edit</button></a>
+    <form method="post" action="{{$.PanelPath}}bridge/nodes/{{.ID}}/delete" class="inline"
           onsubmit="return confirm('Delete node {{.Tag}}?')">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
       <button type="submit" class="danger">Delete</button>
     </form>
+    </div>
   </td>
 </tr>
 {{end}}
 </tbody>
 </table></div>
+</div>
 
-<h2 style="margin-top:2rem">Routing strategy</h2>
-<form method="post" action="bridge/strategy" style="max-width:400px">
+<div id="routing-strategy" class="card form-panel">
+<h2>Routing Strategy</h2>
+<form method="post" action="{{.PanelPath}}bridge/strategy" class="bridge-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <select name="strategy">
   <option value="urltest"{{if eq .Strategy "urltest"}} selected{{end}}{{if eq .Strategy ""}} selected{{end}}>urltest (auto — lowest latency)</option>
@@ -475,34 +616,50 @@ summary{cursor:pointer;color:var(--accent)}
 </select>
 <button type="submit">Save Strategy</button>
 </form>
+</div>
 
-<h2 style="margin-top:2rem">Mode control</h2>
-<form method="post" action="bridge/enable" style="max-width:600px">
+<div id="mode-control" class="card form-panel">
+<h2>Mode Control</h2>
+<form method="post" action="{{.PanelPath}}bridge/enable" class="bridge-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Enable Bridge with share URL</label>
 <input type="text" name="vless_url" placeholder="vless://...#tag (VLESS Reality only for first enable)">
 <button type="submit">Enable Bridge</button>
 </form>
-<form method="post" action="bridge/disable" style="margin-top:1rem">
+<form method="post" action="{{.PanelPath}}bridge/disable" class="bridge-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <button type="submit" class="danger">Disable Bridge (return to Single)</button>
 </form>
+</div>
 {{end}}
-
-<p style="margin-top:2rem"><a href="{{.PanelPath}}dashboard">← Dashboard</a></p>
+</section>
 {{end}}
-{{template "base" .}}`, nil)
+{{template "base" .}}`, bridgeTemplateFuncs)
 
 func bridgePage(w io.Writer, data bridgePageData) {
+	if data.CurrentNav == "" {
+		data.CurrentNav = "bridge"
+	}
 	bridgeTmpl.Execute(w, data) //nolint:errcheck
 }
 
 // editNodeTmpl is the template for the node edit form.
 var editNodeTmpl = layoutTemplate("editNode", `{{define "page_title"}}Edit Node{{end}}
 {{define "content"}}
-<h1>Edit Node: {{.Node.Tag}}</h1>
+<section class="page-head">
+  <div class="titles">
+    <p class="page-eyebrow">Routing</p>
+    <h1 class="page-title">Edit Node: {{.Node.Tag}}</h1>
+    <p class="page-sub">Update visible routing fields. Secret material is intentionally not shown here.</p>
+  </div>
+  <nav class="page-nav" aria-label="Edit node navigation">
+    <a href="{{.PanelPath}}bridge">Back to bridge</a>
+    <a href="{{.PanelPath}}dashboard">Dashboard</a>
+  </nav>
+</section>
+<div class="card form-panel">
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="post" action="" style="max-width:480px">
+<form method="post" action="" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Tag (name)</label>
 <input type="text" name="tag" value="{{.Node.Tag}}" required>
@@ -518,22 +675,26 @@ var editNodeTmpl = layoutTemplate("editNode", `{{define "page_title"}}Edit Node{
 <input type="text" name="method" value="{{.Node.Method}}">
 <label>Congestion Control (TUIC)</label>
 <input type="text" name="congestion_control" value="{{.Node.CongestionControl}}">
-<p style="color:var(--muted);font-size:.875rem">Credentials (UUID, password, public key, short ID) are not shown and cannot be changed here. Delete and re-add the node to change credentials.</p>
+<p class="field-hint">Credentials (UUID, password, public key, short ID) are not shown and cannot be changed here. Delete and re-add the node to change credentials.</p>
 <button type="submit">Save</button>
 </form>
-<p><a href="{{.PanelPath}}bridge">← Back</a></p>
+</div>
 {{end}}
 {{template "base" .}}`, nil)
 
 type editNodePageData struct {
-	CSRFField string
-	CSRFToken string
-	Node      bridge.Node
-	Error     string
-	PanelPath string
+	CSRFField  string
+	CSRFToken  string
+	Node       bridge.Node
+	Error      string
+	CurrentNav string
+	PanelPath  string
 }
 
 func editNodePage(w io.Writer, data editNodePageData) {
+	if data.CurrentNav == "" {
+		data.CurrentNav = "bridge"
+	}
 	editNodeTmpl.Execute(w, data) //nolint:errcheck
 }
 

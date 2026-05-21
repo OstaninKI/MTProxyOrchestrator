@@ -116,6 +116,17 @@ func TestLoginPageUsesLocalCSSWithoutInlineStyle(t *testing.T) {
 	if !strings.Contains(html, `href="/p-example/assets/panel.css"`) {
 		t.Fatalf("login page should load local CSS asset, got:\n%s", html)
 	}
+	for _, want := range []string{
+		`class="login-page"`,
+		`class="app login-app"`,
+		`class="login-shell"`,
+		`class="card login-card"`,
+		`name="_csrf" value="`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("login page missing %q:\n%s", want, html)
+		}
+	}
 	if strings.Contains(html, "<style>") {
 		t.Fatalf("login page must not use inline style blocks")
 	}
@@ -150,6 +161,51 @@ func TestPanelPathWithoutTrailingSlashServesLoginAssets(t *testing.T) {
 	}
 	if strings.Contains(html, "/p-exampleassets/") {
 		t.Fatalf("login page contains malformed asset path:\n%s", html)
+	}
+}
+
+func TestLogsPageUsesPanelAssetScriptAndLegacyCSP(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	req := httptest.NewRequest(http.MethodGet, "/p-example/logs", nil)
+	req.AddCookie(sessionCookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /p-example/logs: want 200, got %d body: %s", w.Code, w.Body.String())
+	}
+
+	html := w.Body.String()
+	for _, want := range []string{
+		`href="/p-example/assets/panel.css"`,
+		`src="/p-example/assets/panel.js"`,
+		`data-logs-page`,
+		`data-panel-path="/p-example"`,
+		`data-logs-role="download"`,
+		`action="/p-example/logout"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("logs page missing %q:\n%s", want, html)
+		}
+	}
+	for _, forbidden := range []string{"new WebSocket(", "buildWsURL", "<style>"} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("logs page should not inline logs behavior token %q:\n%s", forbidden, html)
+		}
+	}
+
+	csp := w.Header().Get("Content-Security-Policy")
+	for _, want := range []string{"'unsafe-inline'", "connect-src 'self' wss:"} {
+		if !strings.Contains(csp, want) {
+			t.Fatalf("logs page CSP %q missing legacy token %q", csp, want)
+		}
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("logs page Cache-Control = %q, want no-store", got)
 	}
 }
 
@@ -259,6 +315,65 @@ func TestSettingsCertificatesPageUsesNoStore(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), `style="`) {
 		t.Fatalf("certificates page must not render inline styles under strict CSP:\n%s", w.Body.String())
+	}
+	for _, want := range []string{
+		`class="summary-grid"`,
+		`Current certificate`,
+		`Renewal Summary`,
+		`class="summary-list cert-details"`,
+	} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("certificates page missing %q:\n%s", want, w.Body.String())
+		}
+	}
+}
+
+func TestSettingsStubsPagesRenderSummaryCards(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	for _, tc := range []struct {
+		path string
+		want []string
+	}{
+		{
+			path: "/p-example/settings/stubs",
+			want: []string{
+				`class="summary-grid"`,
+				`Upload Custom Template`,
+				`Template Notes`,
+				`Browse remote templates`,
+			},
+		},
+		{
+			path: "/p-example/settings/stubs/remote",
+			want: []string{
+				`class="summary-grid"`,
+				`learning-zone/website-templates`,
+				`Remote Templates`,
+				`Source:`,
+			},
+		},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s: want 200, got %d body: %s", tc.path, w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		if strings.Contains(body, `style="`) {
+			t.Fatalf("%s must not render inline styles:\n%s", tc.path, body)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s missing %q:\n%s", tc.path, want, body)
+			}
+		}
 	}
 }
 

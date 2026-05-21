@@ -31,8 +31,19 @@ var wsUpgrader = websocket.Upgrader{
 // handleLogsPage serves the logs HTML page (requires auth via middleware).
 func (s *Server) handleLogsPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	panelPath := strings.TrimSuffix(s.PanelPath, "/")
-	logsPage(w, panelPath)
+	csrfToken, err := NewCSRFToken()
+	if err != nil {
+		http.Error(w, "failed to create csrf token", http.StatusInternalServerError)
+		return
+	}
+	SetCSRFCookie(w, csrfToken, s.Secure, s.PanelPath)
+	logsPage(w, logsPageData{
+		PanelPath: normalizePanelPath(s.PanelPath),
+		BasePath:  panelPath,
+		CSRFToken: csrfToken,
+	})
 }
 
 // handleLogsStream upgrades to a WebSocket and streams log entries.

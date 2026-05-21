@@ -12,6 +12,424 @@
     });
   }
 
-  document.addEventListener("DOMContentLoaded", fillCSRF);
-  document.body.addEventListener("htmx:afterSwap", fillCSRF);
+  function initLogsPage() {
+    const root = document.querySelector("[data-logs-page]");
+    if (!root || root.dataset.logsInitialized === "true") return;
+
+    const container = root.querySelector('[data-logs-role="container"]');
+    const statusEl = root.querySelector('[data-logs-role="status"]');
+    const btnPause = root.querySelector('[data-logs-role="pause"]');
+    const btnClear = root.querySelector('[data-logs-role="clear"]');
+    const btnDownload = root.querySelector('[data-logs-role="download"]');
+    const componentSelect = root.querySelector('[data-logs-role="component"]');
+    const levelSelect = root.querySelector('[data-logs-role="level"]');
+    const levelButtons = Array.from(root.querySelectorAll("[data-level]"));
+    const searchInput = root.querySelector('[data-logs-role="search"]');
+    const autoScrollButton = root.querySelector('[data-logs-role="autoscroll"]');
+    const bufferedCount = root.querySelector('[data-logs-role="count-buffered"]');
+    const infoCount = root.querySelector('[data-logs-role="count-info"]');
+    const warnCount = root.querySelector('[data-logs-role="count-warn"]');
+    const errorCount = root.querySelector('[data-logs-role="count-error"]');
+    const footerSummary = root.querySelector('[data-logs-role="summary"]');
+    const footerChip = root.querySelector('[data-logs-role="buffer-chip"]');
+    const basePath = root.dataset.panelPath;
+
+    if (
+      !container ||
+      !statusEl ||
+      !btnPause ||
+      !btnClear ||
+      !btnDownload ||
+      !componentSelect ||
+      !levelSelect ||
+      !levelButtons.length ||
+      !searchInput ||
+      !autoScrollButton ||
+      !bufferedCount ||
+      !infoCount ||
+      !warnCount ||
+      !errorCount ||
+      !footerSummary ||
+      !footerChip ||
+      !basePath
+    ) {
+      return;
+    }
+
+    root.dataset.logsInitialized = "true";
+
+    let paused = false;
+    let autoScroll = true;
+    let searchTimer = 0;
+    let reconnectTimer = 0;
+    let ws = null;
+    let counts = { buffered: 0, info: 0, warn: 0, error: 0 };
+
+    function renderLevelButtons() {
+      levelButtons.forEach((button) => {
+        const active = button.dataset.level === levelSelect.value;
+        button.classList.toggle("active", active);
+      });
+    }
+
+    function renderAutoScrollButton() {
+      autoScrollButton.classList.toggle("active", autoScroll);
+      autoScrollButton.textContent = autoScroll ? "Auto-scroll" : "Manual scroll";
+    }
+
+    function renderCounts() {
+      bufferedCount.textContent = String(counts.buffered);
+      infoCount.textContent = String(counts.info);
+      warnCount.textContent = String(counts.warn);
+      errorCount.textContent = String(counts.error);
+      footerChip.textContent = `${counts.buffered} buffered`;
+      footerSummary.textContent =
+        `${componentSelect.value} · ${levelSelect.value} · ${counts.buffered} visible lines`;
+    }
+
+    function resetBuffer() {
+      counts = { buffered: 0, info: 0, warn: 0, error: 0 };
+      renderCounts();
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+    }
+
+    function clearReconnectTimer() {
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = 0;
+      }
+    }
+
+    function levelClass(level) {
+      switch (level) {
+        case "error":
+          return "error";
+        case "warn":
+          return "warn";
+        case "debug":
+          return "debug";
+        default:
+          return "info";
+      }
+    }
+
+    function buildWsURL() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const query = new URLSearchParams({
+        component: componentSelect.value,
+        level: levelSelect.value,
+        q: searchInput.value,
+      });
+      return `${protocol}//${window.location.host}${basePath}/logs/stream?${query.toString()}`;
+    }
+
+    function buildDownloadURL() {
+      const query = new URLSearchParams({ component: componentSelect.value });
+      return `${basePath}/logs/download?${query.toString()}`;
+    }
+
+    function appendEntry(entry) {
+      if (paused) return;
+
+      const line = document.createElement("div");
+      line.className = `log-line ${levelClass(entry.level)}`;
+
+      const timestamp = entry.time
+        ? new Date(entry.time).toISOString().replace("T", " ").replace("Z", "")
+        : "";
+      const level = (entry.level || "info").toUpperCase();
+      line.textContent = `${timestamp} [${level}] ${entry.message || ""}`;
+
+      container.appendChild(line);
+      counts.buffered += 1;
+      if (entry.level === "warn") counts.warn += 1;
+      else if (entry.level === "error") counts.error += 1;
+      else counts.info += 1;
+
+      while (container.children.length > 2000) {
+        const first = container.firstChild;
+        if (first && first.classList) {
+          counts.buffered = Math.max(0, counts.buffered - 1);
+          if (first.classList.contains("warn")) counts.warn = Math.max(0, counts.warn - 1);
+          else if (first.classList.contains("error")) counts.error = Math.max(0, counts.error - 1);
+          else counts.info = Math.max(0, counts.info - 1);
+        }
+        container.removeChild(first);
+      }
+      renderCounts();
+
+      if (autoScroll) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    function closeSocket() {
+      if (!ws) return;
+      const current = ws;
+      ws = null;
+      current.onclose = null;
+      current.close();
+    }
+
+    function scheduleReconnect() {
+      clearReconnectTimer();
+      reconnectTimer = window.setTimeout(connect, 5000);
+    }
+
+    function connect() {
+      clearReconnectTimer();
+      closeSocket();
+      statusEl.textContent = "Connecting…";
+
+      ws = new WebSocket(buildWsURL());
+      ws.onopen = () => {
+        statusEl.textContent = `Connected — ${componentSelect.value} / ${levelSelect.value}`;
+      };
+      ws.onmessage = (event) => {
+        try {
+          appendEntry(JSON.parse(event.data));
+        } catch (_) {}
+      };
+      ws.onerror = () => {
+        statusEl.textContent = "Connection error";
+      };
+      ws.onclose = (event) => {
+        ws = null;
+        statusEl.textContent = `Disconnected (code ${event.code}). Reconnecting in 5s…`;
+        scheduleReconnect();
+      };
+    }
+
+    function reapply() {
+      btnDownload.href = buildDownloadURL();
+      resetBuffer();
+      connect();
+    }
+
+    container.addEventListener("scroll", () => {
+      const threshold = 40;
+      autoScroll =
+        container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+      renderAutoScrollButton();
+    });
+
+    btnPause.addEventListener("click", () => {
+      paused = !paused;
+      btnPause.textContent = paused ? "Resume" : "Pause";
+      btnPause.classList.toggle("paused", paused);
+    });
+
+    btnClear.addEventListener("click", () => {
+      resetBuffer();
+    });
+
+    componentSelect.addEventListener("change", reapply);
+    levelSelect.addEventListener("change", reapply);
+    levelButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        if (levelSelect.value === button.dataset.level) return;
+        levelSelect.value = button.dataset.level;
+        renderLevelButtons();
+        reapply();
+      });
+    });
+    searchInput.addEventListener("input", () => {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(reapply, 400);
+    });
+    autoScrollButton.addEventListener("click", () => {
+      autoScroll = !autoScroll;
+      renderAutoScrollButton();
+      if (autoScroll) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+
+    window.addEventListener(
+      "beforeunload",
+      () => {
+        clearReconnectTimer();
+        closeSocket();
+      },
+      { once: true },
+    );
+
+    btnDownload.href = buildDownloadURL();
+    renderCounts();
+    renderLevelButtons();
+    renderAutoScrollButton();
+    connect();
+  }
+
+  function initUsersPage() {
+    const root = document.querySelector("[data-users-page]");
+    if (!root || root.dataset.usersInitialized === "true") return;
+
+    const searchInput = root.querySelector('[data-users-role="search"]');
+    const statusSelect = root.querySelector('[data-users-role="status"]');
+    const sortSelect = root.querySelector('[data-users-role="sort"]');
+    const countEl = root.querySelector('[data-users-role="count"]');
+    const table = document.querySelector(".users-table");
+
+    if (!searchInput || !statusSelect || !sortSelect || !countEl || !table || !table.tBodies.length) {
+      return;
+    }
+
+    const tbody = table.tBodies[0];
+    const rows = Array.from(tbody.querySelectorAll("[data-user-row]"));
+    if (!rows.length) return;
+
+    root.dataset.usersInitialized = "true";
+
+    function asNumber(value) {
+      const n = Number.parseInt(value || "0", 10);
+      return Number.isNaN(n) ? 0 : n;
+    }
+
+    function matchesStatus(row, status) {
+      if (status === "all") return true;
+      if (status === "enabled") return row.dataset.enabled === "true";
+      if (status === "disabled") return row.dataset.enabled !== "true";
+      if (status === "suspended") return row.dataset.suspended === "true";
+      return (row.dataset.connection || "").toLowerCase() === status;
+    }
+
+    function compareRows(a, b, sort) {
+      if (sort === "created-desc") return asNumber(b.dataset.created) - asNumber(a.dataset.created);
+      if (sort === "traffic-desc") return asNumber(b.dataset.traffic) - asNumber(a.dataset.traffic);
+      if (sort === "connections-desc") return asNumber(b.dataset.connections) - asNumber(a.dataset.connections);
+      return (a.dataset.label || "").localeCompare(b.dataset.label || "", undefined, { sensitivity: "base" });
+    }
+
+    function applyUsersState() {
+      const query = searchInput.value.trim().toLowerCase();
+      const status = statusSelect.value;
+      const sort = sortSelect.value;
+      const sortedRows = rows.slice().sort((a, b) => compareRows(a, b, sort));
+      let visible = 0;
+
+      sortedRows.forEach((row) => {
+        const label = (row.dataset.label || "").toLowerCase();
+        const show = (!query || label.includes(query)) && matchesStatus(row, status);
+        row.hidden = !show;
+        if (show) visible += 1;
+        tbody.appendChild(row);
+      });
+
+      countEl.textContent = `${visible} user${visible === 1 ? "" : "s"}`;
+    }
+
+    searchInput.addEventListener("input", applyUsersState);
+    statusSelect.addEventListener("change", applyUsersState);
+    sortSelect.addEventListener("change", applyUsersState);
+    applyUsersState();
+  }
+
+  function initPasswordPage() {
+    const root = document.querySelector("[data-password-page]");
+    if (!root || root.dataset.passwordInitialized === "true") return;
+
+    const toggles = Array.from(root.querySelectorAll('[data-password-role="toggle"]'));
+    const strengthSource = root.querySelector("[data-password-strength-source]");
+    const confirmField = root.querySelector("[data-password-confirm]");
+    const strengthMeter = root.querySelector('[data-password-role="strength-meter"] span');
+    const strengthTone = root.querySelector('[data-password-role="strength-meter"]');
+    const strengthNote = root.querySelector('[data-password-role="strength-note"]');
+    const matchNote = root.querySelector('[data-password-role="match-note"]');
+
+    if (!toggles.length || !strengthSource || !confirmField || !strengthMeter || !strengthTone || !strengthNote || !matchNote) {
+      return;
+    }
+
+    root.dataset.passwordInitialized = "true";
+
+    function scorePassword(value) {
+      let score = 0;
+      if (value.length >= 16) score += 50;
+      else score += Math.min(40, value.length * 2);
+      if (/[a-zA-Z]/.test(value)) score += 20;
+      if (/\d/.test(value)) score += 20;
+      if (/[^a-zA-Z0-9]/.test(value)) score += 10;
+      return Math.min(100, score);
+    }
+
+    function renderStrength() {
+      const value = strengthSource.value;
+      const score = scorePassword(value);
+      let tone = "danger";
+      let note = "Minimum 16 characters, must contain letters and digits.";
+
+      if (score >= 85) {
+        tone = "success";
+        note = "Strong password.";
+      } else if (score >= 65) {
+        tone = "warn";
+        note = "Acceptable, but a longer passphrase is better.";
+      } else if (value.length > 0) {
+        tone = "danger";
+        note = "Too weak. Increase length and mix letters with digits.";
+      }
+
+      strengthMeter.style.width = `${score}%`;
+      strengthTone.dataset.tone = tone;
+      strengthNote.textContent = note;
+    }
+
+    function renderMatch() {
+      if (!confirmField.value) {
+        matchNote.textContent = "Repeat the new password exactly.";
+        matchNote.classList.remove("success", "error");
+        return;
+      }
+      if (confirmField.value === strengthSource.value) {
+        matchNote.textContent = "Passwords match.";
+        matchNote.classList.add("success");
+        matchNote.classList.remove("error");
+        return;
+      }
+      matchNote.textContent = "Passwords do not match.";
+      matchNote.classList.add("error");
+      matchNote.classList.remove("success");
+    }
+
+    toggles.forEach((toggle) => {
+      toggle.addEventListener("click", () => {
+        const input = root.querySelector(`#${toggle.dataset.passwordTarget}`);
+        if (!input) return;
+        const nextType = input.type === "password" ? "text" : "password";
+        input.type = nextType;
+        toggle.textContent = nextType === "password" ? "Show" : "Hide";
+      });
+    });
+
+    strengthSource.addEventListener("input", () => {
+      renderStrength();
+      renderMatch();
+    });
+    confirmField.addEventListener("input", renderMatch);
+    renderStrength();
+    renderMatch();
+  }
+
+  function initPanelPage() {
+    fillCSRF();
+    initLogsPage();
+    initUsersPage();
+    initPasswordPage();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initPanelPage);
+  } else {
+    initPanelPage();
+  }
+
+  document.body.addEventListener("htmx:afterSwap", () => {
+    fillCSRF();
+    initLogsPage();
+    initUsersPage();
+    initPasswordPage();
+  });
 })();

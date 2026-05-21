@@ -26,6 +26,27 @@ func TestPanelAssetsServedUnderPanelPath(t *testing.T) {
 	if cc := rec.Header().Get("Cache-Control"); cc != "public, max-age=3600" {
 		t.Fatalf("Cache-Control = %q, want %q", cc, "public, max-age=3600")
 	}
+	css := rec.Body.String()
+	for _, want := range []string{
+		`:root {`,
+		`font-family: "Geist", "Geist Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;`,
+		`font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;`,
+		`.app {`,
+		`.topbar {`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("panel.css missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"fonts.googleapis.com",
+		"fonts.gstatic.com",
+		"@import url(",
+	} {
+		if strings.Contains(css, forbidden) {
+			t.Fatalf("panel.css must not reference remote font asset %q", forbidden)
+		}
+	}
 }
 
 func TestPanelAssetsVendoredUseImmutableCacheHeaders(t *testing.T) {
@@ -72,6 +93,24 @@ func TestSecurityHeadersUseLocalOnlyAssets(t *testing.T) {
 	for _, required := range []string{"default-src 'self'", "script-src 'self'", "style-src 'self'", "connect-src 'self'"} {
 		if !strings.Contains(csp, required) {
 			t.Fatalf("CSP %q missing %q", csp, required)
+		}
+	}
+	html := rec.Body.String()
+	for _, want := range []string{
+		`class="app"`,
+		`class="topbar"`,
+		`Dashboard`,
+		`Users`,
+		`Bridge`,
+		`Logs`,
+		`Stubs`,
+		`Certificates`,
+		`Settings`,
+		`class="inline logout-form"`,
+		`class="topbar-icon-btn" title="Sign out"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard shell missing %q:\n%s", want, html)
 		}
 	}
 }

@@ -199,7 +199,11 @@ func (s *Server) handleTOTPVerifyForm(w http.ResponseWriter, r *http.Request) {
 	}
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	totpVerifyPage(w, totpVerifyData{CSRFField: CSRFField(), CSRFToken: tok})
+	totpVerifyPage(w, totpVerifyData{
+		CSRFField: CSRFField(),
+		CSRFToken: tok,
+		PanelPath: s.PanelPath,
+	})
 }
 
 // handleTOTPVerifySubmit consumes a valid TOTP or recovery code and finalises
@@ -256,6 +260,7 @@ func (s *Server) handleTOTPVerifySubmit(w http.ResponseWriter, r *http.Request) 
 			CSRFField: CSRFField(),
 			CSRFToken: tok,
 			Error:     "Invalid code",
+			PanelPath: s.PanelPath,
 		})
 		return
 	}
@@ -561,15 +566,17 @@ type totpVerifyData struct {
 	CSRFField string
 	CSRFToken string
 	Error     string
+	PanelPath string
 }
 
 type totpSettingsData struct {
-	CSRFField string
-	CSRFToken string
-	Enabled   bool
-	Success   string
-	Error     string
-	PanelPath string
+	CSRFField  string
+	CSRFToken  string
+	Enabled    bool
+	Success    string
+	Error      string
+	CurrentNav string
+	PanelPath  string
 }
 
 type totpEnrollData struct {
@@ -579,6 +586,7 @@ type totpEnrollData struct {
 	OTPAuthURL  string
 	QRPNGBase64 string
 	Error       string
+	CurrentNav  string
 	PanelPath   string
 }
 
@@ -587,35 +595,38 @@ type totpRecoveryData struct {
 	CSRFToken     string
 	RecoveryCodes []string
 	Heading       string
+	CurrentNav    string
 	PanelPath     string
 }
 
 var totpVerifyTmpl = template.Must(template.New("totp_verify").Parse(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Two-factor verification</title>
-<style>
-:root{--bg:#09090b;--card:#101014;--card2:#15151b;--border:#27272f;--text:#f4f4f5;--muted:#a1a1aa;--accent:#38bdf8;--bad:#f43f5e}
-*{box-sizing:border-box}
-body{font-family:Aptos,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:radial-gradient(circle at 18% -8%,rgba(56,189,248,.2),transparent 34%),linear-gradient(135deg,#09090b,#111116 48%,#0c0f14);color:var(--text)}
-.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--border);padding:2rem;border-radius:8px;width:320px}
-h1{margin:0 0 1rem;font-size:1.2rem}label{display:block;margin-bottom:.25rem;font-size:.875rem;color:var(--muted)}
-input{width:100%;box-sizing:border-box;padding:.5rem .75rem;border:1px solid var(--border);border-radius:6px;margin-bottom:1rem;font-size:1rem;background:var(--card);color:var(--text)}
-input:focus{outline:none;border-color:var(--accent)}
-button{width:100%;padding:.6rem;background:rgba(56,189,248,.15);color:var(--accent);border:1px solid rgba(56,189,248,.3);border-radius:6px;font-size:1rem;cursor:pointer}
-button:hover{background:rgba(56,189,248,.25)}
-.error{color:var(--bad);margin-bottom:1rem;font-size:.875rem}p.hint{font-size:.8rem;color:var(--muted)}
-</style>
-</head><body><div class="card">
-<h1>Two-factor verification</h1>
+<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css">
+</head>
+<body class="login-page">
+<div class="app login-app">
+<main class="login-shell">
+<div class="card login-card">
+<p class="page-eyebrow">MTProto Orchestrator</p>
+<h1>Two-Factor Verification</h1>
+<p class="page-sub">Enter the code from your authenticator app or one of your recovery codes.</p>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="post" action="totp/verify">
+<form method="post" action="{{.PanelPath}}totp/verify">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Authenticator code or recovery code</label>
 <input type="text" name="code" autocomplete="one-time-code" required autofocus>
 <button type="submit">Verify</button>
 </form>
-<p class="hint">Lost your device? Enter one of your recovery codes.</p>
-</div></body></html>`))
+<p class="panel-note">Lost your device? Enter one of your recovery codes.</p>
+</div>
+</main>
+</div>
+</body>
+</html>`))
 
 func totpVerifyPage(w io.Writer, data totpVerifyData) {
 	totpVerifyTmpl.Execute(w, data) //nolint:errcheck
@@ -623,78 +634,301 @@ func totpVerifyPage(w io.Writer, data totpVerifyData) {
 
 var totpSettingsTmpl = layoutTemplate("totp_settings", `{{define "page_title"}}Two-factor authentication{{end}}
 {{define "content"}}
-<style>.box{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:1rem;margin-bottom:1rem}</style>
-<h1>Two-factor authentication</h1>
-<p><a href="../dashboard">← Dashboard</a> &nbsp;|&nbsp; <a href="admin-password">Admin password</a></p>
+<section class="page-head">
+  <div class="titles">
+    <p class="page-eyebrow">Settings</p>
+    <h1 class="page-title">Two-Factor Authentication</h1>
+    <p class="page-sub">Protect panel logins with authenticator codes and one-time recovery codes.</p>
+  </div>
+</section>
+<section class="page-stack">
+<nav class="settings-tabs" aria-label="Two-factor tabs">
+  <a href="{{.PanelPath}}settings/proxy">Endpoint &amp; Proxy</a>
+  <a href="{{.PanelPath}}settings/admin-password">Admin password</a>
+  <a href="{{.PanelPath}}settings/system">System</a>
+  <a class="active" href="{{.PanelPath}}settings/totp">Two-factor</a>
+</nav>
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
-{{if .Enabled}}
-<div class="box"><strong>Status:</strong> enabled.</div>
+<section class="summary-grid">
+  <article class="summary-card">
+    <span class="summary-label">Protection status</span>
+    <strong class="summary-value">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</strong>
+    <span class="summary-note">{{if .Enabled}}A second factor is required after password validation{{else}}Panel login currently relies on password only{{end}}</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Login gate</span>
+    <strong class="summary-value">TOTP</strong>
+    <span class="summary-note">Authenticator code or one-time recovery code can complete sign-in</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Recovery mode</span>
+    <strong class="summary-value">{{if .Enabled}}Available{{else}}Pending{{end}}</strong>
+    <span class="summary-note">{{if .Enabled}}Recovery codes can be rotated from this screen{{else}}Codes are generated when two-factor is enabled{{end}}</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Operator action</span>
+    <strong class="summary-value">{{if .Enabled}}Maintain{{else}}Enable{{end}}</strong>
+    <span class="summary-note">{{if .Enabled}}Disable or regenerate recovery codes with a fresh code{{else}}Start setup and confirm from your authenticator app{{end}}</span>
+  </article>
+</section>
 
-<form method="post" action="totp/disable" style="max-width:480px;margin-bottom:1.5rem">
+{{if .Enabled}}
+<div class="stack-split">
+<div class="page-stack">
+<div class="card form-panel">
+<div class="card-body">
+<h2>Disable Two-Factor</h2>
+<p class="panel-note">Require the current authenticator code or a valid recovery code before removing the second login factor.</p>
+</div>
+<form method="post" action="{{.PanelPath}}settings/totp/disable" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Disable two-factor — enter current code</label>
+<label>Current authenticator or recovery code</label>
 <input type="text" name="code" autocomplete="one-time-code" required>
+<p class="field-hint">Disabling two-factor clears the stored secret and the existing recovery code set.</p>
 <button class="danger" type="submit">Disable</button>
 </form>
+</div>
 
-<form method="post" action="totp/regenerate" style="max-width:480px">
+<div class="card form-panel">
+<div class="card-body">
+<h2>Rotate Recovery Codes</h2>
+<p class="panel-note">Generate a fresh one-time recovery set after validating the current authenticator code.</p>
+</div>
+<form method="post" action="{{.PanelPath}}settings/totp/regenerate" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Regenerate recovery codes — enter current code</label>
+<label>Current authenticator code</label>
 <input type="text" name="code" autocomplete="one-time-code" required>
+<p class="field-hint">Previously generated recovery codes are invalidated as soon as a new set is issued.</p>
 <button type="submit">Regenerate codes</button>
 </form>
+</div>
+ </div>
+<aside class="card side-panel">
+<h2>Setup Notes</h2>
+<div class="summary-list">
+  <div class="summary-row">
+    <span class="badge ok">Active</span>
+    <span class="summary-copy"><strong>Second factor enforced</strong><span>Password login now requires a current authenticator or recovery code.</span></span>
+  </div>
+  <div class="summary-row">
+    <span class="badge warn">Recovery</span>
+    <span class="summary-copy"><strong>One-time only</strong><span>Each recovery code can be consumed once and should be stored offline.</span></span>
+  </div>
+  <div class="summary-row">
+    <span class="badge">Audit</span>
+    <span class="summary-copy"><strong>Administrative action</strong><span>Enable, disable, and regeneration events are recorded in the panel audit trail.</span></span>
+  </div>
+</div>
+</aside>
+</div>
 {{else}}
-<div class="box"><strong>Status:</strong> disabled.</div>
-<form method="post" action="totp/begin">
+<div class="stack-split">
+<div class="card form-panel">
+<div class="card-body">
+<h2>Enable Two-Factor</h2>
+<p class="panel-note">Start enrollment to generate a TOTP secret, scan it into an authenticator app, and confirm with a current code.</p>
+</div>
+<form method="post" action="{{.PanelPath}}settings/totp/begin" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <button type="submit">Enable two-factor</button>
 </form>
+</div>
+<aside class="card side-panel">
+<h2>Setup Notes</h2>
+<div class="summary-list">
+  <div class="summary-row">
+    <span class="badge">App</span>
+    <span class="summary-copy"><strong>Authenticator required</strong><span>Any TOTP-compatible authenticator app can scan the QR code or accept the secret manually.</span></span>
+  </div>
+  <div class="summary-row">
+    <span class="badge ok">Recovery</span>
+    <span class="summary-copy"><strong>Codes generated on enable</strong><span>The panel shows recovery codes once immediately after a successful confirmation step.</span></span>
+  </div>
+  <div class="summary-row">
+    <span class="badge warn">Scope</span>
+    <span class="summary-copy"><strong>Admin logins only</strong><span>This affects panel operator access and does not change MTProto user secrets.</span></span>
+  </div>
+</div>
+</aside>
+</div>
 {{end}}
+</section>
 {{end}}
 {{template "base" .}}`, nil)
 
 func totpSettingsPage(w io.Writer, data totpSettingsData) {
+	if data.CurrentNav == "" {
+		data.CurrentNav = "settings"
+	}
 	totpSettingsTmpl.Execute(w, data) //nolint:errcheck
 }
 
 var totpEnrollTmpl = layoutTemplate("totp_enroll", `{{define "page_title"}}Enable two-factor{{end}}
 {{define "content"}}
-<style>.mono{font-family:monospace;background:var(--card2);padding:.25rem .5rem;border-radius:4px}
-.qr{margin:1rem 0}img{display:block}</style>
-<h1>Enable two-factor</h1>
-<p>Scan the QR code with your authenticator app, or enter the secret manually.</p>
+<section class="page-head">
+  <div class="titles">
+    <p class="page-eyebrow">Settings</p>
+    <h1 class="page-title">Enable Two-Factor</h1>
+    <p class="page-sub">Scan the QR code with your authenticator app or enter the secret manually.</p>
+  </div>
+  <nav class="page-nav" aria-label="TOTP enrollment navigation">
+    <a href="{{.PanelPath}}settings/totp">Back to two-factor</a>
+    <a href="{{.PanelPath}}dashboard">Dashboard</a>
+  </nav>
+</section>
+<section class="page-stack">
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<div class="qr"><img src="data:image/png;base64,{{.QRPNGBase64}}" alt="TOTP QR code"></div>
-<p>Secret: <span class="mono">{{.Secret}}</span></p>
-<p>otpauth URL: <span class="mono">{{.OTPAuthURL}}</span></p>
-<form method="post" action="totp/confirm" style="max-width:480px">
+<section class="summary-grid">
+  <article class="summary-card">
+    <span class="summary-label">Factor type</span>
+    <strong class="summary-value">TOTP</strong>
+    <span class="summary-note">Time-based 6-digit authenticator codes</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Issuer</span>
+    <strong class="summary-value">tgproxy-panel</strong>
+    <span class="summary-note">Shown inside the authenticator app account label</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Confirmation</span>
+    <strong class="summary-value">One code</strong>
+    <span class="summary-note">Enter the current 6-digit value after scanning or manual setup</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Recovery</span>
+    <strong class="summary-value">Issued next</strong>
+    <span class="summary-note">One-time recovery codes appear after a successful confirmation</span>
+  </article>
+</section>
+<div class="stack-split">
+<div class="card totp-qr-card">
+<div class="card-body">
+<h2>Authenticator Setup</h2>
+<p class="panel-note">Scan the QR code if possible. If the device cannot scan, copy the secret or the full otpauth URL manually.</p>
+</div>
+<div class="totp-qr-frame">
+  <img src="data:image/png;base64,{{.QRPNGBase64}}" alt="TOTP QR code">
+</div>
+<div class="summary-list totp-fields">
+  <div class="summary-row">
+    <span class="badge ok">Secret</span>
+    <span class="summary-copy"><strong class="mono-chip">{{.Secret}}</strong><span>Manual shared secret for TOTP-compatible apps</span></span>
+  </div>
+  <div class="summary-row">
+    <span class="badge">URI</span>
+    <span class="summary-copy"><strong class="mono-chip">{{.OTPAuthURL}}</strong><span>Full otpauth enrollment URL if QR scanning is unavailable</span></span>
+  </div>
+</div>
+</div>
+<div class="page-stack">
+<div class="card form-panel">
+<div class="card-body">
+<h2>Confirm enrollment</h2>
+<p class="panel-note">Enter the current 6-digit code from the authenticator app to finish enabling two-factor and generate recovery codes.</p>
+</div>
+<form method="post" action="{{.PanelPath}}settings/totp/confirm" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <label>Enter the 6-digit code from your app</label>
 <input type="text" name="code" autocomplete="one-time-code" required autofocus>
 <button type="submit">Confirm and enable</button>
 </form>
+</div>
+<aside class="card side-panel">
+<h2>Enrollment Notes</h2>
+<div class="summary-list">
+  <div class="summary-row">
+    <span class="badge">Time</span>
+    <span class="summary-copy"><strong>30-second window</strong><span>Authenticator codes rotate quickly, so enter the current value without delay.</span></span>
+  </div>
+  <div class="summary-row">
+    <span class="badge warn">Storage</span>
+    <span class="summary-copy"><strong>Write recovery codes down</strong><span>They are only revealed after confirmation and each can be used once.</span></span>
+  </div>
+</div>
+</aside>
+</div>
+</div>
+</section>
 {{end}}
 {{template "base" .}}`, nil)
 
 func totpEnrollPage(w io.Writer, data totpEnrollData) {
+	if data.CurrentNav == "" {
+		data.CurrentNav = "settings"
+	}
 	totpEnrollTmpl.Execute(w, data) //nolint:errcheck
 }
 
 var totpRecoveryTmpl = layoutTemplate("totp_recovery", `{{define "page_title"}}Recovery codes{{end}}
 {{define "content"}}
-<style>ul.codes{list-style:none;padding:1rem;font-family:monospace;font-size:1.05rem;background:var(--card);border:1px solid var(--border);border-radius:6px;max-width:320px}
-li{margin:.25rem 0}</style>
-<h1>{{.Heading}}</h1>
-<div class="warn-box"><strong>Save these codes now.</strong> Each can be used once if you lose your authenticator. They will not be shown again.</div>
-<ul class="codes">
-{{range .RecoveryCodes}}<li>{{.}}</li>{{end}}
-</ul>
-<p><a href="../totp">← Back to two-factor settings</a></p>
+<section class="page-head">
+  <div class="titles">
+    <p class="page-eyebrow">Settings</p>
+    <h1 class="page-title">{{.Heading}}</h1>
+    <p class="page-sub">These codes can each be used once if the authenticator device is unavailable.</p>
+  </div>
+  <nav class="page-nav" aria-label="Recovery code navigation">
+    <a href="{{.PanelPath}}settings/totp">Back to two-factor</a>
+    <a href="{{.PanelPath}}dashboard">Dashboard</a>
+  </nav>
+</section>
+<section class="page-stack">
+<section class="summary-grid">
+  <article class="summary-card">
+    <span class="summary-label">Recovery codes</span>
+    <strong class="summary-value mono">{{len .RecoveryCodes}}</strong>
+    <span class="summary-note">Each code can be used exactly once if the authenticator device is unavailable</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Visibility</span>
+    <strong class="summary-value">One time</strong>
+    <span class="summary-note">Codes are shown only on this screen after enablement or regeneration</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Storage</span>
+    <strong class="summary-value">Offline</strong>
+    <span class="summary-note">Keep a printed or otherwise protected copy outside the panel session</span>
+  </article>
+  <article class="summary-card">
+    <span class="summary-label">Fallback</span>
+    <strong class="summary-value">Login recovery</strong>
+    <span class="summary-note">A recovery code can finish sign-in when the authenticator device is unavailable</span>
+  </article>
+</section>
+<div class="stack-split">
+<div class="card">
+  <div class="card-body">
+    <h2>Recovery codes</h2>
+    <p class="panel-note">Store this set now. The panel will not show the same recovery codes again after you leave this page.</p>
+  </div>
+  <div class="warn-box"><strong>Save these codes now.</strong> Each can be used once if you lose your authenticator. They will not be shown again.</div>
+  <ul class="codes">
+  {{range .RecoveryCodes}}<li>{{.}}</li>{{end}}
+  </ul>
+</div>
+<aside class="card side-panel">
+<h2>Handling Notes</h2>
+<div class="summary-list">
+  <div class="summary-row">
+    <span class="badge warn">One-time</span>
+    <span class="summary-copy"><strong>Single use only</strong><span>Any recovery code is consumed on first successful login and cannot be reused.</span></span>
+  </div>
+  <div class="summary-row">
+    <span class="badge">Rotation</span>
+    <span class="summary-copy"><strong>Regenerate from settings</strong><span>A fresh set replaces the current one immediately.</span></span>
+  </div>
+</div>
+</aside>
+</div>
+</section>
 {{end}}
 {{template "base" .}}`, nil)
 
 func totpRecoveryCodesPage(w io.Writer, data totpRecoveryData) {
+	if data.CurrentNav == "" {
+		data.CurrentNav = "settings"
+	}
 	totpRecoveryTmpl.Execute(w, data) //nolint:errcheck
 }

@@ -51,6 +51,14 @@ type UserTraffic struct {
 	Connections int64
 }
 
+// TrafficBucket holds an aggregated point for dashboard charts.
+type TrafficBucket struct {
+	TS          int64
+	BytesIn     int64
+	BytesOut    int64
+	Connections int64
+}
+
 // QueryTopUsers returns up to n users ordered by total traffic (bytes_in + bytes_out)
 // for the given period. Queries traffic_samples for recent data and traffic_hourly
 // for older data depending on the window.
@@ -71,6 +79,54 @@ func QueryTopUsers(d *db.DB, p Period, n int, now func() int64) ([]UserTraffic, 
 		rows, err = queryTopFromSamples(d, cutoff, n)
 	}
 	return rows, err
+}
+
+// QueryTrafficSeries returns exactly buckets aggregated points for the period.
+// Missing buckets are zero-filled so the dashboard can render stable charts.
+func QueryTrafficSeries(d *db.DB, p Period, buckets int, now func() int64) ([]TrafficBucket, error) {
+	if buckets <= 0 {
+		return nil, fmt.Errorf("invalid bucket count %d", buckets)
+	}
+	if now == nil {
+		now = func() int64 { return time.Now().Unix() }
+	}
+
+	duration := int64(p.Duration().Seconds())
+	if duration <= 0 {
+		duration = int64((24 * time.Hour).Seconds())
+	}
+	step := duration / int64(buckets)
+	if step < 1 {
+		step = 1
+	}
+
+	end := now()
+	start := end - duration
+	series := make([]TrafficBucket, buckets)
+	for i := range series {
+		series[i].TS = start + int64(i)*step
+	}
+
+	rows, err := queryTrafficRows(d, p, start)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row.TS < start || row.TS >= end {
+			continue
+		}
+		idx := int((row.TS - start) / step)
+		if idx < 0 || idx >= len(series) {
+			continue
+		}
+		series[idx].BytesIn += row.BytesIn
+		series[idx].BytesOut += row.BytesOut
+		if row.Connections > series[idx].Connections {
+			series[idx].Connections = row.Connections
+		}
+	}
+
+	return series, nil
 }
 
 // queryTopFromSamples queries only traffic_samples for the top n users.
@@ -111,6 +167,59 @@ LIMIT ?`
 	}
 	defer sqlRows.Close()
 	return scanRows(sqlRows)
+}
+
+type trafficRow struct {
+	TS          int64
+	BytesIn     int64
+	BytesOut    int64
+	Connections int64
+}
+
+func queryTrafficRows(d *db.DB, p Period, cutoff int64) ([]trafficRow, error) {
+	query := `
+SELECT ts, SUM(bytes_in), SUM(bytes_out), MAX(connections)
+FROM traffic_samples
+WHERE ts >= ?
+GROUP BY ts
+ORDER BY ts ASC`
+	args := []any{cutoff}
+
+	if p == Period30d {
+		query = `
+SELECT ts, SUM(bytes_in), SUM(bytes_out), MAX(connections)
+FROM (
+    SELECT ts, bytes_in, bytes_out, connections
+    FROM traffic_samples
+    WHERE ts >= ?
+    UNION ALL
+    SELECT hour_ts AS ts, bytes_in, bytes_out, connections
+    FROM traffic_hourly
+    WHERE hour_ts >= ?
+)
+GROUP BY ts
+ORDER BY ts ASC`
+		args = []any{cutoff, cutoff}
+	}
+
+	rows, err := d.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query traffic series: %w", err)
+	}
+	defer rows.Close()
+
+	var out []trafficRow
+	for rows.Next() {
+		var row trafficRow
+		if err := rows.Scan(&row.TS, &row.BytesIn, &row.BytesOut, &row.Connections); err != nil {
+			return nil, fmt.Errorf("scan traffic series: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate traffic series: %w", err)
+	}
+	return out, nil
 }
 
 func scanUserTraffic(d *db.DB, q string, args ...any) ([]UserTraffic, error) {

@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 )
 
 func TestBridgePageFormsUseValidateCSRFField(t *testing.T) {
@@ -39,6 +41,67 @@ func TestBridgePageDashboardLinkUsesPanelPath(t *testing.T) {
 	}
 	if strings.Contains(html, `href="../dashboard"`) {
 		t.Fatalf("bridge page must not use parent-relative dashboard link:\n%s", html)
+	}
+}
+
+func TestBridgePageUsesPanelScopedRoutesWithoutInlineStyle(t *testing.T) {
+	var buf bytes.Buffer
+
+	bridgePage(&buf, bridgePageData{
+		CSRFField: CSRFField(),
+		CSRFToken: "test-token",
+		PanelPath: "/p-example/",
+		Nodes: []bridge.Node{
+			{ID: 7, Tag: "de-1", Type: "vless-reality", Host: "de.example", Port: 443, Enabled: true, LastLatency: 84},
+		},
+	})
+
+	html := buf.String()
+	for _, want := range []string{
+		`class="bridge-banner"`,
+		`class="summary-grid"`,
+		`href="#add-node"`,
+		`class="page-cta" href="#add-node"`,
+		`id="nodes"`,
+		`id="routing-strategy"`,
+		`id="mode-control"`,
+		`class="badge ok">enabled</span>`,
+		`class="badge ok">vless-reality</span>`,
+		`class="bridge-latency"`,
+		`class="ops-meter bridge-latency-meter"`,
+		`action="/p-example/bridge/nodes/add"`,
+		`action="/p-example/bridge/nodes/add-manual"`,
+		`action="/p-example/bridge/nodes/7/toggle"`,
+		`action="/p-example/bridge/nodes/7/ping"`,
+		`href="/p-example/bridge/nodes/7/edit"`,
+		`action="/p-example/bridge/nodes/7/delete"`,
+		`action="/p-example/bridge/strategy"`,
+		`action="/p-example/bridge/enable"`,
+		`action="/p-example/bridge/disable"`,
+		`class="page-head"`,
+		`class="page-nav"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("bridge page missing %q:\n%s", want, html)
+		}
+	}
+	if strings.Contains(html, "<style>") {
+		t.Fatalf("bridge page must not render inline style:\n%s", html)
+	}
+}
+
+func TestBridgePageMarksBridgeNavActive(t *testing.T) {
+	var buf bytes.Buffer
+
+	bridgePage(&buf, bridgePageData{
+		CSRFField: CSRFField(),
+		CSRFToken: "test-token",
+		PanelPath: "/p-example/",
+	})
+
+	html := buf.String()
+	if !strings.Contains(html, `class="nav-item" data-active="true" href="/p-example/bridge"`) {
+		t.Fatalf("bridge page must mark bridge nav item active:\n%s", html)
 	}
 }
 
