@@ -58,10 +58,10 @@ func TestBridgePageUsesPanelScopedRoutesWithoutInlineStyle(t *testing.T) {
 
 	html := buf.String()
 	for _, want := range []string{
-		`class="bridge-banner"`,
-		`class="summary-grid"`,
+		`class="card bridge-banner"`,
+		`class="seg bridge-seg"`,
 		`href="#add-node"`,
-		`class="page-cta" href="#add-node"`,
+		`class="btn" data-variant="primary" href="#add-node"`,
 		`id="nodes"`,
 		`id="routing-strategy"`,
 		`id="mode-control"`,
@@ -79,7 +79,7 @@ func TestBridgePageUsesPanelScopedRoutesWithoutInlineStyle(t *testing.T) {
 		`action="/p-example/bridge/enable"`,
 		`action="/p-example/bridge/disable"`,
 		`class="page-head"`,
-		`class="page-nav"`,
+		`class="ring-lite mono"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("bridge page missing %q:\n%s", want, html)

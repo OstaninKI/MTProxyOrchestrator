@@ -317,10 +317,10 @@ func TestSettingsCertificatesPageUsesNoStore(t *testing.T) {
 		t.Fatalf("certificates page must not render inline styles under strict CSP:\n%s", w.Body.String())
 	}
 	for _, want := range []string{
-		`class="summary-grid"`,
-		`Current certificate`,
-		`Renewal Summary`,
-		`class="summary-list cert-details"`,
+		`class="grid-12"`,
+		`Active certificate`,
+		`Renewal settings`,
+		`class="cert-pair"`,
 	} {
 		if !strings.Contains(w.Body.String(), want) {
 			t.Fatalf("certificates page missing %q:\n%s", want, w.Body.String())
@@ -341,19 +341,19 @@ func TestSettingsStubsPagesRenderSummaryCards(t *testing.T) {
 		{
 			path: "/p-example/settings/stubs",
 			want: []string{
-				`class="summary-grid"`,
-				`Upload Custom Template`,
-				`Template Notes`,
-				`Browse remote templates`,
+				`class="grid-12"`,
+				`Upload custom template`,
+				`Stub configuration`,
+				`Template library`,
 			},
 		},
 		{
 			path: "/p-example/settings/stubs/remote",
 			want: []string{
-				`class="summary-grid"`,
+				`class="card"`,
 				`learning-zone/website-templates`,
-				`Remote Templates`,
-				`Source:`,
+				`Remote catalog`,
+				`Template library`,
 			},
 		},
 	} {

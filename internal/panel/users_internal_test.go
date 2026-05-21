@@ -134,7 +134,7 @@ func TestUserListShowsTrafficBreakdownAndConnectionStatus(t *testing.T) {
 	html := buf.String()
 
 	for _, want := range []string{
-		`class="summary-grid"`,
+		`class="grid-12"`,
 		`data-users-page`,
 		`data-users-role="search"`,
 		`data-users-role="status"`,
@@ -142,7 +142,7 @@ func TestUserListShowsTrafficBreakdownAndConnectionStatus(t *testing.T) {
 		`data-user-row`,
 		`class="disclosure user-actions-menu"`,
 		`class="disclosure user-quota-menu"`,
-		"Total users",
+		"All users",
 		"Online",
 		"Offline",
 		"Suspended",

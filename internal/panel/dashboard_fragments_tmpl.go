@@ -16,6 +16,7 @@ var dashboardFragmentFuncs = template.FuncMap{
 	"csrfField":    layoutCSRFField,
 	"csrfToken":    layoutCSRFToken,
 	"navIsCurrent": layoutNavIsCurrent,
+	"icon":         layoutIcon,
 	"formatBytes": func(n int64) string {
 		if n < 0 {
 			return "0 B"
@@ -127,6 +128,15 @@ var dashboardFragmentFuncs = template.FuncMap{
 		}
 		return fmt.Sprintf("%.0f%%", v)
 	},
+	"barValue": func(v float64) int {
+		if v < 0 {
+			return 0
+		}
+		if v > 100 {
+			v = 100
+		}
+		return int(math.Round(v))
+	},
 	"usageTone": func(v float64) string {
 		switch {
 		case v < 0:
@@ -226,244 +236,188 @@ const dashboardFragments = `
 {{define "health"}}
 <section
   id="dashboard-health"
-  class="card span2 ops-card ops-health"
+  class="card"
   hx-get="{{.PanelPath}}dashboard/fragments/health?period={{.Period}}"
   hx-trigger="sse:dashboard-health"
   hx-swap="outerHTML">
-<div class="ops-card-head">
-{{if .IsBridge}}
-<div class="ops-card-title-row">
-  <h2>Bridge Mode — Chain Health</h2>
-  {{if .Healthy}}<span class="badge ok">healthy</span>{{else}}<span class="badge down">unhealthy</span>{{end}}
-</div>
-<p class="ops-card-sub">{{.HealthLabel}}. {{countEnabledNodes .BridgeNodes}} of {{len .BridgeNodes}} nodes enabled.</p>
-{{else}}
-<div class="ops-card-title-row">
-  <h2>Services</h2>
-  {{if .Healthy}}<span class="badge ok">healthy</span>{{else}}<span class="badge down">unhealthy</span>{{end}}
-</div>
-<p class="ops-card-sub">{{.HealthLabel}}. {{countEnabledUsers .Users}} of {{len .Users}} users enabled.</p>
-{{end}}
-</div>
-<div class="ops-health-grid">
-  <div class="ops-system-panel">
-    <div class="ops-panel-head">
-      <h3>System</h3>
-      <span class="badge{{if .Healthy}} ok{{else}} down{{end}}">{{if .Healthy}}stable{{else}}attention{{end}}</span>
-    </div>
-    <div class="ops-system-metrics">
-      <div class="ops-system-meter">
-        <div class="ops-system-meter-copy"><span class="k">Memory</span><span class="v mono">{{formatPercent .System.MemoryPercent}}</span></div>
-        <div class="ops-meter" data-tone="{{usageTone .System.MemoryPercent}}"><span style="width: {{barWidth .System.MemoryPercent}}"></span></div>
-      </div>
-      <div class="ops-system-meter">
-        <div class="ops-system-meter-copy"><span class="k">Disk</span><span class="v mono">{{formatPercent .System.DiskPercent}}</span></div>
-        <div class="ops-meter" data-tone="{{usageTone .System.DiskPercent}}"><span style="width: {{barWidth .System.DiskPercent}}"></span></div>
-      </div>
-    </div>
-    <div class="ops-system-meta">
-      <div class="ops-system-meta-row"><span class="k">Load avg</span><span class="v mono">{{.System.LoadAvg}}</span></div>
-      <div class="ops-system-meta-row"><span class="k">Uptime</span><span class="v mono">{{.System.Uptime}}</span></div>
-      <div class="ops-system-meta-row"><span class="k">Kernel</span><span class="v mono">{{.System.Kernel}}</span></div>
-      <div class="ops-system-meta-row"><span class="k">Mode</span><span class="v mono">{{if .IsBridge}}Bridge{{else}}Single{{end}}</span></div>
+  <div class="card-head">
+    <div class="col card-title-stack">
+      <h3>{{if .IsBridge}}Bridge Mode — Chain Health{{else}}System{{end}}</h3>
+      <span class="sub">{{if .IsBridge}}{{.HealthLabel}}{{else}}Live resource utilization{{end}}</span>
     </div>
   </div>
-  <div class="ops-service-panel">
+  <div class="card-body">
+    <div class="resource-row">
+      <span class="resource-icon">{{icon "Activity" 14}}</span>
+      <span class="resource-label">Memory</span>
+      <progress class="bar" data-tone="{{usageTone .System.MemoryPercent}}" value="{{barValue .System.MemoryPercent}}" max="100"></progress>
+      <span class="mono tnum resource-value">{{formatPercent .System.MemoryPercent}}</span>
+    </div>
+    <div class="resource-row">
+      <span class="resource-icon">{{icon "Server" 14}}</span>
+      <span class="resource-label">Disk</span>
+      <progress class="bar" data-tone="{{usageTone .System.DiskPercent}}" value="{{barValue .System.DiskPercent}}" max="100"></progress>
+      <span class="mono tnum resource-value">{{formatPercent .System.DiskPercent}}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="resource-meta"><span>Load avg</span><span class="mono">{{.System.LoadAvg}}</span></div>
+    <div class="resource-meta"><span>Uptime</span><span class="mono">{{.System.Uptime}}</span></div>
+    <div class="resource-meta"><span>Kernel</span><span class="mono">{{.System.Kernel}}</span></div>
+    <div class="resource-meta"><span>Mode</span><span class="mono">{{if .IsBridge}}Bridge Mode{{else}}Services{{end}}</span></div>
     {{if .IsBridge}}
-    <div class="ops-panel-head">
-      <h3>Chain steps</h3>
-      <span class="badge{{if .Healthy}} ok{{else}} down{{end}}">{{countOKBridgeSteps .BridgeSteps}} / {{len .BridgeSteps}} ok</span>
-    </div>
-    <div class="ops-inline-metrics">
-      <div class="ops-inline-metric"><span class="k">Users</span><span class="v mono">{{countEnabledUsers .Users}} / {{len .Users}}</span></div>
-      <div class="ops-inline-metric"><span class="k">Nodes</span><span class="v mono">{{countEnabledNodes .BridgeNodes}} / {{len .BridgeNodes}}</span></div>
-      <div class="ops-inline-metric"><span class="k">Load</span><span class="v mono">{{.System.LoadAvg}}</span></div>
-    </div>
-    <div class="table-wrap"><table>
-    <thead><tr><th>Step</th><th>Status</th><th>Latency</th><th>Message</th></tr></thead>
-    <tbody>
-    {{range .BridgeSteps}}
-    <tr>
-      <td>{{.Name}}</td>
-      <td>{{if .OK}}<span class="badge ok">ok</span>{{else}}<span class="badge down">down</span>{{end}}</td>
-      <td>{{if .Latency}}{{.Latency}}{{else}}&mdash;{{end}}</td>
-      <td>{{.Message}}</td>
-    </tr>
-    {{end}}
-    </tbody>
+    <div class="divider"></div>
+    <div class="table-wrap table-wrap--plain"><table class="tbl tbl--compact">
+      <thead><tr><th>Step</th><th>Status</th></tr></thead>
+      <tbody>{{range .BridgeSteps}}<tr><td>{{.Name}}</td><td>{{if .OK}}<span class="badge" data-tone="success"><span class="dot"></span>ok</span>{{else}}<span class="badge" data-tone="danger"><span class="dot"></span>down</span>{{end}}</td></tr>{{end}}</tbody>
     </table></div>
-    {{else}}
-    <div class="ops-panel-head">
-      <h3>Service runtime</h3>
-      <span class="badge{{if .Healthy}} ok{{else}} down{{end}}">{{countActiveServices .Services}} / {{len .Services}} running</span>
-    </div>
-    <div class="ops-inline-metrics">
-      <div class="ops-inline-metric"><span class="k">Enabled users</span><span class="v mono">{{countEnabledUsers .Users}} / {{len .Users}}</span></div>
-      <div class="ops-inline-metric"><span class="k">Active users</span><span class="v mono">{{len .LiveConnections}}</span></div>
-      <div class="ops-inline-metric"><span class="k">Total live</span><span class="v mono">{{sumLiveConnections .LiveConnections}}</span></div>
-    </div>
-    <div class="table-wrap"><table>
-    <thead><tr><th>Service</th><th>Status</th><th>Message</th></tr></thead>
-    <tbody>
-    {{range .Services}}
-    <tr>
-      <td>{{.Name}}</td>
-      <td>{{if .Active}}<span class="badge ok">running</span>{{else}}<span class="badge down">down</span>{{end}}</td>
-      <td>{{.Message}}</td>
-    </tr>
-    {{end}}
-    </tbody>
+    {{else if .Services}}
+    <div class="divider"></div>
+    <div class="table-wrap table-wrap--plain"><table class="tbl tbl--compact">
+      <thead><tr><th>Service</th><th>Status</th><th>Message</th></tr></thead>
+      <tbody>{{range .Services}}<tr><td>{{.Name}}</td><td>{{if .Active}}<span class="badge" data-tone="success"><span class="dot"></span>running</span>{{else}}<span class="badge" data-tone="danger"><span class="dot"></span>down</span>{{end}}</td><td>{{.Message}}</td></tr>{{end}}</tbody>
     </table></div>
     {{end}}
   </div>
-</div>
 </section>
 {{end}}
 
 {{define "connections"}}
 <section
   id="dashboard-connections"
-  class="card ops-card ops-connections"
+  class="card"
   hx-get="{{.PanelPath}}dashboard/fragments/connections?period={{.Period}}"
   hx-trigger="sse:dashboard-connections"
   hx-swap="outerHTML">
-<div class="ops-card-head">
-  <div class="ops-card-title-row">
-    <h2>Active Connections</h2>
-    <span class="badge ok mono">{{sumLiveConnections .LiveConnections}} live</span>
-  </div>
-  <p class="ops-card-sub">{{len .LiveConnections}} users active now, {{len .Users}} configured in panel.</p>
-</div>
-<div class="connection-summary">
-  <div class="connection-stat"><span class="k">Users live</span><strong class="mono">{{len .LiveConnections}}</strong></div>
-  <div class="connection-stat"><span class="k">Connections</span><strong class="mono">{{sumLiveConnections .LiveConnections}}</strong></div>
-  <div class="connection-stat"><span class="k">Configured</span><strong class="mono">{{len .Users}}</strong></div>
-  <div class="connection-stat"><span class="k">Peak / user</span><strong class="mono">{{maxLiveConnections .LiveConnections}}</strong></div>
-</div>
+<div class="card-head"><div class="col card-title-stack"><h3>Active Connections</h3><span class="sub">{{len .LiveConnections}} users active now, {{len .Users}} configured in panel.</span></div><div class="spacer"></div><span class="badge" data-tone="success"><span class="dot"></span>{{sumLiveConnections .LiveConnections}} live</span></div>
+<div class="card-body card-body--flush">
 {{if .LiveConnections}}
-<div class="table-wrap"><table>
+<table class="tbl tbl--compact">
 <thead><tr><th>User</th><th>Live</th></tr></thead>
 <tbody>
 {{range .LiveConnections}}
 <tr>
   <td><span class="connection-user">{{.UserLabel}}</span></td>
-  <td><span class="badge ok mono">{{.Connections}}</span></td>
+  <td><span class="badge" data-tone="success"><span class="dot"></span>{{.Connections}}</span></td>
 </tr>
 {{end}}
 </tbody>
-</table></div>
-<nav class="page-nav" aria-label="Connection summary links">
-  <a href="{{.PanelPath}}users">Open Users</a>
-</nav>
+</table>
 {{else}}
-<p class="empty">No active connections.</p>
+<div class="empty">No active connections.</div>
 {{end}}
+</div>
 </section>
 {{end}}
 
 {{define "traffic"}}
 <section
   id="dashboard-traffic"
-  class="card span2 ops-card ops-traffic"
+  class="card"
   hx-get="{{.PanelPath}}dashboard/fragments/traffic?period={{.Period}}"
   hx-trigger="sse:dashboard-traffic"
   hx-swap="outerHTML">
-<div class="ops-card-title-row traffic-head">
-<h2>Network Throughput</h2>
-<div class="periods">
-  <a href="?period=1h"{{if eq .Period "1h"}} class="active"{{end}}>1h</a>
-  <a href="?period=24h"{{if eq .Period "24h"}} class="active"{{end}}>24h</a>
-  <a href="?period=7d"{{if eq .Period "7d"}} class="active"{{end}}>7d</a>
-  <a href="?period=30d"{{if eq .Period "30d"}} class="active"{{end}}>30d</a>
-</div>
-</div>
-<div class="traffic-overview">
-  <div>
-    <p class="ops-card-sub">Aggregate ingress and egress across the selected window.</p>
-    <div class="traffic-legend">
-      <div class="traffic-legend-item traffic-legend-item-out"><span class="swatch"></span><span>Download</span><strong>{{formatBytes (sumTrafficOutSeries .TrafficSeries)}}</strong></div>
-      <div class="traffic-legend-item traffic-legend-item-in"><span class="swatch"></span><span>Upload</span><strong>{{formatBytes (sumTrafficInSeries .TrafficSeries)}}</strong></div>
-    </div>
-    <div class="traffic-kpis">
-      <div class="traffic-kpi">
-        <span class="k">Transferred</span>
-        <strong>{{formatBytes (sumTrafficSeries .TrafficSeries)}}</strong>
-      </div>
-      <div class="traffic-kpi">
-        <span class="k">Users</span>
-        <strong>{{len .TopUsers}}</strong>
-      </div>
-      <div class="traffic-kpi">
-        <span class="k">Peak connections</span>
-        <strong>{{maxLiveConnections .LiveConnections}}</strong>
-      </div>
+<div class="card-head">
+  <div class="col card-title-stack"><h3>Network throughput</h3><span class="sub">Aggregate ingress / egress, selected window</span></div>
+  <div class="spacer"></div>
+  <div class="row">
+    <div class="legend-dot"><span class="legend-download"></span><span>Download</span><strong class="mono">{{formatBytes (sumTrafficOutSeries .TrafficSeries)}}</strong></div>
+    <div class="legend-dot"><span class="legend-upload"></span><span>Upload</span><strong class="mono">{{formatBytes (sumTrafficInSeries .TrafficSeries)}}</strong></div>
+    <div class="seg">
+      <a class="seg-item{{if eq .Period "1h"}} active{{end}}" href="?period=1h">1h</a>
+      <a class="seg-item{{if eq .Period "24h"}} active{{end}}" href="?period=24h">24h</a>
+      <a class="seg-item{{if eq .Period "7d"}} active{{end}}" href="?period=7d">7d</a>
+      <a class="seg-item{{if eq .Period "30d"}} active{{end}}" href="?period=30d">30d</a>
     </div>
   </div>
+</div>
+<div class="card-body traffic-overview">
   {{if .TrafficSeries}}
-  <div class="traffic-chart-shell" aria-hidden="true">
-    <svg class="traffic-chart" viewBox="0 0 100 56" preserveAspectRatio="none">
+    <svg class="traffic-chart area-chart" viewBox="0 0 100 56" preserveAspectRatio="none" aria-label="Network throughput chart">
       <path class="traffic-chart-area traffic-chart-area-out" d="{{trafficAreaPathOut .TrafficSeries}}"></path>
       <path class="traffic-chart-line traffic-chart-line-out" d="{{trafficLinePathOut .TrafficSeries}}"></path>
       <path class="traffic-chart-area traffic-chart-area-in" d="{{trafficAreaPathIn .TrafficSeries}}"></path>
       <path class="traffic-chart-line traffic-chart-line-in" d="{{trafficLinePathIn .TrafficSeries}}"></path>
     </svg>
-  </div>
+  {{else}}
+    <div class="empty">No traffic data for this period.</div>
   {{end}}
 </div>
-{{if .TopUsers}}
-<div class="traffic-table-head">
-  <h3>Top users by traffic</h3>
-  <p class="ops-card-sub">Real traffic totals over the selected period.</p>
-</div>
-<div class="table-wrap"><table>
-<thead><tr><th>User</th><th>Downloaded</th><th>Uploaded</th><th>Total</th><th>Connections</th></tr></thead>
-<tbody>
-{{range .TopUsers}}
-<tr>
-  <td><span class="traffic-user">{{.UserLabel}}</span></td>
-  <td>{{formatBytes .BytesOut}}</td>
-  <td>{{formatBytes .BytesIn}}</td>
-  <td>{{formatBytes (trafficTotal .BytesIn .BytesOut)}}</td>
-  <td><span class="badge{{if gt .Connections 0}} ok{{else}} warn{{end}} mono">{{.Connections}}</span></td>
-</tr>
-{{end}}
-</tbody>
-</table></div>
-{{else}}
-<p class="empty">No traffic data for this period.</p>
-{{end}}
 </section>
 {{end}}
 
 {{define "components"}}
 <section
   id="dashboard-components"
-  class="card ops-card ops-components"
+  class="card"
   hx-get="{{.PanelPath}}dashboard/fragments/components?period={{.Period}}"
   hx-trigger="sse:dashboard-components"
   hx-swap="outerHTML">
-<h2>Components</h2>
-<p class="ops-card-sub">Installed components and runtime readiness.</p>
-<div class="component-grid">
-{{range .Components}}
-  <article class="component-card">
-    <div class="component-card-head">
-      <div>
-        <h3>{{.Name}}</h3>
-        <p>{{componentNote .Name $.IsBridge}}</p>
-      </div>
-      <span class="badge {{componentStateClass .Name .Version $.IsBridge}}">{{componentStateLabel .Name .Version $.IsBridge}}</span>
-    </div>
-    <div class="component-version mono">{{.Version}}</div>
-  </article>
+<div class="card-head"><div class="col card-title-stack"><h3>Services & Components</h3><span class="sub">systemd units and installed binaries</span></div><div class="spacer"></div><button class="btn" data-variant="ghost" data-size="sm" disabled>{{icon "Refresh" 13}} Refresh</button></div>
+<div class="card-body card-body--flush">
+<table class="tbl tbl--compact">
+  <thead><tr><th>Service</th><th>Version</th><th>Status</th><th>Detail</th><th class="text-right">Restarts</th><th></th></tr></thead>
+  <tbody>
+  {{range .Components}}
+  <tr>
+    <td><span class="mono">{{.Name}}</span></td>
+    <td><span class="badge" data-tone="accent">{{.Version}}</span></td>
+    <td><span class="badge {{componentStateClass .Name .Version $.IsBridge}}" data-tone="{{componentStateClass .Name .Version $.IsBridge}}"><span class="dot"></span>{{componentStateLabel .Name .Version $.IsBridge}}</span></td>
+    <td class="muted">{{componentNote .Name $.IsBridge}}</td>
+    <td class="mono text-right">0</td>
+    <td class="actions-cell"><button class="btn" data-size="xs" data-variant="ghost" disabled>{{icon "Refresh" 12}} Restart</button></td>
+  </tr>
+  {{end}}
+  {{range .Services}}
+  <tr>
+    <td><span class="mono">{{.Name}}</span></td>
+    <td><span class="badge" data-tone="accent">systemd</span></td>
+    <td>{{if .Active}}<span class="badge" data-tone="success"><span class="dot"></span>Running</span>{{else}}<span class="badge" data-tone="danger"><span class="dot"></span>Down</span>{{end}}</td>
+    <td class="muted">{{.Message}}</td>
+    <td class="mono text-right">0</td>
+    <td></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+</section>
 {{end}}
-</div>
-<div class="ops-inline-metrics">
-  <div class="ops-inline-metric"><span class="k">Installed components</span><span class="v mono">{{len .Components}}</span></div>
-  <div class="ops-inline-metric"><span class="k">Kernel</span><span class="v mono">{{.System.Kernel}}</span></div>
-  <div class="ops-inline-metric"><span class="k">Load</span><span class="v mono">{{.System.LoadAvg}}</span></div>
-  <div class="ops-inline-metric"><span class="k">Bridge Nodes</span><span class="v mono">{{countEnabledNodes .BridgeNodes}} / {{len .BridgeNodes}}</span></div>
-</div>
+
+{{define "top_users"}}
+<section class="card">
+  <div class="card-head"><div class="col card-title-stack"><h3>Top users by traffic</h3><span class="sub">Live · selected period</span></div><div class="spacer"></div><div class="seg"><a class="seg-item" href="?period=1h">1h</a><a class="seg-item active" href="?period=24h">24h</a><a class="seg-item" href="?period=7d">7d</a><a class="seg-item" href="?period=30d">30d</a></div></div>
+  <div class="card-body card-body--flush">
+  {{if .TopUsers}}
+    <table class="tbl tbl--compact">
+      <thead><tr><th>User</th><th>Activity</th><th class="text-right">Download</th><th class="text-right">Upload</th><th class="text-right">Total</th><th class="text-right">Conn</th></tr></thead>
+      <tbody>{{range .TopUsers}}<tr><td><span class="traffic-user">{{.UserLabel}}</span></td><td><span class="muted">sampled</span></td><td class="mono text-right">{{formatBytes .BytesOut}}</td><td class="mono text-right">{{formatBytes .BytesIn}}</td><td class="mono text-right font-medium">{{formatBytes (trafficTotal .BytesIn .BytesOut)}}</td><td class="mono text-right">{{.Connections}}</td></tr>{{end}}</tbody>
+    </table>
+  {{else}}
+    <div class="empty">No traffic data for this period.</div>
+  {{end}}
+  </div>
+</section>
+{{end}}
+
+{{define "bridge_nodes"}}
+<section class="card">
+  <div class="card-head"><div class="col card-title-stack"><h3>Bridge nodes</h3><span class="sub">{{countEnabledNodes .BridgeNodes}} of {{len .BridgeNodes}} online</span></div></div>
+  <div class="card-body card-body--flush">
+  {{if .BridgeNodes}}
+    <div class="node-list">
+    {{range previewBridgeNodes .BridgeNodes 4}}
+      <div class="node-row">
+        <span class="badge {{bridgeNodeStateClass .}}" data-tone="{{bridgeNodeStateClass .}}"><span class="dot"></span>{{bridgeNodeStateLabel .}}</span>
+        <div class="col col-zero col-fill"><span class="bridge-node-title">{{.Tag}}</span><span class="muted mono muted-sm">{{.Type}} · {{.Host}}</span></div>
+        <span class="mono muted muted-sm">{{if .LastLatency}}{{.LastLatency}}ms{{else}}—{{end}}</span>
+      </div>
+    {{end}}
+    </div>
+    <div class="card-body card-body--tight"><a class="btn" data-size="sm" data-variant="ghost" href="{{.PanelPath}}bridge">Open Bridge</a></div>
+  {{else}}
+    <div class="empty">No Bridge nodes configured.</div>
+  {{end}}
+  </div>
 </section>
 {{end}}
 `

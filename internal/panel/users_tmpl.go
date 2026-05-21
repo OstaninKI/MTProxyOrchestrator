@@ -87,58 +87,63 @@ const userListContent = `{{define "page_title"}}Users{{end}}
 {{define "content"}}
 <section class="page-head">
   <div class="titles">
-    <p class="page-eyebrow">Access</p>
+    <p class="page-eyebrow">MTProto Orchestrator</p>
     <h1 class="page-title">Users</h1>
-    <p class="page-sub">Manage MTProto users, quota state, and active connections from one table.</p>
+    <p class="page-sub">Manage MTProto users, quotas and access.</p>
   </div>
   <div class="actions">
-    <nav class="page-nav" aria-label="Users navigation">
-      <a href="{{.PanelPath}}dashboard">Dashboard</a>
-      <a href="{{.PanelPath}}settings/proxy">Proxy settings</a>
-    </nav>
-    <a class="page-cta" href="#create-user">Add user</a>
+    <a class="btn" data-variant="primary" href="#create-user">{{icon "Plus" 13}} Add user</a>
   </div>
 </section>
 <section class="page-stack">
-<section class="summary-grid">
-  <article class="summary-card">
-    <span class="summary-label">Total users</span>
-    <strong class="summary-value mono">{{len .Users}}</strong>
-    <span class="summary-note">Configured in panel</span>
+<section class="grid-12">
+  <article class="col-3 card stat-card">
+    <div class="card-body">
+      <div class="stat-head"><span class="stat-icon">{{icon "Users" 15}}</span><span class="stat-label">Total</span></div>
+      <strong class="stat-value mono">{{len .Users}}</strong>
+      <span class="stat-hint">All users</span>
+    </div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Online</span>
-    <strong class="summary-value mono">{{countOnlineUsers .Users}}</strong>
-    <span class="summary-note">Live Teleproxy connections</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body">
+      <div class="stat-head"><span class="stat-icon" data-tone="success">{{icon "Activity" 15}}</span><span class="stat-label">Online</span></div>
+      <strong class="stat-value mono">{{countOnlineUsers .Users}}</strong>
+      <span class="stat-hint">Live Teleproxy connections</span>
+    </div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Offline</span>
-    <strong class="summary-value mono">{{countOfflineUsers .Users}}</strong>
-    <span class="summary-note">Previously active but currently idle</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body">
+      <div class="stat-head"><span class="stat-icon">{{icon "Power" 15}}</span><span class="stat-label">Offline</span></div>
+      <strong class="stat-value mono">{{countOfflineUsers .Users}}</strong>
+      <span class="stat-hint">Last seen or idle</span>
+    </div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Suspended</span>
-    <strong class="summary-value mono">{{countSuspendedUsers .Users}}</strong>
-    <span class="summary-note">{{formatBytes (sumUserTraffic .Users)}} total traffic</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body">
+      <div class="stat-head"><span class="stat-icon" data-tone="warn">{{icon "Pause" 15}}</span><span class="stat-label">Suspended</span></div>
+      <strong class="stat-value mono">{{countSuspendedUsers .Users}}</strong>
+      <span class="stat-hint">{{formatBytes (sumUserTraffic .Users)}} total traffic</span>
+    </div>
   </article>
 </section>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <div id="create-user" class="card form-panel">
-<form method="post" action="{{.PanelPath}}users/create" class="user-create-form">
-<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<input type="text" name="label" placeholder="label (a-z0-9_)" required>
-<button type="submit">Add user</button>
-</form>
+  <div class="card-head"><h3>Add user</h3></div>
+  <form method="post" action="{{.PanelPath}}users/create" class="user-create-form card-body">
+    <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
+    <input class="input input--mono" type="text" name="label" placeholder="e.g. alice_laptop" required>
+    <button class="btn" data-variant="primary" type="submit">{{icon "Plus" 13}} Add user</button>
+  </form>
 </div>
 <div class="card users-toolbar-card" data-users-page>
 <div class="card-body users-toolbar">
   <div class="users-toolbar-group">
-    <label for="users-search">Search</label>
-    <input id="users-search" type="text" placeholder="Find by label" data-users-role="search">
+    <label class="label" for="users-search">Search</label>
+    <input class="input" id="users-search" type="text" placeholder="Search users by label..." data-users-role="search">
   </div>
   <div class="users-toolbar-group">
-    <label for="users-status">Status</label>
-    <select id="users-status" data-users-role="status">
+    <label class="label" for="users-status">Status</label>
+    <select class="select" id="users-status" data-users-role="status">
       <option value="all">All</option>
       <option value="enabled">Enabled</option>
       <option value="disabled">Disabled</option>
@@ -149,8 +154,8 @@ const userListContent = `{{define "page_title"}}Users{{end}}
     </select>
   </div>
   <div class="users-toolbar-group">
-    <label for="users-sort">Sort</label>
-    <select id="users-sort" data-users-role="sort">
+    <label class="label" for="users-sort">Sort</label>
+    <select class="select" id="users-sort" data-users-role="sort">
       <option value="label">Label</option>
       <option value="created-desc">Newest</option>
       <option value="traffic-desc">Traffic</option>
@@ -163,7 +168,7 @@ const userListContent = `{{define "page_title"}}Users{{end}}
 </div>
 <div class="card table-card">
 <div class="table-wrap users-table-wrap">
-<table class="users-table">
+<table class="tbl users-table">
 <thead><tr><th>Label</th><th>Status</th><th>Quota</th><th>Usage</th><th>Created</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Users}}
@@ -193,11 +198,10 @@ const userListContent = `{{define "page_title"}}Users{{end}}
       {{- if or .QuotaSuspended (ge $pct 100) -}}{{- $color = "qbar-red" -}}
       {{- else if and (gt .QuotaWarnPct 0) (ge $pct .QuotaWarnPct) -}}{{- $color = "qbar-amber" -}}
       {{- else -}}{{- $color = "qbar-green" -}}{{- end -}}
-      <div class="qbar {{$color}}" role="progressbar"
+      <progress class="qbar {{$color}}"
            aria-valuenow="{{$pct}}" aria-valuemin="0" aria-valuemax="100"
-           aria-label="{{formatBytes .QuotaUsedBytes}} of {{formatBytes .QuotaBytes}} used ({{$pct}}%)">
-        <span style="width:{{$pct}}%"></span>
-      </div>
+           aria-label="{{formatBytes .QuotaUsedBytes}} of {{formatBytes .QuotaBytes}} used ({{$pct}}%)"
+           value="{{$pct}}" max="100"></progress>
       <div class="qmeta">{{formatBytes .QuotaUsedBytes}} / {{formatBytes .QuotaBytes}} ({{$pct}}%)
         {{- $r := nextResetIn .QuotaPeriodStart .QuotaPeriod -}}
         {{- if $r}} · {{$r}}{{end -}}
@@ -273,10 +277,7 @@ const userCreatedContent = `{{define "page_title"}}User created{{end}}
     <h1 class="page-title">User Created</h1>
     <p class="page-sub">The link below contains the generated secret and will not be shown again.</p>
   </div>
-  <nav class="page-nav" aria-label="User created navigation">
-    <a href="{{.PanelPath}}users">Back to users</a>
-    <a href="{{.PanelPath}}dashboard">Dashboard</a>
-  </nav>
+  <div class="actions"><a class="btn" data-variant="ghost" href="{{.PanelPath}}users">Back to users</a></div>
 </section>
 <div class="card form-panel">
 <p><strong>Label:</strong> {{.Label}}</p>

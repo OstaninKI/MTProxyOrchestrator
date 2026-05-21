@@ -636,120 +636,81 @@ var totpSettingsTmpl = layoutTemplate("totp_settings", `{{define "page_title"}}T
 {{define "content"}}
 <section class="page-head">
   <div class="titles">
-    <p class="page-eyebrow">Settings</p>
-    <h1 class="page-title">Two-Factor Authentication</h1>
-    <p class="page-sub">Protect panel logins with authenticator codes and one-time recovery codes.</p>
+    <p class="page-eyebrow">MTProto Orchestrator</p>
+    <h1 class="page-title">Settings</h1>
+    <p class="page-sub">Endpoint, password and system configuration.</p>
   </div>
 </section>
 <section class="page-stack">
-<nav class="settings-tabs" aria-label="Two-factor tabs">
-  <a href="{{.PanelPath}}settings/proxy">Endpoint &amp; Proxy</a>
-  <a href="{{.PanelPath}}settings/admin-password">Admin password</a>
-  <a href="{{.PanelPath}}settings/system">System</a>
-  <a class="active" href="{{.PanelPath}}settings/totp">Two-factor</a>
+<nav class="seg" aria-label="Two-factor tabs">
+  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Endpoint &amp; Proxy</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/admin-password">Admin password</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/system">System</a>
+  <a class="seg-item active" href="{{.PanelPath}}settings/totp">Two-factor</a>
 </nav>
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
-<section class="summary-grid">
-  <article class="summary-card">
-    <span class="summary-label">Protection status</span>
-    <strong class="summary-value">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</strong>
-    <span class="summary-note">{{if .Enabled}}A second factor is required after password validation{{else}}Panel login currently relies on password only{{end}}</span>
+<section class="grid-12">
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon">{{icon "Shield" 15}}</span><span class="stat-label">Protection status</span></div><strong class="stat-value">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</strong><span class="stat-hint">{{if .Enabled}}Second factor required{{else}}Password only{{end}}</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Login gate</span>
-    <strong class="summary-value">TOTP</strong>
-    <span class="summary-note">Authenticator code or one-time recovery code can complete sign-in</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon">{{icon "Lock" 15}}</span><span class="stat-label">Login gate</span></div><strong class="stat-value">TOTP</strong><span class="stat-hint">Authenticator or recovery code</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Recovery mode</span>
-    <strong class="summary-value">{{if .Enabled}}Available{{else}}Pending{{end}}</strong>
-    <span class="summary-note">{{if .Enabled}}Recovery codes can be rotated from this screen{{else}}Codes are generated when two-factor is enabled{{end}}</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon" data-tone="success">{{icon "Key" 15}}</span><span class="stat-label">Recovery mode</span></div><strong class="stat-value">{{if .Enabled}}Available{{else}}Pending{{end}}</strong><span class="stat-hint">{{if .Enabled}}Codes can be rotated{{else}}Generated on enable{{end}}</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Operator action</span>
-    <strong class="summary-value">{{if .Enabled}}Maintain{{else}}Enable{{end}}</strong>
-    <span class="summary-note">{{if .Enabled}}Disable or regenerate recovery codes with a fresh code{{else}}Start setup and confirm from your authenticator app{{end}}</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon" data-tone="warn">{{icon "Activity" 15}}</span><span class="stat-label">Operator action</span></div><strong class="stat-value">{{if .Enabled}}Maintain{{else}}Enable{{end}}</strong><span class="stat-hint">{{if .Enabled}}Disable or regenerate{{else}}Start setup{{end}}</span></div>
   </article>
 </section>
 
 {{if .Enabled}}
-<div class="stack-split">
-<div class="page-stack">
-<div class="card form-panel">
-<div class="card-body">
-<h2>Disable Two-Factor</h2>
-<p class="panel-note">Require the current authenticator code or a valid recovery code before removing the second login factor.</p>
-</div>
-<form method="post" action="{{.PanelPath}}settings/totp/disable" class="stack-form">
+<div class="grid-12">
+<div class="col-7">
+<div class="card">
+<div class="card-head"><div class="col card-title-stack"><h3>Disable two-factor</h3><span class="sub">Require the current authenticator code or a valid recovery code.</span></div></div>
+<div class="card-body"><form method="post" action="{{.PanelPath}}settings/totp/disable" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Current authenticator or recovery code</label>
-<input type="text" name="code" autocomplete="one-time-code" required>
-<p class="field-hint">Disabling two-factor clears the stored secret and the existing recovery code set.</p>
-<button class="danger" type="submit">Disable</button>
-</form>
+<div class="field"><label class="label">Current authenticator or recovery code</label><input class="input input--mono" type="text" name="code" autocomplete="one-time-code" required><span class="help">Disabling clears the stored secret and recovery code set.</span></div>
+<button class="btn danger" type="submit">Disable</button>
+</form></div>
 </div>
 
-<div class="card form-panel">
-<div class="card-body">
-<h2>Rotate Recovery Codes</h2>
-<p class="panel-note">Generate a fresh one-time recovery set after validating the current authenticator code.</p>
-</div>
-<form method="post" action="{{.PanelPath}}settings/totp/regenerate" class="stack-form">
+<div class="card">
+<div class="card-head"><div class="col card-title-stack"><h3>Rotate recovery codes</h3><span class="sub">Generate a fresh one-time recovery set.</span></div></div>
+<div class="card-body"><form method="post" action="{{.PanelPath}}settings/totp/regenerate" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Current authenticator code</label>
-<input type="text" name="code" autocomplete="one-time-code" required>
-<p class="field-hint">Previously generated recovery codes are invalidated as soon as a new set is issued.</p>
-<button type="submit">Regenerate codes</button>
-</form>
+<div class="field"><label class="label">Current authenticator code</label><input class="input input--mono" type="text" name="code" autocomplete="one-time-code" required><span class="help">Previously generated recovery codes are invalidated immediately.</span></div>
+<button class="btn" data-variant="primary" type="submit">Regenerate codes</button>
+</form></div>
 </div>
- </div>
-<aside class="card side-panel">
-<h2>Setup Notes</h2>
-<div class="summary-list">
-  <div class="summary-row">
-    <span class="badge ok">Active</span>
-    <span class="summary-copy"><strong>Second factor enforced</strong><span>Password login now requires a current authenticator or recovery code.</span></span>
-  </div>
-  <div class="summary-row">
-    <span class="badge warn">Recovery</span>
-    <span class="summary-copy"><strong>One-time only</strong><span>Each recovery code can be consumed once and should be stored offline.</span></span>
-  </div>
-  <div class="summary-row">
-    <span class="badge">Audit</span>
-    <span class="summary-copy"><strong>Administrative action</strong><span>Enable, disable, and regeneration events are recorded in the panel audit trail.</span></span>
-  </div>
+</div>
+<aside class="col-5 card">
+<div class="card-head"><h3>Setup notes</h3></div>
+<div class="card-body col col-panel">
+  <div class="totp-note-row"><span class="badge ok">Active</span><span class="col totp-note-copy"><strong class="totp-note-title">Second factor enforced</strong><span class="help">Password login now requires a current authenticator or recovery code.</span></span></div>
+  <div class="totp-note-row"><span class="badge warn">Recovery</span><span class="col totp-note-copy"><strong class="totp-note-title">One-time only</strong><span class="help">Each recovery code can be consumed once and should be stored offline.</span></span></div>
+  <div class="totp-note-row"><span class="badge">Audit</span><span class="col totp-note-copy"><strong class="totp-note-title">Administrative action</strong><span class="help">Enable, disable, and regeneration events are recorded.</span></span></div>
 </div>
 </aside>
 </div>
 {{else}}
-<div class="stack-split">
-<div class="card form-panel">
-<div class="card-body">
-<h2>Enable Two-Factor</h2>
-<p class="panel-note">Start enrollment to generate a TOTP secret, scan it into an authenticator app, and confirm with a current code.</p>
-</div>
-<form method="post" action="{{.PanelPath}}settings/totp/begin" class="stack-form">
+<div class="grid-12">
+<div class="col-7 card">
+<div class="card-head"><div class="col card-title-stack"><h3>Enable two-factor</h3><span class="sub">Generate a TOTP secret, scan it, and confirm with a current code.</span></div></div>
+<div class="card-body"><form method="post" action="{{.PanelPath}}settings/totp/begin" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<button type="submit">Enable two-factor</button>
-</form>
+<button class="btn" data-variant="primary" type="submit">{{icon "Shield" 13}} Enable two-factor</button>
+</form></div>
 </div>
-<aside class="card side-panel">
-<h2>Setup Notes</h2>
-<div class="summary-list">
-  <div class="summary-row">
-    <span class="badge">App</span>
-    <span class="summary-copy"><strong>Authenticator required</strong><span>Any TOTP-compatible authenticator app can scan the QR code or accept the secret manually.</span></span>
-  </div>
-  <div class="summary-row">
-    <span class="badge ok">Recovery</span>
-    <span class="summary-copy"><strong>Codes generated on enable</strong><span>The panel shows recovery codes once immediately after a successful confirmation step.</span></span>
-  </div>
-  <div class="summary-row">
-    <span class="badge warn">Scope</span>
-    <span class="summary-copy"><strong>Admin logins only</strong><span>This affects panel operator access and does not change MTProto user secrets.</span></span>
-  </div>
+<aside class="col-5 card">
+<div class="card-head"><h3>Setup notes</h3></div>
+<div class="card-body col col-panel">
+  <div class="totp-note-row"><span class="badge">App</span><span class="col totp-note-copy"><strong class="totp-note-title">Authenticator required</strong><span class="help">Any TOTP-compatible authenticator app can scan the QR code.</span></span></div>
+  <div class="totp-note-row"><span class="badge ok">Recovery</span><span class="col totp-note-copy"><strong class="totp-note-title">Codes generated on enable</strong><span class="help">Recovery codes are shown once after confirmation.</span></span></div>
+  <div class="totp-note-row"><span class="badge warn">Scope</span><span class="col totp-note-copy"><strong class="totp-note-title">Admin logins only</strong><span class="help">This does not change MTProto user secrets.</span></span></div>
 </div>
 </aside>
 </div>
@@ -769,37 +730,26 @@ var totpEnrollTmpl = layoutTemplate("totp_enroll", `{{define "page_title"}}Enabl
 {{define "content"}}
 <section class="page-head">
   <div class="titles">
-    <p class="page-eyebrow">Settings</p>
+    <p class="page-eyebrow">MTProto Orchestrator</p>
     <h1 class="page-title">Enable Two-Factor</h1>
     <p class="page-sub">Scan the QR code with your authenticator app or enter the secret manually.</p>
   </div>
-  <nav class="page-nav" aria-label="TOTP enrollment navigation">
-    <a href="{{.PanelPath}}settings/totp">Back to two-factor</a>
-    <a href="{{.PanelPath}}dashboard">Dashboard</a>
-  </nav>
+  <div class="actions"><a class="btn" data-variant="ghost" href="{{.PanelPath}}settings/totp">Back to two-factor</a></div>
 </section>
 <section class="page-stack">
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<section class="summary-grid">
-  <article class="summary-card">
-    <span class="summary-label">Factor type</span>
-    <strong class="summary-value">TOTP</strong>
-    <span class="summary-note">Time-based 6-digit authenticator codes</span>
+<section class="grid-12">
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon">{{icon "Shield" 15}}</span><span class="stat-label">Factor type</span></div><strong class="stat-value">TOTP</strong><span class="stat-hint">6-digit authenticator codes</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Issuer</span>
-    <strong class="summary-value">tgproxy-panel</strong>
-    <span class="summary-note">Shown inside the authenticator app account label</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon">{{icon "Cert" 15}}</span><span class="stat-label">Issuer</span></div><strong class="stat-value">tgproxy-panel</strong><span class="stat-hint">Authenticator account label</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Confirmation</span>
-    <strong class="summary-value">One code</strong>
-    <span class="summary-note">Enter the current 6-digit value after scanning or manual setup</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon" data-tone="success">{{icon "Check" 15}}</span><span class="stat-label">Confirmation</span></div><strong class="stat-value">One code</strong><span class="stat-hint">After scanning</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Recovery</span>
-    <strong class="summary-value">Issued next</strong>
-    <span class="summary-note">One-time recovery codes appear after a successful confirmation</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon" data-tone="warn">{{icon "Key" 15}}</span><span class="stat-label">Recovery</span></div><strong class="stat-value">Issued next</strong><span class="stat-hint">After confirmation</span></div>
   </article>
 </section>
 <div class="stack-split">
@@ -865,36 +815,25 @@ var totpRecoveryTmpl = layoutTemplate("totp_recovery", `{{define "page_title"}}R
 {{define "content"}}
 <section class="page-head">
   <div class="titles">
-    <p class="page-eyebrow">Settings</p>
+    <p class="page-eyebrow">MTProto Orchestrator</p>
     <h1 class="page-title">{{.Heading}}</h1>
     <p class="page-sub">These codes can each be used once if the authenticator device is unavailable.</p>
   </div>
-  <nav class="page-nav" aria-label="Recovery code navigation">
-    <a href="{{.PanelPath}}settings/totp">Back to two-factor</a>
-    <a href="{{.PanelPath}}dashboard">Dashboard</a>
-  </nav>
+  <div class="actions"><a class="btn" data-variant="ghost" href="{{.PanelPath}}settings/totp">Back to two-factor</a></div>
 </section>
 <section class="page-stack">
-<section class="summary-grid">
-  <article class="summary-card">
-    <span class="summary-label">Recovery codes</span>
-    <strong class="summary-value mono">{{len .RecoveryCodes}}</strong>
-    <span class="summary-note">Each code can be used exactly once if the authenticator device is unavailable</span>
+<section class="grid-12">
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon">{{icon "Key" 15}}</span><span class="stat-label">Recovery codes</span></div><strong class="stat-value mono">{{len .RecoveryCodes}}</strong><span class="stat-hint">Single use each</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Visibility</span>
-    <strong class="summary-value">One time</strong>
-    <span class="summary-note">Codes are shown only on this screen after enablement or regeneration</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon" data-tone="warn">{{icon "Bell" 15}}</span><span class="stat-label">Visibility</span></div><strong class="stat-value">One time</strong><span class="stat-hint">Shown only now</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Storage</span>
-    <strong class="summary-value">Offline</strong>
-    <span class="summary-note">Keep a printed or otherwise protected copy outside the panel session</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon" data-tone="success">{{icon "Download" 15}}</span><span class="stat-label">Storage</span></div><strong class="stat-value">Offline</strong><span class="stat-hint">Keep protected copy</span></div>
   </article>
-  <article class="summary-card">
-    <span class="summary-label">Fallback</span>
-    <strong class="summary-value">Login recovery</strong>
-    <span class="summary-note">A recovery code can finish sign-in when the authenticator device is unavailable</span>
+  <article class="col-3 card stat-card">
+    <div class="card-body"><div class="stat-head"><span class="stat-icon">{{icon "Logout" 15}}</span><span class="stat-label">Fallback</span></div><strong class="stat-value">Login recovery</strong><span class="stat-hint">When device is unavailable</span></div>
   </article>
 </section>
 <div class="stack-split">

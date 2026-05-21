@@ -47,17 +47,17 @@ const settingsStubListContent = `{{define "page_title"}}Stub Templates{{end}}
 {{define "content"}}
 <section class="page-head">
   <div class="titles">
-    <p class="page-eyebrow">Settings</p>
-    <h1 class="page-title">Stub Templates</h1>
-    <p class="page-sub">Manage the public fallback page templates that are served when the proxy front is reached.</p>
+    <p class="page-eyebrow">MTProto Orchestrator</p>
+    <h1 class="page-title">Stubs</h1>
+    <p class="page-sub">Camouflage website served on the same domain.</p>
   </div>
 </section>
 <section class="page-stack">
-<nav class="settings-tabs" aria-label="Stub template tabs">
-  <a class="active" href="{{.PanelPath}}settings/stubs">Stub templates</a>
-  <a href="{{.PanelPath}}settings/stubs/remote">Remote templates</a>
-  <a href="{{.PanelPath}}settings/certificates">Certificates</a>
-  <a href="{{.PanelPath}}settings/proxy">Proxy</a>
+<nav class="seg" aria-label="Stub template tabs">
+  <a class="seg-item active" href="{{.PanelPath}}settings/stubs">Template library</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/stubs/remote">Remote templates</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/certificates">Certificates</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Proxy</a>
 </nav>
 
 {{if .ApplySuccess}}<p class="success">Template "{{.ApplySuccess}}" applied successfully.</p>{{end}}
@@ -69,33 +69,33 @@ const settingsStubListContent = `{{define "page_title"}}Stub Templates{{end}}
 </ul>
 {{end}}
 
-<section class="summary-grid">
-  <article class="summary-card">
-    <span class="summary-label">Built-in</span>
-    <strong class="summary-value mono">{{len .Templates}}</strong>
-    <span class="summary-note">Templates bundled with the panel</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Upload limit</span>
-    <strong class="summary-value mono">5 MB</strong>
-    <span class="summary-note">ZIP archives only</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Allowed assets</span>
-    <strong class="summary-value">HTML/CSS/JS</strong>
-    <span class="summary-note">Images and fonts are accepted too</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Remote catalog</span>
-    <strong class="summary-value">GitHub</strong>
-    <span class="summary-note">Browse more templates from the remote tab</span>
-  </article>
+<section class="card">
+  <div class="card-body">
+    <div class="row row-stretch">
+      <div class="stub-preview-lg" aria-hidden="true">S</div>
+      <div class="col stub-showcase-copy">
+        <span class="badge" data-tone="success"><span class="dot"></span>Currently serving</span>
+        <h3 class="hero-title">Built-in stub library</h3>
+        <span class="muted">{{len .Templates}} local templates available. Upload ZIP archives up to 5 MB.</span>
+        <div class="row stub-showcase-actions">
+          <button class="btn" data-variant="primary" disabled>{{icon "Globe" 13}} Preview live</button>
+          <button class="btn" data-variant="ghost" disabled>{{icon "Edit" 13}} Edit files</button>
+          <button class="btn" data-variant="ghost" disabled>{{icon "Download" 13}} Download as ZIP</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 
+<div class="grid-12">
+<div class="col-8">
+<section class="card">
+<div class="card-head"><div class="col card-title-stack"><h3>Template library</h3><span class="sub">Built-in templates bundled with the panel</span></div><div class="spacer"></div><a class="btn" data-size="sm" data-variant="ghost" href="{{.PanelPath}}settings/stubs/remote">{{icon "Refresh" 13}} Sync from GitHub</a></div>
+<div class="card-body">
 {{if .Templates}}
 <div class="template-grid">
 {{range .Templates}}
-<article class="card template-card">
+<article class="template-card stub-card">
   <div class="template-card-head">
     <div>
       <h2>{{.Name}}</h2>
@@ -103,11 +103,11 @@ const settingsStubListContent = `{{define "page_title"}}Stub Templates{{end}}
     </div>
     <span class="badge ok">built-in</span>
   </div>
-  <div class="template-preview" aria-hidden="true">{{printf "%.1s" .Name}}</div>
+  <div class="stub-preview" aria-hidden="true"></div>
   <form method="post" action="stubs/apply" class="template-actions">
     <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
     <input type="hidden" name="template" value="{{.Name}}">
-    <button type="submit">Apply</button>
+    <button class="btn" data-size="xs" type="submit">Apply</button>
   </form>
 </article>
 {{end}}
@@ -115,39 +115,34 @@ const settingsStubListContent = `{{define "page_title"}}Stub Templates{{end}}
 {{else}}
 <p class="muted">No built-in templates available.</p>
 {{end}}
-
-<div class="stack-split">
-<div class="card form-panel">
-<h2>Upload Custom Template</h2>
-<p class="panel-note">Upload a ZIP archive up to 5 MB. Allowed files: HTML, CSS, JS, images, and fonts.</p>
+</div>
+</section>
+</div>
+<div class="col-4">
+<div class="card">
+<div class="card-head"><h3>Upload custom template</h3><span class="sub">ZIP up to 5 MB: HTML, CSS, JS, images, fonts</span></div>
+<div class="card-body">
 <form method="post" action="{{.PanelPath}}settings/stubs/upload" enctype="multipart/form-data" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<input type="file" name="stub_zip" accept=".zip" required>
-<button type="submit">Upload and apply</button>
+<div class="upload-drop">
+  {{icon "Upload" 28}}
+  <p>Drop ZIP file here</p>
+  <input type="file" name="stub_zip" accept=".zip" required>
+</div>
+<button class="btn" data-variant="primary" type="submit">Upload and apply</button>
 </form>
 </div>
-<aside class="card side-panel">
-<h2>Template Notes</h2>
-<div class="summary-list">
-  <div class="summary-row">
-    <span class="badge">Preview</span>
-    <span class="summary-copy"><strong>Local bundle</strong><span>Uploaded archives are validated before activation.</span></span>
-  </div>
-  <div class="summary-row">
-    <span class="badge warn">Fallback</span>
-    <span class="summary-copy"><strong>Remote catalog</strong><span>Use the remote tab when built-ins are too limited.</span></span>
-  </div>
-  <div class="summary-row">
-    <span class="badge ok">Scope</span>
-    <span class="summary-copy"><strong>Public stub only</strong><span>These templates do not affect the authenticated panel shell.</span></span>
-  </div>
 </div>
-</aside>
+<div class="card">
+<div class="card-head"><h3>Stub configuration</h3></div>
+<div class="card-body col col-panel">
+  <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Serve on :80</span><span class="help">HTTP gets a 301 to HTTPS by default.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
+  <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Hide tgproxy headers</span><span class="help">Strip identifying response headers.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
+  <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Cache static assets</span><span class="help">Improves probe authenticity.</span></div><span class="toggle"><input type="checkbox" disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
 </div>
-<nav class="page-nav" aria-label="Stub template links">
-  <a href="{{.PanelPath}}settings/stubs/remote">Browse remote templates</a>
-  <a href="{{.PanelPath}}settings/certificates">Certificate settings</a>
-</nav>
+</div>
+</div>
+</div>
 </section>
 {{end}}
 {{template "base" .}}`
@@ -158,50 +153,46 @@ const settingsStubRemoteContent = `{{define "page_title"}}Remote Templates{{end}
 {{define "content"}}
 <section class="page-head">
   <div class="titles">
-    <p class="page-eyebrow">Settings</p>
-    <h1 class="page-title">Remote Templates</h1>
-    <p class="page-sub">Templates are fetched from GitHub and then applied as the active public stub page.</p>
+    <p class="page-eyebrow">MTProto Orchestrator</p>
+    <h1 class="page-title">Stubs</h1>
+    <p class="page-sub">Camouflage website served on the same domain.</p>
   </div>
 </section>
 <section class="page-stack">
-<nav class="settings-tabs" aria-label="Remote template tabs">
-  <a href="{{.PanelPath}}settings/stubs">Stub templates</a>
-  <a class="active" href="{{.PanelPath}}settings/stubs/remote">Remote templates</a>
-  <a href="{{.PanelPath}}settings/certificates">Certificates</a>
-  <a href="{{.PanelPath}}settings/proxy">Proxy</a>
+<nav class="seg" aria-label="Remote template tabs">
+  <a class="seg-item" href="{{.PanelPath}}settings/stubs">Template library</a>
+  <a class="seg-item active" href="{{.PanelPath}}settings/stubs/remote">Remote templates</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/certificates">Certificates</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Proxy</a>
 </nav>
-<p class="panel-note">Source: <a href="https://github.com/learning-zone/website-templates" target="_blank" rel="noopener">learning-zone/website-templates</a>.</p>
 
 {{if .ApplySuccess}}<p class="success">Template "{{.ApplySuccess}}" downloaded and applied successfully.</p>{{end}}
 {{if .Error}}<div class="warn-box">{{.Error}}</div>{{end}}
 
-<section class="summary-grid">
-  <article class="summary-card">
-    <span class="summary-label">Remote source</span>
-    <strong class="summary-value">GitHub</strong>
-    <span class="summary-note">learning-zone/website-templates</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Available</span>
-    <strong class="summary-value mono">{{len .Templates}}</strong>
-    <span class="summary-note">Templates fetched for this request</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Flow</span>
-    <strong class="summary-value">Download</strong>
-    <span class="summary-note">Fetched and applied in one step</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Fallback</span>
-    <strong class="summary-value">Built-ins</strong>
-    <span class="summary-note">Switch back to local templates at any time</span>
-  </article>
+<section class="card">
+  <div class="card-body">
+    <div class="row row-stretch">
+      <div class="stub-preview-lg" aria-hidden="true"></div>
+      <div class="col stub-showcase-copy">
+        <span class="badge" data-tone="accent"><span class="dot"></span>Remote catalog</span>
+        <h3 class="hero-title">learning-zone/website-templates</h3>
+        <span class="muted">{{len .Templates}} templates fetched for this request. Download and apply runs in one step.</span>
+        <div class="row stub-showcase-actions">
+          <a class="btn" data-variant="primary" href="{{.PanelPath}}settings/stubs">{{icon "Stubs" 13}} Local library</a>
+          <button class="btn" data-variant="ghost" disabled>{{icon "Search" 13}} Search catalog</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </section>
 
 {{if .Templates}}
+<section class="card">
+<div class="card-head"><div class="col card-title-stack"><h3>Template library</h3><span class="sub">From GitHub · live preview placeholder until remote previews are implemented</span></div><div class="spacer"></div><a class="btn" data-size="sm" data-variant="ghost" href="https://github.com/learning-zone/website-templates" target="_blank" rel="noopener">{{icon "Globe" 13}} Source</a></div>
+<div class="card-body">
 <div class="template-grid">
 {{range .Templates}}
-<article class="card template-card">
+<article class="template-card stub-card">
   <div class="template-card-head">
     <div>
       <h2>{{.Name}}</h2>
@@ -209,15 +200,17 @@ const settingsStubRemoteContent = `{{define "page_title"}}Remote Templates{{end}
     </div>
     <span class="badge warn">remote</span>
   </div>
-  <div class="template-preview" aria-hidden="true">{{printf "%.1s" .Name}}</div>
+  <div class="stub-preview" aria-hidden="true"></div>
   <form method="post" action="{{$.PanelPath}}settings/stubs/remote-apply" class="template-actions">
     <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
     <input type="hidden" name="template" value="{{.Name}}">
-    <button type="submit">Download &amp; Apply</button>
+    <button class="btn" data-size="xs" type="submit">Download &amp; Apply</button>
   </form>
 </article>
 {{end}}
 </div>
+</div>
+</section>
 {{else if not .Error}}
 <p class="muted">No templates available.</p>
 {{end}}
@@ -238,17 +231,17 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
 {{define "content"}}
 <section class="page-head">
   <div class="titles">
-    <p class="page-eyebrow">Settings</p>
+    <p class="page-eyebrow">MTProto Orchestrator</p>
     <h1 class="page-title">Certificates</h1>
-    <p class="page-sub">Review TLS certificate state, validity window, and recent renewal attempts.</p>
+    <p class="page-sub">TLS certificates and ACME renewal.</p>
   </div>
 </section>
 <section class="page-stack">
-<nav class="settings-tabs" aria-label="Certificate tabs">
-  <a href="{{.PanelPath}}settings/stubs">Stub templates</a>
-  <a class="active" href="{{.PanelPath}}settings/certificates">Certificates</a>
-  <a href="{{.PanelPath}}settings/proxy">Proxy</a>
-  <a href="{{.PanelPath}}settings/system">System</a>
+<nav class="seg" aria-label="Certificate tabs">
+  <a class="seg-item" href="{{.PanelPath}}settings/stubs">Stubs</a>
+  <a class="seg-item active" href="{{.PanelPath}}settings/certificates">Certificates</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Proxy</a>
+  <a class="seg-item" href="{{.PanelPath}}settings/system">System</a>
 </nav>
 
 {{if not .HasDomain}}
@@ -259,79 +252,63 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
 </div>
 {{end}}
 
-<section class="summary-grid">
-  <article class="summary-card">
-    <span class="summary-label">Mode</span>
-    <strong class="summary-value">{{if .CertMode}}{{.CertMode}}{{else}}Unknown{{end}}</strong>
-    <span class="summary-note">{{if .HasDomain}}{{.Domain}}{{else}}IP-only installation{{end}}</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Validity</span>
-    <strong class="summary-value">{{if .IsValid}}Valid{{else}}Invalid{{end}}</strong>
-    <span class="summary-note">{{if not .ExpiresAt.IsZero}}Expires {{.ExpiresAt.Format "2006-01-02"}}{{else}}No active expiry data{{end}}</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Renewal</span>
-    <strong class="summary-value">{{if and .HasDomain .NeedsRenewal}}Due{{else if .HasDomain}}Healthy{{else}}Unavailable{{end}}</strong>
-    <span class="summary-note">{{if and .HasDomain .NeedsRenewal}}Expires within 30 days{{else if .HasDomain}}Automatic renewals can run{{else}}Requires a domain name{{end}}</span>
-  </article>
-  <article class="summary-card">
-    <span class="summary-label">Attempts</span>
-    <strong class="summary-value mono">{{len .Renewals}}</strong>
-    <span class="summary-note">Recent renewal records stored in panel DB</span>
-  </article>
-</section>
-
-<div class="stack-split">
-<section class="card">
-<div class="card-body">
-<h2>Current certificate</h2>
-<p class="panel-note">This is the best-effort view of the certificate currently used by the panel edge.</p>
-</div>
-<div class="summary-list cert-details">
-  <div class="summary-row"><span class="badge">Mode</span><span class="summary-copy"><strong>{{if .CertMode}}{{.CertMode}}{{else}}Unknown{{end}}</strong><span>Issuance mode currently detected by the panel</span></span></div>
-  {{if .HasDomain}}<div class="summary-row"><span class="badge ok">Domain</span><span class="summary-copy"><strong class="mono">{{.Domain}}</strong><span>Configured DNS name for ACME and TLS</span></span></div>{{end}}
-  {{if .ServerIP}}<div class="summary-row"><span class="badge">Server IP</span><span class="summary-copy"><strong class="mono">{{.ServerIP}}</strong><span>Public endpoint currently associated with this install</span></span></div>{{end}}
-  {{if not .ExpiresAt.IsZero}}<div class="summary-row"><span class="badge warn">Expires</span><span class="summary-copy"><strong>{{.ExpiresAt.Format "2006-01-02 15:04 UTC"}}</strong><span>Renew before the validity window closes</span></span></div>{{end}}
-  {{if not .IssuedAt.IsZero}}<div class="summary-row"><span class="badge">Issued</span><span class="summary-copy"><strong>{{.IssuedAt.Format "2006-01-02 15:04 UTC"}}</strong><span>Best-effort issuance timestamp from local certificate state</span></span></div>{{end}}
-  <div class="summary-row"><span class="badge {{if .IsValid}}ok{{else}}down{{end}}">Valid</span><span class="summary-copy"><strong>{{if .IsValid}}Yes{{else}}No{{end}}</strong><span>{{if and .HasDomain .NeedsRenewal}}Renewal is due within 30 days{{else if .IsValid}}Certificate is currently usable{{else}}Certificate state needs attention{{end}}</span></span></div>
-</div>
-</section>
-<aside class="card side-panel">
-<h2>Renewal Summary</h2>
-<div class="summary-list">
-  <div class="summary-row">
-    <span class="badge {{if and .HasDomain .NeedsRenewal}}warn{{else if .HasDomain}}ok{{else}}down{{end}}">State</span>
-    <span class="summary-copy"><strong>{{if and .HasDomain .NeedsRenewal}}Due{{else if .HasDomain}}Healthy{{else}}Unavailable{{end}}</strong><span>{{if and .HasDomain .NeedsRenewal}}Expiry is approaching{{else if .HasDomain}}Automatic renewal path is available{{else}}ACME requires a domain name{{end}}</span></span>
+<div class="grid-12">
+  <div class="col-7">
+    <section class="card">
+      <div class="card-head">
+        <div class="col card-title-stack"><h3>Active certificate</h3><span class="sub">{{if .CertMode}}{{.CertMode}}{{else}}Unknown{{end}} · {{if .HasDomain}}auto-renewing{{else}}manual only{{end}}</span></div>
+        <div class="spacer"></div>
+        {{if .HasDomain}}<form method="post" action="{{.PanelPath}}settings/certificates/renew" class="inline"><input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}"><button class="btn" data-size="sm" data-variant="primary" type="submit">{{icon "Refresh" 13}} Renew now</button></form>{{else}}<button class="btn" data-size="sm" data-variant="primary" disabled>{{icon "Refresh" 13}} Renew now</button>{{end}}
+      </div>
+      <div class="card-body">
+        <div class="row row-center-wide">
+          <div class="ring-lite mono">TLS</div>
+          <div class="col col-tight">
+            <span class="badge {{if .IsValid}}ok{{else}}down{{end}}"><span class="dot"></span>{{if .IsValid}}Valid · trusted by Telegram clients{{else}}Invalid or missing certificate{{end}}</span>
+            {{if not .ExpiresAt.IsZero}}<span class="muted-md">Expires <span class="mono">{{.ExpiresAt.Format "2006-01-02 15:04 UTC"}}</span></span>{{end}}
+            {{if not .IssuedAt.IsZero}}<span class="muted-md">Issued <span class="mono">{{.IssuedAt.Format "2006-01-02 15:04 UTC"}}</span></span>{{end}}
+          </div>
+        </div>
+        <div class="cert-pair"><span class="cert-label">Mode</span><span class="cert-value">{{if .CertMode}}{{.CertMode}}{{else}}Unknown{{end}}</span></div>
+        {{if .HasDomain}}<div class="cert-pair"><span class="cert-label">Domain</span><span class="cert-value mono">{{.Domain}}</span></div>{{end}}
+        {{if .ServerIP}}<div class="cert-pair"><span class="cert-label">Server IP</span><span class="cert-value mono">{{.ServerIP}}</span></div>{{end}}
+        <div class="cert-pair"><span class="cert-label">Renewal</span><span class="cert-value">{{if and .HasDomain .NeedsRenewal}}Due{{else if .HasDomain}}Healthy{{else}}Unavailable{{end}}</span></div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h3>Renewal log</h3></div>
+      <div class="card-body card-body--flush">
+      {{if .Renewals}}
+        {{range .Renewals}}<div class="cert-log-row"><span class="cert-log-ts mono">{{.CreatedAt}}</span><span><strong>{{if .Success}}Issued certificate{{else}}Renewal failed{{end}}</strong> · {{if .ErrorMsg}}{{.ErrorMsg}}{{else}}{{.Domain}}{{end}}</span></div>{{end}}
+      {{else}}
+        <div class="empty">No renewal attempts recorded.</div>
+      {{end}}
+      </div>
+    </section>
   </div>
-  <div class="summary-row">
-    <span class="badge">Attempts</span>
-    <span class="summary-copy"><strong class="mono">{{len .Renewals}}</strong><span>Recent renewal records stored in the panel database</span></span>
+  <div class="col-5">
+    <section class="card">
+      <div class="card-head"><h3>Renewal settings</h3></div>
+      <div class="card-body col col-panel">
+        <div class="field"><span class="label">Provider</span><select class="select" disabled><option>Let's Encrypt (production)</option></select></div>
+        <div class="field"><span class="label">Auto-renew threshold (days)</span><input class="input input--mono" value="30" disabled></div>
+        <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Auto-renew enabled</span><span class="help">Renews via cron when threshold reached.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
+        <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Notify on renewal</span><span class="help">Email and Telegram notifications are not implemented yet.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
+        <button class="btn" data-variant="primary" disabled>{{icon "Check" 12}} Save settings</button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h3>Manual certificate</h3></div>
+      <div class="card-body">
+        <p class="help">Upload your own fullchain.pem + privkey.pem to override ACME.</p>
+        <div class="row row-tight row-wrap">
+          <button class="btn" data-size="sm" data-variant="ghost" disabled>{{icon "Upload" 12}} Upload chain</button>
+          <button class="btn" data-size="sm" data-variant="ghost" disabled>{{icon "Upload" 12}} Upload key</button>
+        </div>
+      </div>
+    </section>
   </div>
 </div>
-</aside>
-</div>
-
-{{if .Renewals}}
-<section class="card">
-<div class="card-body">
-<h2>Recent renewal attempts</h2>
-<p class="panel-note">Operational history for ACME renewals and certificate refresh attempts.</p>
-</div>
-<div class="summary-list renewal-feed">
-{{range .Renewals}}
-  <div class="summary-row">
-    <span class="badge {{if .Success}}ok{{else}}down{{end}}">{{if .Success}}success{{else}}failed{{end}}</span>
-    <span class="summary-copy">
-      <strong>{{.Domain}}</strong>
-      <span>{{if .ErrorMsg}}{{.ErrorMsg}}{{else}}Certificate renewal completed without stored error text{{end}}</span>
-      <span class="mono">{{.CreatedAt}}</span>
-    </span>
-  </div>
-{{end}}
-</div>
-</section>
-{{end}}
 </section>
 {{end}}
 {{template "base" .}}`

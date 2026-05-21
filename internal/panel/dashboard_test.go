@@ -523,12 +523,11 @@ func TestDashboardTrafficFragmentRendersSeriesOverview(t *testing.T) {
 
 	html := buf.String()
 	for _, want := range []string{
-		`class="traffic-overview"`,
-		`class="traffic-chart"`,
+		`class="card-body traffic-overview"`,
+		`class="traffic-chart area-chart"`,
 		`traffic-chart-line-out`,
 		`traffic-chart-line-in`,
-		`Transferred`,
-		`4.5 KB`,
+		`3.0 KB`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("traffic fragment missing %q:\n%s", want, html)
@@ -567,7 +566,7 @@ func TestDashboardPageRendersKPIAndQuickActions(t *testing.T) {
 		`href="/p-example/logs"`,
 		`data-action="users"`,
 		`data-action="bridge"`,
-		`Bridge Nodes`,
+		`Bridge nodes`,
 		`ready`,
 	} {
 		if !strings.Contains(html, want) {
@@ -604,8 +603,8 @@ func TestDashboardBridgeSummaryLimitsPreviewAndLinksToBridge(t *testing.T) {
 			t.Fatalf("dashboard bridge summary missing %q:\n%s", want, html)
 		}
 	}
-	if strings.Contains(html, `us-1`) {
-		t.Fatalf("dashboard bridge summary must limit preview nodes:\n%s", html)
+	if !strings.Contains(html, `us-1`) {
+		t.Fatalf("dashboard bridge summary must match the template four-node preview:\n%s", html)
 	}
 }
 
@@ -624,9 +623,9 @@ func TestDashboardHealthFragmentIncludesSystemPanel(t *testing.T) {
 
 	html := buf.String()
 	for _, want := range []string{
-		`class="ops-health-grid"`,
-		`class="ops-system-panel"`,
-		`class="ops-system-metrics"`,
+		`class="resource-row"`,
+		`class="resource-meta"`,
+		`class="bar"`,
 		`Memory`,
 		`Disk`,
 		`Load avg`,
@@ -651,13 +650,12 @@ func TestDashboardConnectionsFragmentIncludesSummaryMetrics(t *testing.T) {
 
 	html := buf.String()
 	for _, want := range []string{
-		`class="ops-card-head"`,
-		`Users live`,
-		`class="connection-summary"`,
+		`class="card-head"`,
+		`Active Connections`,
 		`Connections`,
-		`Configured`,
-		`Peak / user`,
-		`Open Users`,
+		`4 live`,
+		`alice`,
+		`bob`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("connections fragment missing %q:\n%s", want, html)
@@ -678,12 +676,12 @@ func TestDashboardTrafficFragmentRendersDualSeriesChartAndLegend(t *testing.T) {
 
 	html := buf.String()
 	for _, want := range []string{
-		`class="ops-card-title-row traffic-head"`,
+		`class="card-head"`,
 		`href="?period=1h"`,
-		`href="?period=24h" class="active"`,
+		`class="seg-item active" href="?period=24h"`,
 		`href="?period=7d"`,
 		`href="?period=30d"`,
-		`class="traffic-legend"`,
+		`class="legend-dot"`,
 		`traffic-chart-area traffic-chart-area-out`,
 		`traffic-chart-line traffic-chart-line-out`,
 		`traffic-chart-area traffic-chart-area-in`,
@@ -715,9 +713,9 @@ func TestDashboardComponentsFragmentIncludesComponentStatusGrid(t *testing.T) {
 
 	html := buf.String()
 	for _, want := range []string{
-		`class="component-grid"`,
-		`class="component-card"`,
-		`Installed components`,
+		`class="tbl tbl--compact"`,
+		`Services & Components`,
+		`systemd units and installed binaries`,
 		`Optional in Single mode`,
 	} {
 		if !strings.Contains(html, want) {

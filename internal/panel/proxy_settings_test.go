@@ -79,7 +79,7 @@ func TestSettingsPagesUsePanelScopedLinksWithoutInlineStyle(t *testing.T) {
 			for _, want := range []string{
 				`href="/p-example/dashboard"`,
 				`class="page-head"`,
-				`class="settings-tabs"`,
+				`class="seg"`,
 			} {
 				if !strings.Contains(body, want) {
 					t.Fatalf("%s missing %q:\n%s", path, want, body)
@@ -93,13 +93,13 @@ func TestSettingsPagesUsePanelScopedLinksWithoutInlineStyle(t *testing.T) {
 			}
 			if strings.Contains(path, "/settings/admin-password") {
 				for _, want := range []string{
-					`class="summary-grid"`,
+					`class="grid-12"`,
 					`data-password-page`,
 					`data-password-role="toggle"`,
 					`data-password-role="strength-meter"`,
 					`data-password-role="match-note"`,
-					`>Rotate Credentials</h2>`,
-					`>Rotation Notes</h2>`,
+					`>Change admin password</h3>`,
+					`>Sessions</h3>`,
 				} {
 					if !strings.Contains(body, want) {
 						t.Fatalf("%s missing %q:\n%s", path, want, body)
@@ -108,9 +108,9 @@ func TestSettingsPagesUsePanelScopedLinksWithoutInlineStyle(t *testing.T) {
 			}
 			if strings.Contains(path, "/settings/proxy") {
 				for _, want := range []string{
-					`class="summary-grid"`,
-					`>Public Endpoint</h2>`,
-					`>Endpoint Preview</h2>`,
+					`class="grid-12"`,
+					`>MTProto endpoint</h3>`,
+					`>Endpoint preview</h3>`,
 					`tg://proxy?server=`,
 				} {
 					if !strings.Contains(body, want) {
@@ -120,12 +120,11 @@ func TestSettingsPagesUsePanelScopedLinksWithoutInlineStyle(t *testing.T) {
 			}
 			if strings.Contains(path, "/settings/system") {
 				for _, want := range []string{
-					`class="summary-grid"`,
-					`class="page-stack settings-form-grid"`,
-					`>Panel Access</h2>`,
-					`>Logging</h2>`,
-					`class="settings-submit-row"`,
-					`>Operational Notes</h2>`,
+					`class="grid-12"`,
+					`>Panel access</h3>`,
+					`>Logging</h3>`,
+					`>Maintenance</h3>`,
+					`>Versions</h3>`,
 				} {
 					if !strings.Contains(body, want) {
 						t.Fatalf("%s missing %q:\n%s", path, want, body)

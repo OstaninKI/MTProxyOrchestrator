@@ -12,13 +12,10 @@ const auditContent = `{{define "page_title"}}Audit Log{{end}}
     <h1 class="page-title">Audit Log</h1>
     <p class="page-sub">Review administrator actions without exposing raw secrets.</p>
   </div>
-  <nav class="page-nav" aria-label="Audit navigation">
-    <a href="{{.PanelPath}}dashboard">Dashboard</a>
-    <a href="{{.PanelPath}}settings/system">System settings</a>
-  </nav>
+  <div class="actions"><a class="btn" data-variant="ghost" href="{{.PanelPath}}settings/system">System settings</a></div>
 </section>
 <div class="card table-card">
-<div class="table-wrap"><table>
+<div class="card-body card-body--flush"><table class="tbl">
 <thead>
 <tr>
 <th>ID</th>

@@ -456,59 +456,52 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
 {{define "content"}}
 <section class="page-head">
   <div class="titles">
-    <p class="page-eyebrow">Routing</p>
-    <h1 class="page-title">Bridge Mode</h1>
-    <p class="page-sub">Manage outbound nodes, routing strategy, and the switch between Single and Bridge mode.</p>
+    <p class="page-eyebrow">MTProto Orchestrator</p>
+    <h1 class="page-title">Bridge</h1>
+    <p class="page-sub">Outbound nodes and routing strategy.</p>
   </div>
   <div class="actions">
-    <a class="page-cta" href="#add-node">Add node</a>
-    <nav class="page-nav" aria-label="Bridge navigation">
-      <a href="{{.PanelPath}}dashboard">Dashboard</a>
-      <a href="{{.PanelPath}}settings/proxy">Proxy settings</a>
-    </nav>
+    <a class="btn" data-variant="primary" href="#add-node">{{icon "Plus" 13}} Add node</a>
   </div>
 </section>
 <section class="page-stack">
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
-<section class="bridge-banner">
-  <div class="summary-grid">
-    <article class="summary-card">
-      <span class="summary-label">Nodes total</span>
-      <strong class="summary-value mono">{{len .Nodes}}</strong>
-      <span class="summary-note">Configured outbounds</span>
-    </article>
-    <article class="summary-card">
-      <span class="summary-label">Enabled</span>
-      <strong class="summary-value mono">{{countEnabledBridgeNodes .Nodes}}</strong>
-      <span class="summary-note">Eligible for routing</span>
-    </article>
-    <article class="summary-card">
-      <span class="summary-label">Latency tested</span>
-      <strong class="summary-value mono">{{countTestedBridgeNodes .Nodes}}</strong>
-      <span class="summary-note">Nodes with measured RTT</span>
-    </article>
-    <article class="summary-card">
-      <span class="summary-label">Avg latency</span>
-      <strong class="summary-value mono">{{if gt (avgBridgeLatency .Nodes) 0}}{{avgBridgeLatency .Nodes}}ms{{else}}—{{end}}</strong>
-      <span class="summary-note">{{if .Strategy}}{{.Strategy}}{{else}}urltest{{end}} strategy</span>
-    </article>
+<section class="card bridge-banner">
+  <div class="card-body">
+    <div class="row row-center-wide bridge-banner-main">
+      <div class="ring-lite mono">{{countEnabledBridgeNodes .Nodes}}/{{len .Nodes}}</div>
+      <div class="col col-tight col-fill">
+        <div class="row row-tight">
+          <span class="setting-title">Bridge mode</span>
+          <span class="badge" data-tone="accent"><span class="dot"></span>{{if .Strategy}}{{.Strategy}}{{else}}urltest{{end}} strategy</span>
+        </div>
+        <span class="muted-md">Route outbound proxy traffic through VLESS Reality, Trojan, Shadowsocks, Hysteria2, or TUIC. Active connections use the configured strategy across enabled nodes.</span>
+      </div>
+      <div class="col col-tight text-right">
+        <span class="mono value-lg">{{if gt (avgBridgeLatency .Nodes) 0}}{{avgBridgeLatency .Nodes}}ms{{else}}—{{end}}</span>
+        <span class="muted-sm">avg latency</span>
+      </div>
+    </div>
   </div>
-  <nav class="settings-tabs" aria-label="Bridge sections">
-    <a class="active" href="#nodes">Nodes</a>
-    <a href="#add-node">Add node</a>
-    <a href="#routing-strategy">Routing</a>
-    <a href="#mode-control">Mode control</a>
+  <nav class="seg bridge-seg" aria-label="Bridge sections">
+    <a class="seg-item active" href="#nodes">Nodes ({{len .Nodes}})</a>
+    <a class="seg-item" href="#add-node">Add node</a>
+    <a class="seg-item" href="#routing-strategy">Routing</a>
+    <a class="seg-item" href="#mode-control">Mode control</a>
   </nav>
 </section>
 
-<div id="add-node" class="card form-panel">
-<h2>Add Outbound Node via Share URL</h2>
+<div id="add-node" class="card">
+<div class="card-head"><h3>Add Outbound Node via Share URL</h3></div>
+<div class="card-body">
 <form method="post" action="{{.PanelPath}}bridge/nodes/add" class="bridge-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Share URL (vless://, trojan://, ss://, hysteria2://, tuic://)</label>
-<input type="text" name="share_url" placeholder="vless://uuid@host:port?...#tag" required>
-<button type="submit">Add Node</button>
+<label class="label">Share URL</label>
+<input class="input input--mono" type="text" name="share_url" placeholder="vless://uuid@host:port?...#tag" required>
+<span class="help">Supported: vless://, trojan://, ss://, hysteria2://, tuic://.</span>
+<button class="btn" data-variant="primary" type="submit">{{icon "Plus" 13}} Add Node</button>
 </form>
+</div>
 </div>
 
 <details class="card disclosure">
@@ -551,11 +544,10 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
 
 {{if .Nodes}}
 <div id="nodes" class="card table-card">
-<div class="card-body">
-<h2>Outbound Nodes</h2>
-<p class="panel-note">Status reflects whether the node is enabled in the Bridge config. Latency is shown only after a test run.</p>
+<div class="card-head">
+<div class="col card-title-stack"><h3>Outbound Nodes</h3><span class="sub">Status reflects whether the node is enabled in the Bridge config.</span></div>
 </div>
-<div class="table-wrap"><table>
+<div class="card-body card-body--flush"><table class="tbl">
 <thead><tr><th>Tag</th><th>Type</th><th>Host</th><th>Port</th><th>Status</th><th>Latency</th><th>Actions</th></tr></thead>
 <tbody>
 {{range .Nodes}}
@@ -573,7 +565,7 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
       <div class="bridge-latency">
         <span class="mono">{{.LastLatency}}ms</span>
         <div class="ops-meter bridge-latency-meter" data-tone="{{bridgeLatencyTone .LastLatency}}">
-          <span style="width: {{bridgeLatencyPct .LastLatency}}%"></span>
+          <span class="meter-fill pct-{{bridgeLatencyPct .LastLatency}}"></span>
         </div>
       </div>
     {{else}}
@@ -604,8 +596,9 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
 </table></div>
 </div>
 
-<div id="routing-strategy" class="card form-panel">
-<h2>Routing Strategy</h2>
+<div id="routing-strategy" class="card">
+<div class="card-head"><h3>Outbound strategy</h3><span class="sub">How traffic is distributed across online nodes</span></div>
+<div class="card-body">
 <form method="post" action="{{.PanelPath}}bridge/strategy" class="bridge-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
 <select name="strategy">
@@ -614,8 +607,9 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
   <option value="roundrobin"{{if eq .Strategy "roundrobin"}} selected{{end}}>round-robin (rotate through nodes)</option>
   <option value="selector"{{if eq .Strategy "selector"}} selected{{end}}>selector (manual)</option>
 </select>
-<button type="submit">Save Strategy</button>
+<button class="btn" data-variant="primary" type="submit">{{icon "Check" 12}} Save Strategy</button>
 </form>
+</div>
 </div>
 
 <div id="mode-control" class="card form-panel">
@@ -652,10 +646,7 @@ var editNodeTmpl = layoutTemplate("editNode", `{{define "page_title"}}Edit Node{
     <h1 class="page-title">Edit Node: {{.Node.Tag}}</h1>
     <p class="page-sub">Update visible routing fields. Secret material is intentionally not shown here.</p>
   </div>
-  <nav class="page-nav" aria-label="Edit node navigation">
-    <a href="{{.PanelPath}}bridge">Back to bridge</a>
-    <a href="{{.PanelPath}}dashboard">Dashboard</a>
-  </nav>
+  <div class="actions"><a class="btn" data-variant="ghost" href="{{.PanelPath}}bridge">Back to bridge</a></div>
 </section>
 <div class="card form-panel">
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}

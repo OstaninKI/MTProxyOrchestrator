@@ -53,12 +53,13 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
 <section class="page-head ops-page-head">
   <div class="titles">
     <p class="page-eyebrow">MTProto Orchestrator</p>
-    <h1 class="page-title">Control Dashboard</h1>
-    <p class="page-sub">{{if .IsBridge}}Bridge routing is active. Watch each hop in the chain.{{else}}Single mode is active. Core service health is shown first.{{end}}</p>
+    <h1 class="page-title">Control</h1>
+    <p class="page-sub">Overview of services, traffic and users.</p>
   </div>
   <div class="actions">
     <div class="status-strip" aria-label="Dashboard status">
       <div class="item">
+        <span class="pulse-dot"></span>
         <span class="k">Mode</span>
         <span class="v">{{if .IsBridge}}Bridge{{else}}Single{{end}}</span>
       </div>
@@ -75,15 +76,15 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
 </section>
 <section class="kpi-grid" aria-label="Dashboard overview">
   <article class="kpi">
-    <div class="kpi-label">Throughput</div>
+    <div class="kpi-label">{{icon "Activity" 13}} Throughput</div>
     <div class="kpi-value mono">{{formatBytes (latestTrafficTotal .TrafficSeries)}}</div>
     <div class="kpi-sub">
-      <span class="kpi-delta kpi-delta--up">latest bucket</span>
+      <span class="kpi-delta kpi-delta--up">{{icon "ArrowUpRight" 12}} live</span>
       <span>selected {{.Period}} window</span>
     </div>
   </article>
   <article class="kpi">
-    <div class="kpi-label">Active users</div>
+    <div class="kpi-label">{{icon "Users" 13}} Active users</div>
     <div class="kpi-value mono">{{len .LiveConnections}}</div>
     <div class="kpi-sub">
       <span>{{len .Users}} configured</span>
@@ -91,82 +92,72 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
     </div>
   </article>
   <article class="kpi">
-    <div class="kpi-label">Bridge nodes</div>
+    <div class="kpi-label">{{icon "Bridge" 13}} Bridge nodes</div>
     <div class="kpi-value mono">{{countEnabledNodes .BridgeNodes}}/{{len .BridgeNodes}}</div>
     <div class="kpi-sub">
       {{if .IsBridge}}<span>enabled for routing</span>{{else}}<span>optional in Single mode</span>{{end}}
     </div>
   </article>
   <article class="kpi">
-    <div class="kpi-label">Service health</div>
+    <div class="kpi-label">{{icon "Heart" 13}} Service health</div>
     <div class="kpi-value">{{if .Healthy}}All systems{{else}}Needs attention{{end}}</div>
     <div class="kpi-sub">
-      <span>{{.HealthLabel}}</span>
+      <span><span class="pulse-dot pulse-dot--inline"></span>{{.HealthLabel}}</span>
     </div>
   </article>
 </section>
-<section class="page-stack">
-  {{template "health" .}}
-  <div class="grid-12">
-    <div class="col-8">
-      {{template "components" .}}
-    </div>
-    <div class="col-4">
-      <section class="card ops-card">
-        <h2>Quick Actions</h2>
-        <p class="ops-card-sub">Primary operator flows available in the current panel.</p>
-        <div class="action-list">
-          <a class="action-link" href="{{.PanelPath}}users">
-            <span class="action-icon" data-action="users" aria-hidden="true"></span>
-            <span class="summary-copy"><strong>Add user</strong><span>Create a new MTProto access link.</span></span>
-          </a>
-          <a class="action-link" href="{{.PanelPath}}bridge">
-            <span class="action-icon" data-action="bridge" aria-hidden="true"></span>
-            <span class="summary-copy"><strong>Manage Bridge</strong><span>Update outbound nodes and routing strategy.</span></span>
-          </a>
-          <a class="action-link" href="{{.PanelPath}}settings/certificates">
-            <span class="action-icon" data-action="tls" aria-hidden="true"></span>
-            <span class="summary-copy"><strong>Review TLS</strong><span>Check certificate validity and renewal status.</span></span>
-          </a>
-          <a class="action-link" href="{{.PanelPath}}logs">
-            <span class="action-icon" data-action="logs" aria-hidden="true"></span>
-            <span class="summary-copy"><strong>Open logs</strong><span>Inspect the live event stream and download recent lines.</span></span>
-          </a>
-        </div>
-      </section>
-    </div>
-  </div>
+<section class="page-stack fade-in">
   <div class="grid-12">
     <div class="col-8">
       {{template "traffic" .}}
     </div>
     <div class="col-4">
-      <div class="page-stack">
-        {{template "connections" .}}
-        <section class="card ops-card">
-          <h2>Bridge Nodes</h2>
-          <p class="ops-card-sub">{{countEnabledNodes .BridgeNodes}} of {{len .BridgeNodes}} nodes enabled.</p>
-          {{if .BridgeNodes}}
-          <div class="summary-list">
-            {{range previewBridgeNodes .BridgeNodes 3}}
-            <div class="summary-row">
-              <span class="badge {{bridgeNodeStateClass .}}">{{bridgeNodeStateLabel .}}</span>
-              <span class="summary-copy">
-                <strong>{{.Tag}}</strong>
-                <span class="mono">{{.Type}} · {{.Host}}{{if .LastLatency}} · {{.LastLatency}}ms{{end}}</span>
-              </span>
-            </div>
-            {{end}}
-          </div>
-          <nav class="page-nav" aria-label="Bridge summary links">
-            <a href="{{.PanelPath}}bridge">Open Bridge</a>
-          </nav>
-          {{else}}
-          <p class="empty">No Bridge nodes configured.</p>
-          {{end}}
-        </section>
-      </div>
+      {{template "health" .}}
     </div>
+  </div>
+  <div class="grid-12">
+    <div class="col-8">
+      {{template "components" .}}
+    </div>
+    <div class="col-4">
+      <section class="card">
+        <div class="card-head"><h3>Quick Actions</h3></div>
+        <div class="card-body">
+          <div class="col col-panel">
+            <a class="action-row" data-action="users" href="{{.PanelPath}}users#create-user">
+              <span class="action-icon">{{icon "Plus" 14}}</span>
+              <span class="summary-copy"><strong>Add user</strong><span>Create a new MTProto user and copy the link</span></span>
+              {{icon "Right" 14}}
+            </a>
+            <button class="action-row" type="button" disabled>
+              <span class="action-icon">{{icon "Key" 14}}</span>
+              <span class="summary-copy"><strong>Rotate all secrets</strong><span>Placeholder until bulk rotation is wired</span></span>
+              {{icon "Right" 14}}
+            </button>
+            <a class="action-row" data-action="bridge" href="{{.PanelPath}}bridge">
+              <span class="action-icon">{{icon "Cloud" 14}}</span>
+              <span class="summary-copy"><strong>Add outbound node</strong><span>VLESS / Trojan / SS / Hysteria2 / TUIC</span></span>
+              {{icon "Right" 14}}
+            </a>
+            <a class="action-row" data-action="tls" href="{{.PanelPath}}settings/certificates">
+              <span class="action-icon">{{icon "Cert" 14}}</span>
+              <span class="summary-copy"><strong>Renew certificate</strong><span>Check certificate validity and renewal status</span></span>
+              {{icon "Right" 14}}
+            </a>
+            <a class="action-row" data-action="logs" href="{{.PanelPath}}settings/stubs">
+              <span class="action-icon">{{icon "Stubs" 14}}</span>
+              <span class="summary-copy"><strong>Change camouflage</strong><span>Pick a stub template</span></span>
+              {{icon "Right" 14}}
+            </a>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="grid-12">
+    <div class="col-8">{{template "top_users" .}}</div>
+    <div class="col-4">{{template "bridge_nodes" .}}</div>
+    <div class="col-12">{{template "connections" .}}</div>
   </div>
 </section>
 </main>

@@ -18,7 +18,7 @@ func TestLogsPageUsesLocalShellAssets(t *testing.T) {
 		`class="app"`,
 		`class="topbar"`,
 		`class="page-head"`,
-		`class="summary-grid logs-kpi-grid"`,
+		`class="grid-12 logs-kpi-grid"`,
 		`class="card-body logs-toolbar"`,
 		`class="logs-view"`,
 		`class="card-footer logs-footer"`,
@@ -40,11 +40,11 @@ func TestLogsPageUsesLocalShellAssets(t *testing.T) {
 		`data-logs-role="clear"`,
 		`data-logs-role="autoscroll"`,
 		`data-logs-role="download"`,
-		`class="logs-level active" data-level="info"`,
+		`class="badge logs-level active" data-level="info"`,
 		`class="nav-item" data-active="true" href="/p-example/logs"`,
 		`action="/p-example/logout"`,
 		`href="/p-example/dashboard"`,
-		`href="/p-example/settings/system"`,
+		`href="/p-example/settings/proxy"`,
 		`href="/p-example/logs"`,
 	} {
 		if !strings.Contains(html, want) {

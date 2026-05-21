@@ -156,11 +156,11 @@ func TestSettingsTOTPPageUsesSummaryFirstLayout(t *testing.T) {
 
 	body := w.Body.String()
 	for _, want := range []string{
-		`class="settings-tabs"`,
-		`class="summary-grid"`,
+		`class="seg"`,
+		`class="grid-12"`,
 		`Protection status`,
-		`Enable Two-Factor`,
-		`Setup Notes`,
+		`Enable two-factor`,
+		`Setup notes`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("totp settings page missing %q:\n%s", want, body)
@@ -191,7 +191,7 @@ func TestSettingsTOTPBeginUsesSplitEnrollLayout(t *testing.T) {
 
 	body := w.Body.String()
 	for _, want := range []string{
-		`class="summary-grid"`,
+		`class="grid-12"`,
 		`class="stack-split"`,
 		`Authenticator Setup`,
 		`Confirm enrollment`,
@@ -246,7 +246,7 @@ func TestSettingsTOTPConfirmShowsRecoveryCodesCard(t *testing.T) {
 	for _, want := range []string{
 		`Two-factor authentication enabled`,
 		`Save these codes now.`,
-		`class="summary-grid"`,
+		`class="grid-12"`,
 		`class="card"`,
 		`class="codes"`,
 	} {
