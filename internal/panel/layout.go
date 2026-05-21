@@ -56,8 +56,8 @@ const baseLayout = `{{define "page_title"}}MTProto Orchestrator{{end}}
 {{end}}`
 
 var baseLayoutFuncs = template.FuncMap{
-	"csrfField": layoutCSRFField,
-	"csrfToken": layoutCSRFToken,
+	"csrfField":    layoutCSRFField,
+	"csrfToken":    layoutCSRFToken,
 	"navIsCurrent": layoutNavIsCurrent,
 }
 
