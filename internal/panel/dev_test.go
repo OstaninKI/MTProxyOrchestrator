@@ -2,6 +2,9 @@ package panel
 
 import (
 	"testing"
+
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestBridgeExecDefaultsToRealExecutor(t *testing.T) {
@@ -17,6 +20,86 @@ func TestBridgeExecUsesInjectedExecutor(t *testing.T) {
 	got := srv.bridgeExec()
 	if _, ok := got.(noopBridgeExecutor); !ok {
 		t.Fatalf("want noopBridgeExecutor, got %T", got)
+	}
+}
+
+func TestSeedDevDataCreatesAdmin(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	if err := SeedDevData(d); err != nil {
+		t.Fatalf("SeedDevData: %v", err)
+	}
+
+	var login string
+	if err := d.QueryRow("SELECT login FROM admin WHERE id=1").Scan(&login); err != nil {
+		t.Fatalf("admin row not found: %v", err)
+	}
+	if login != "admin" {
+		t.Fatalf("want login=admin, got %q", login)
+	}
+}
+
+func TestSeedDevDataAdminPasswordIsAdmin(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	if err := SeedDevData(d); err != nil {
+		t.Fatalf("SeedDevData: %v", err)
+	}
+
+	var hash string
+	if err := d.QueryRow("SELECT password_hash FROM admin WHERE id=1").Scan(&hash); err != nil {
+		t.Fatalf("admin hash not found: %v", err)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("admin")); err != nil {
+		t.Fatalf("password 'admin' does not match stored hash: %v", err)
+	}
+}
+
+func TestSeedDevDataCreatesUsers(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	if err := SeedDevData(d); err != nil {
+		t.Fatalf("SeedDevData: %v", err)
+	}
+
+	var count int
+	if err := d.QueryRow("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count < 3 {
+		t.Fatalf("want >= 3 users, got %d", count)
+	}
+}
+
+func TestSeedDevDataCreatesTrafficSamples(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	if err := SeedDevData(d); err != nil {
+		t.Fatalf("SeedDevData: %v", err)
+	}
+
+	var count int
+	if err := d.QueryRow("SELECT COUNT(*) FROM traffic_samples").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count == 0 {
+		t.Fatal("want traffic samples seeded, got 0 rows")
 	}
 }
 
