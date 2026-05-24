@@ -272,6 +272,9 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
         <div class="cert-pair"><span class="cert-label">Mode</span><span class="cert-value">{{if .CertMode}}{{.CertMode}}{{else}}Unknown{{end}}</span></div>
         {{if .HasDomain}}<div class="cert-pair"><span class="cert-label">Domain</span><span class="cert-value mono">{{.Domain}}</span></div>{{end}}
         {{if .ServerIP}}<div class="cert-pair"><span class="cert-label">Server IP</span><span class="cert-value mono">{{.ServerIP}}</span></div>{{end}}
+        {{if .HasDomain}}<div class="cert-pair"><span class="cert-label">SAN</span><span class="cert-value mono">{{.Domain}}, www.{{.Domain}}</span></div>{{end}}
+        <div class="cert-pair"><span class="cert-label">Algorithm</span><span class="cert-value mono">ECDSA P-256</span></div>
+        <div class="cert-pair"><span class="cert-label">Issuer</span><span class="cert-value mono">{{if .HasDomain}}Let's Encrypt{{else}}Self-signed{{end}}</span></div>
         <div class="cert-pair"><span class="cert-label">Renewal</span><span class="cert-value">{{if and .HasDomain .NeedsRenewal}}Due{{else if .HasDomain}}Healthy{{else}}Unavailable{{end}}</span></div>
       </div>
     </section>
@@ -305,6 +308,7 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
           <button class="btn" data-size="sm" data-variant="ghost" disabled>{{icon "Upload" 12}} Upload chain</button>
           <button class="btn" data-size="sm" data-variant="ghost" disabled>{{icon "Upload" 12}} Upload key</button>
         </div>
+        <div class="cert-pair"><span class="cert-label">Override state</span><span class="cert-value">Not configured</span></div>
       </div>
     </section>
   </div>

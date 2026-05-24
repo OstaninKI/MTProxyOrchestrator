@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
@@ -166,6 +167,9 @@ var dashboardFragmentFuncs = template.FuncMap{
 	},
 	"trafficAreaPathOut": func(series []metrics.TrafficBucket) string {
 		return trafficAreaPathBy(series, func(bucket metrics.TrafficBucket) int64 { return bucket.BytesOut })
+	},
+	"trafficChartSVG": func(series []metrics.TrafficBucket) template.HTML {
+		return trafficChartSVG(series)
 	},
 	"componentStateLabel": func(name, version string, isBridge bool) string {
 		if version == "" || version == "unknown" {
@@ -332,12 +336,7 @@ const dashboardFragments = `
 </div>
 <div class="card-body traffic-overview">
   {{if .TrafficSeries}}
-    <svg class="traffic-chart area-chart" viewBox="0 0 100 56" preserveAspectRatio="none" aria-label="Network throughput chart">
-      <path class="traffic-chart-area traffic-chart-area-out" d="{{trafficAreaPathOut .TrafficSeries}}"></path>
-      <path class="traffic-chart-line traffic-chart-line-out" d="{{trafficLinePathOut .TrafficSeries}}"></path>
-      <path class="traffic-chart-area traffic-chart-area-in" d="{{trafficAreaPathIn .TrafficSeries}}"></path>
-      <path class="traffic-chart-line traffic-chart-line-in" d="{{trafficLinePathIn .TrafficSeries}}"></path>
-    </svg>
+    {{trafficChartSVG .TrafficSeries}}
   {{else}}
     <div class="empty">No traffic data for this period.</div>
   {{end}}
@@ -486,6 +485,186 @@ func trafficAreaPathBy(series []metrics.TrafficBucket, value func(metrics.Traffi
 type svgPoint struct {
 	x float64
 	y float64
+}
+
+type trafficChartDims struct {
+	width    float64
+	height   float64
+	leftPad  float64
+	rightPad float64
+	topPad   float64
+	botPad   float64
+}
+
+func trafficChartSVG(series []metrics.TrafficBucket) template.HTML {
+	if len(series) == 0 {
+		return ""
+	}
+
+	dims := trafficChartDims{
+		width:    760,
+		height:   220,
+		leftPad:  36,
+		rightPad: 12,
+		topPad:   10,
+		botPad:   22,
+	}
+	maxValue := trafficSeriesMax(series)
+	outPoints := trafficPointsScaled(series, func(bucket metrics.TrafficBucket) int64 { return bucket.BytesOut }, maxValue, dims)
+	inPoints := trafficPointsScaled(series, func(bucket metrics.TrafficBucket) int64 { return bucket.BytesIn }, maxValue, dims)
+	chartWidth := dims.width - dims.leftPad - dims.rightPad
+	chartHeight := dims.height - dims.topPad - dims.botPad
+	baselineY := dims.topPad + chartHeight
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `<svg class="traffic-chart area-chart" viewBox="0 0 %.0f %.0f" preserveAspectRatio="none" aria-label="Network throughput chart">`, dims.width, dims.height)
+	b.WriteString(`<defs>
+<linearGradient id="traffic-fill-out" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="oklch(0.78 0.16 240)" stop-opacity="0.35"></stop>
+<stop offset="100%" stop-color="oklch(0.78 0.16 240)" stop-opacity="0"></stop>
+</linearGradient>
+<linearGradient id="traffic-fill-in" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="oklch(0.78 0.16 300)" stop-opacity="0.30"></stop>
+<stop offset="100%" stop-color="oklch(0.78 0.16 300)" stop-opacity="0"></stop>
+</linearGradient>
+</defs>`)
+
+	for i := 0; i <= 4; i++ {
+		y := dims.topPad + (chartHeight*float64(i))/4
+		value := int64(math.Round(float64(maxValue) * (1 - float64(i)/4)))
+		fmt.Fprintf(&b, `<line class="traffic-grid-line" x1="%.2f" x2="%.2f" y1="%.2f" y2="%.2f"></line>`, dims.leftPad, dims.leftPad+chartWidth, y, y)
+		fmt.Fprintf(&b, `<text x="%.2f" y="%.2f" text-anchor="end">%s</text>`, dims.leftPad-6, y+3, formatTrafficAxisValue(value))
+	}
+
+	fmt.Fprintf(&b, `<line class="traffic-axis-line" x1="%.2f" x2="%.2f" y1="%.2f" y2="%.2f"></line>`, dims.leftPad, dims.leftPad+chartWidth, baselineY, baselineY)
+	for _, idx := range trafficXTicks(len(series), 6) {
+		x := dims.leftPad
+		if len(series) > 1 {
+			x += (float64(idx) / float64(len(series)-1)) * chartWidth
+		}
+		fmt.Fprintf(&b, `<text x="%.2f" y="%.2f" text-anchor="middle">%s</text>`, x, dims.height-4, formatTrafficTimeLabel(series[idx].TS, series[0].TS, series[len(series)-1].TS))
+	}
+
+	fmt.Fprintf(&b, `<path class="traffic-chart-area traffic-chart-area-out" d="%s"></path>`, trafficAreaPathFromPoints(outPoints, baselineY))
+	fmt.Fprintf(&b, `<path class="traffic-chart-line traffic-chart-line-out" d="%s"></path>`, trafficLinePathFromPoints(outPoints))
+	fmt.Fprintf(&b, `<path class="traffic-chart-area traffic-chart-area-in" d="%s"></path>`, trafficAreaPathFromPoints(inPoints, baselineY))
+	fmt.Fprintf(&b, `<path class="traffic-chart-line traffic-chart-line-in" d="%s"></path>`, trafficLinePathFromPoints(inPoints))
+	b.WriteString(`</svg>`)
+
+	return template.HTML(b.String())
+}
+
+func trafficSeriesMax(series []metrics.TrafficBucket) int64 {
+	maxValue := int64(1)
+	for _, bucket := range series {
+		if bucket.BytesIn > maxValue {
+			maxValue = bucket.BytesIn
+		}
+		if bucket.BytesOut > maxValue {
+			maxValue = bucket.BytesOut
+		}
+	}
+	return maxValue
+}
+
+func trafficXTicks(length, count int) []int {
+	if length <= 0 {
+		return nil
+	}
+	if count <= 1 || length == 1 {
+		return []int{0}
+	}
+	seen := make(map[int]struct{}, count)
+	out := make([]int, 0, count)
+	for i := 0; i < count; i++ {
+		idx := int(math.Round((float64(i) / float64(count-1)) * float64(length-1)))
+		if _, ok := seen[idx]; ok {
+			continue
+		}
+		seen[idx] = struct{}{}
+		out = append(out, idx)
+	}
+	return out
+}
+
+func formatTrafficAxisValue(value int64) string {
+	switch {
+	case value >= 1_000_000_000:
+		return fmt.Sprintf("%.1fG", float64(value)/1_000_000_000)
+	case value >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(value)/1_000_000)
+	case value >= 1_000:
+		return fmt.Sprintf("%dk", int(math.Round(float64(value)/1_000)))
+	default:
+		return fmt.Sprintf("%d", value)
+	}
+}
+
+func formatTrafficTimeLabel(ts, first, last int64) string {
+	if ts <= 0 {
+		return "—"
+	}
+	t := time.Unix(ts, 0).UTC()
+	span := last - first
+	switch {
+	case span >= int64(7*24*time.Hour/time.Second):
+		return t.Format("Jan 2")
+	case span >= int64(24*time.Hour/time.Second):
+		return t.Format("Jan 2")
+	default:
+		return t.Format("15:04")
+	}
+}
+
+func trafficPointsScaled(series []metrics.TrafficBucket, value func(metrics.TrafficBucket) int64, maxValue int64, dims trafficChartDims) []svgPoint {
+	if len(series) == 0 {
+		return nil
+	}
+	if maxValue <= 0 {
+		maxValue = 1
+	}
+	chartWidth := dims.width - dims.leftPad - dims.rightPad
+	chartHeight := dims.height - dims.topPad - dims.botPad
+	points := make([]svgPoint, 0, len(series))
+	for i, bucket := range series {
+		x := dims.leftPad
+		if len(series) > 1 {
+			x += (float64(i) / float64(len(series)-1)) * chartWidth
+		}
+		ratio := float64(value(bucket)) / float64(maxValue)
+		y := dims.topPad + chartHeight - (ratio * chartHeight)
+		points = append(points, svgPoint{x: x, y: y})
+	}
+	return points
+}
+
+func trafficLinePathFromPoints(points []svgPoint) string {
+	if len(points) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, point := range points {
+		if i == 0 {
+			fmt.Fprintf(&b, "M%.2f,%.2f", point.x, point.y)
+			continue
+		}
+		fmt.Fprintf(&b, " L%.2f,%.2f", point.x, point.y)
+	}
+	return b.String()
+}
+
+func trafficAreaPathFromPoints(points []svgPoint, baselineY float64) string {
+	if len(points) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "M%.2f,%.2f", points[0].x, baselineY)
+	for _, point := range points {
+		fmt.Fprintf(&b, " L%.2f,%.2f", point.x, point.y)
+	}
+	last := points[len(points)-1]
+	fmt.Fprintf(&b, " L%.2f,%.2f Z", last.x, baselineY)
+	return b.String()
 }
 
 func trafficPoints(series []metrics.TrafficBucket, value func(metrics.TrafficBucket) int64) []svgPoint {

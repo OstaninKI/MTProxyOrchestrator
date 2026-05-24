@@ -51,7 +51,7 @@ var logsTmpl = template.Must(template.New("logs").Funcs(baseLayoutFuncs).Parse(`
 <div class="card">
 <div class="card-body logs-toolbar">
   <div class="logs-toolbar-group logs-toolbar-filters">
-    <div class="row row-tight" data-logs-role="level-buttons">
+    <div class="row row-tight logs-level-pills" data-logs-role="level-buttons">
       <span class="label">Levels</span>
       <button type="button" class="badge logs-level" data-level="debug">debug</button>
       <button type="button" class="badge logs-level active" data-level="info"><span class="dot"></span>info</button>
@@ -71,21 +71,16 @@ var logsTmpl = template.Must(template.New("logs").Funcs(baseLayoutFuncs).Parse(`
       <label class="label">Search</label>
       <div class="input-group">{{icon "Search" 13}}<input type="text" id="search" class="input logs-search" placeholder="Filter messages..." data-logs-role="search"></div>
     </div>
-    <div class="users-toolbar-group">
-      <label class="label">Level</label>
-      <select id="level" class="sr-only" data-logs-role="level" aria-label="Log level">
-        <option value="debug">debug</option>
-        <option value="info" selected>info</option>
-        <option value="warn">warn</option>
-        <option value="error">error</option>
-      </select>
-    </div>
+    <select id="level" class="sr-only" data-logs-role="level" aria-label="Log level">
+      <option value="debug">debug</option>
+      <option value="info" selected>info</option>
+      <option value="warn">warn</option>
+      <option value="error">error</option>
+    </select>
   </div>
   <div class="logs-toolbar-group logs-toolbar-actions">
-    <label class="row logs-autoscroll"><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span> Auto-scroll</label>
+    <button class="logs-autoscroll-toggle active" type="button" data-logs-role="autoscroll" aria-pressed="true"><span class="toggle"><span class="toggle-track"><span class="toggle-thumb"></span></span></span><span>Auto-scroll</span></button>
     <button class="btn btn-pause" data-size="sm" data-variant="ghost" id="btnPause" type="button" data-logs-role="pause">{{icon "Pause" 12}} Pause</button>
-    <button class="btn btn-clear" data-size="sm" data-variant="ghost" id="btnClear" type="button" data-logs-role="clear">Clear</button>
-    <button class="btn logs-level" data-size="sm" data-variant="ghost" type="button" data-logs-role="autoscroll">Auto-scroll</button>
     <a class="btn btn-download" data-size="sm" data-variant="ghost" id="btnDownload" href="#" data-logs-role="download">{{icon "Download" 13}} Download</a>
   </div>
 </div>

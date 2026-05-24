@@ -19,7 +19,6 @@
     const container = root.querySelector('[data-logs-role="container"]');
     const statusEl = root.querySelector('[data-logs-role="status"]');
     const btnPause = root.querySelector('[data-logs-role="pause"]');
-    const btnClear = root.querySelector('[data-logs-role="clear"]');
     const btnDownload = root.querySelector('[data-logs-role="download"]');
     const componentSelect = root.querySelector('[data-logs-role="component"]');
     const levelSelect = root.querySelector('[data-logs-role="level"]');
@@ -38,7 +37,6 @@
       !container ||
       !statusEl ||
       !btnPause ||
-      !btnClear ||
       !btnDownload ||
       !componentSelect ||
       !levelSelect ||
@@ -74,7 +72,7 @@
 
     function renderAutoScrollButton() {
       autoScrollButton.classList.toggle("active", autoScroll);
-      autoScrollButton.textContent = autoScroll ? "Auto-scroll" : "Manual scroll";
+      autoScrollButton.setAttribute("aria-pressed", autoScroll ? "true" : "false");
     }
 
     function renderCounts() {
@@ -221,10 +219,6 @@
       btnPause.classList.toggle("paused", paused);
     });
 
-    btnClear.addEventListener("click", () => {
-      resetBuffer();
-    });
-
     componentSelect.addEventListener("change", reapply);
     levelSelect.addEventListener("change", reapply);
     levelButtons.forEach((button) => {
@@ -269,11 +263,30 @@
 
     const searchInput = root.querySelector('[data-users-role="search"]');
     const statusSelect = root.querySelector('[data-users-role="status"]');
+    const statusButtons = Array.from(root.querySelectorAll("[data-users-status-value]"));
     const sortSelect = root.querySelector('[data-users-role="sort"]');
     const countEl = root.querySelector('[data-users-role="count"]');
-    const table = document.querySelector(".users-table");
+    const table = root.querySelector(".users-table");
+    const openCreateButton = document.querySelector("[data-users-open-create]");
+    const createModal = document.querySelector("[data-users-modal]");
+    const closeCreateButton = document.querySelector("[data-users-close-create]");
+    const drawer = document.querySelector("[data-users-drawer]");
+    const drawerScrim = document.querySelector("[data-users-drawer-scrim]");
 
-    if (!searchInput || !statusSelect || !sortSelect || !countEl || !table || !table.tBodies.length) {
+    if (
+      !searchInput ||
+      !statusSelect ||
+      !sortSelect ||
+      !countEl ||
+      !table ||
+      !table.tBodies.length ||
+      !openCreateButton ||
+      !createModal ||
+      !closeCreateButton ||
+      !drawer ||
+      !drawerScrim ||
+      !statusButtons.length
+    ) {
       return;
     }
 
@@ -319,12 +332,196 @@
       });
 
       countEl.textContent = `${visible} user${visible === 1 ? "" : "s"}`;
+      statusButtons.forEach((button) => {
+        button.classList.toggle("active", button.dataset.usersStatusValue === status);
+      });
+    }
+
+    function toggleBodyLock() {
+      const dialogOpen = !createModal.hidden || !drawer.hidden;
+      document.body.classList.toggle("dialog-open", dialogOpen);
+    }
+
+    function openCreateModal() {
+      createModal.hidden = false;
+      toggleBodyLock();
+      const input = createModal.querySelector('input[name="label"]');
+      if (input) input.focus();
+    }
+
+    function closeCreateModal() {
+      createModal.hidden = true;
+      toggleBodyLock();
+    }
+
+    function setText(role, value) {
+      const target = drawer.querySelector(`[data-users-detail="${role}"]`);
+      if (target) target.textContent = value;
+    }
+
+    function setFormAction(role, value) {
+      const form = drawer.querySelector(`[data-users-form="${role}"]`);
+      if (form) form.action = value || "";
+    }
+
+    function openDrawer(row) {
+      const quotaPercent = Math.max(0, Math.min(100, asNumber(row.dataset.quotaPercent)));
+      const quotaBar = drawer.querySelector('[data-users-detail="quota-bar"]');
+      const statusEl = drawer.querySelector('[data-users-detail="status"]');
+      const connectionEl = drawer.querySelector('[data-users-detail="connection"]');
+      const toggleButton = drawer.querySelector('[data-users-action-label="toggle"]');
+      const suspendButton = drawer.querySelector('[data-users-action-label="suspend"]');
+      const deleteButton = drawer.querySelector("[data-users-delete]");
+      const quotaTone =
+        row.dataset.suspended === "true" || quotaPercent >= 100
+          ? "danger"
+          : quotaPercent >= 80
+            ? "warn"
+            : "success";
+
+      setText("label", row.dataset.label || "User");
+      setText("meta", `${row.dataset.id || "—"} · created ${row.dataset.createdLabel || "—"}`);
+      setText("status", row.dataset.statusLabel || "unknown");
+      setText("connection", row.dataset.connection || "not connected");
+      setText("quota-used", row.dataset.quotaUsed || "0 B");
+      setText("quota-limit", row.dataset.quotaLimit || "Unlimited");
+      setText("quota-reset", row.dataset.quotaReset || "—");
+      setText("download", row.dataset.download || "0 B");
+      setText("upload", row.dataset.upload || "0 B");
+      setText("connections", row.dataset.connections || "0");
+      setText("created", row.dataset.createdLabel || "—");
+      setText("quota-period", row.dataset.quotaPeriod || "—");
+      setText("total", row.dataset.total || "0 B");
+
+      if (quotaBar) {
+        quotaBar.value = quotaPercent;
+        quotaBar.dataset.tone = quotaTone;
+      }
+      if (statusEl) {
+        statusEl.dataset.tone = row.dataset.enabled === "true" ? "success" : "danger";
+      }
+      if (connectionEl) {
+        const connection = (row.dataset.connection || "").toLowerCase();
+        connectionEl.dataset.tone =
+          connection === "online" ? "success" : connection === "offline" ? "warn" : "accent";
+      }
+      if (toggleButton) {
+        toggleButton.textContent = row.dataset.toggleLabel || "Toggle";
+      }
+      if (suspendButton) {
+        suspendButton.textContent = row.dataset.suspendLabel || "Suspend";
+      }
+      if (deleteButton) {
+        deleteButton.dataset.label = row.dataset.label || "user";
+      }
+
+      setFormAction("toggle", row.dataset.toggleUrl);
+      setFormAction("rotate", row.dataset.rotateUrl);
+      setFormAction("suspend", row.dataset.suspendUrl);
+      setFormAction("reset", row.dataset.resetUrl);
+      setFormAction("quota", row.dataset.quotaUrl);
+      setFormAction("delete", row.dataset.deleteUrl);
+
+      drawer.hidden = false;
+      drawerScrim.hidden = false;
+      toggleBodyLock();
+    }
+
+    function closeDrawer() {
+      drawer.hidden = true;
+      drawerScrim.hidden = true;
+      toggleBodyLock();
     }
 
     searchInput.addEventListener("input", applyUsersState);
     statusSelect.addEventListener("change", applyUsersState);
+    statusButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        if (statusSelect.value === button.dataset.usersStatusValue) return;
+        statusSelect.value = button.dataset.usersStatusValue;
+        applyUsersState();
+      });
+    });
     sortSelect.addEventListener("change", applyUsersState);
+    openCreateButton.addEventListener("click", openCreateModal);
+    closeCreateButton.addEventListener("click", closeCreateModal);
+    createModal.addEventListener("click", (event) => {
+      if (event.target === createModal) closeCreateModal();
+    });
+    drawerScrim.addEventListener("click", closeDrawer);
+    drawer.querySelectorAll("[data-users-close-drawer]").forEach((button) => {
+      button.addEventListener("click", closeDrawer);
+    });
+    drawer.querySelectorAll('[data-users-form="delete"]').forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        const label = drawer.querySelector("[data-users-delete]")?.dataset.label || "user";
+        if (!window.confirm(`Delete ${label}?`)) {
+          event.preventDefault();
+        }
+      });
+    });
+    rows.forEach((row) => {
+      row.querySelectorAll("[data-user-open]").forEach((button) => {
+        button.addEventListener("click", () => openDrawer(row));
+      });
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      if (!createModal.hidden) closeCreateModal();
+      if (!drawer.hidden) closeDrawer();
+    });
     applyUsersState();
+  }
+
+  function initBridgePage() {
+    const root = document.querySelector("[data-bridge-page]");
+    if (!root || root.dataset.bridgeInitialized === "true") return;
+
+    const openButton = document.querySelector("[data-bridge-open-add]");
+    const modal = document.querySelector("[data-bridge-modal]");
+    const closeButton = document.querySelector("[data-bridge-close-add]");
+    if (!openButton || !modal || !closeButton) return;
+
+    root.dataset.bridgeInitialized = "true";
+
+    function syncBodyLock() {
+      const otherDialogOpen =
+        document.querySelector("[data-users-modal]:not([hidden])") ||
+        document.querySelector("[data-users-drawer]:not([hidden])");
+      document.body.classList.toggle("dialog-open", !modal.hidden || !!otherDialogOpen);
+    }
+
+    function openModal() {
+      modal.hidden = false;
+      syncBodyLock();
+      const input = modal.querySelector('input[name="share_url"]');
+      if (input) input.focus();
+    }
+
+    function closeModal() {
+      modal.hidden = true;
+      syncBodyLock();
+    }
+
+    openButton.addEventListener("click", openModal);
+    closeButton.addEventListener("click", closeModal);
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeModal();
+    });
+
+    root.querySelectorAll('form[action*="/delete"]').forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        const row = form.closest("tr");
+        const label = row?.querySelector("strong")?.textContent?.trim() || "node";
+        if (!window.confirm(`Delete node ${label}?`)) {
+          event.preventDefault();
+        }
+      });
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !modal.hidden) closeModal();
+    });
   }
 
   function initPasswordPage() {
@@ -417,6 +614,7 @@
     fillCSRF();
     initLogsPage();
     initUsersPage();
+    initBridgePage();
     initPasswordPage();
   }
 
@@ -430,6 +628,7 @@
     fillCSRF();
     initLogsPage();
     initUsersPage();
+    initBridgePage();
     initPasswordPage();
   });
 })();

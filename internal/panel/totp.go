@@ -615,11 +615,11 @@ var totpVerifyTmpl = template.Must(template.New("totp_verify").Parse(`<!DOCTYPE 
 <h1>Two-Factor Verification</h1>
 <p class="page-sub">Enter the code from your authenticator app or one of your recovery codes.</p>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="post" action="{{.PanelPath}}totp/verify">
+<form method="post" action="{{.PanelPath}}totp/verify" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Authenticator code or recovery code</label>
-<input type="text" name="code" autocomplete="one-time-code" required autofocus>
-<button type="submit">Verify</button>
+<label class="label">Authenticator code or recovery code</label>
+<input class="input input--mono" type="text" name="code" autocomplete="one-time-code" required autofocus>
+<button class="btn" data-variant="primary" type="submit">Verify</button>
 </form>
 <p class="panel-note">Lost your device? Enter one of your recovery codes.</p>
 </div>

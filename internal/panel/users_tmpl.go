@@ -92,7 +92,7 @@ const userListContent = `{{define "page_title"}}Users{{end}}
     <p class="page-sub">Manage MTProto users, quotas and access.</p>
   </div>
   <div class="actions">
-    <a class="btn" data-variant="primary" href="#create-user">{{icon "Plus" 13}} Add user</a>
+    <button class="btn" data-variant="primary" type="button" data-users-open-create>{{icon "Plus" 13}} Add user</button>
   </div>
 </section>
 <section class="page-stack">
@@ -127,23 +127,19 @@ const userListContent = `{{define "page_title"}}Users{{end}}
   </article>
 </section>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<div id="create-user" class="card form-panel">
-  <div class="card-head"><h3>Add user</h3></div>
-  <form method="post" action="{{.PanelPath}}users/create" class="user-create-form card-body">
-    <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-    <input class="input input--mono" type="text" name="label" placeholder="e.g. alice_laptop" required>
-    <button class="btn" data-variant="primary" type="submit">{{icon "Plus" 13}} Add user</button>
-  </form>
-</div>
-<div class="card users-toolbar-card" data-users-page>
+<div data-users-page>
+<div class="card users-toolbar-card">
 <div class="card-body users-toolbar">
-  <div class="users-toolbar-group">
-    <label class="label" for="users-search">Search</label>
-    <input class="input" id="users-search" type="text" placeholder="Search users by label..." data-users-role="search">
+  <div class="users-toolbar-group users-toolbar-search">
+    <div class="input-group">{{icon "Search" 13}}<input class="input" id="users-search" type="text" placeholder="Search users by label..." data-users-role="search"></div>
   </div>
-  <div class="users-toolbar-group">
-    <label class="label" for="users-status">Status</label>
-    <select class="select" id="users-status" data-users-role="status">
+  <div class="users-filter-seg" data-users-role="status-buttons">
+    <button class="seg-item active" type="button" data-users-status-value="all">All ({{len .Users}})</button>
+    <button class="seg-item" type="button" data-users-status-value="online">Online ({{countOnlineUsers .Users}})</button>
+    <button class="seg-item" type="button" data-users-status-value="offline">Offline ({{countOfflineUsers .Users}})</button>
+    <button class="seg-item" type="button" data-users-status-value="suspended">Suspended ({{countSuspendedUsers .Users}})</button>
+  </div>
+  <select class="select sr-only" id="users-status" data-users-role="status">
       <option value="all">All</option>
       <option value="enabled">Enabled</option>
       <option value="disabled">Disabled</option>
@@ -151,10 +147,8 @@ const userListContent = `{{define "page_title"}}Users{{end}}
       <option value="online">Online</option>
       <option value="offline">Offline</option>
       <option value="not connected">Not connected</option>
-    </select>
-  </div>
-  <div class="users-toolbar-group">
-    <label class="label" for="users-sort">Sort</label>
+  </select>
+  <div class="users-toolbar-group users-toolbar-sort">
     <select class="select" id="users-sort" data-users-role="sort">
       <option value="label">Label</option>
       <option value="created-desc">Newest</option>
@@ -163,6 +157,7 @@ const userListContent = `{{define "page_title"}}Users{{end}}
     </select>
   </div>
   <span class="toolbar-spacer"></span>
+  <button class="btn" data-size="sm" data-variant="ghost" type="button" disabled>{{icon "Download" 13}} Export</button>
   <span class="users-toolbar-count muted" data-users-role="count">{{len .Users}} users</span>
 </div>
 </div>
@@ -174,15 +169,41 @@ const userListContent = `{{define "page_title"}}Users{{end}}
 {{range .Users}}
 <tr
   data-user-row
+  data-id="{{.ID}}"
   data-label="{{.Label}}"
   data-enabled="{{if .Enabled}}true{{else}}false{{end}}"
   data-suspended="{{if .QuotaSuspended}}true{{else}}false{{end}}"
   data-connection="{{connectionStatusLabel .ConnectionStatus}}"
+  data-created-label="{{.CreatedAt.Format "2006-01-02"}}"
   data-created="{{.CreatedAt.Unix}}"
   data-traffic="{{if gt .TrafficTotalBytes 0}}{{.TrafficTotalBytes}}{{else}}{{.QuotaUsedBytes}}{{end}}"
   data-connections="{{.ActiveConnections}}"
+  data-status-label="{{if .Enabled}}enabled{{else}}disabled{{end}}{{if .QuotaSuspended}}, suspended{{end}}"
+  data-quota-limit="{{if gt .QuotaBytes 0}}{{formatBytes .QuotaBytes}}{{else}}Unlimited{{end}}"
+  data-quota-period="{{if .QuotaPeriod}}{{.QuotaPeriod}}{{else}}—{{end}}"
+  data-quota-used="{{if gt .QuotaBytes 0}}{{formatBytes .QuotaUsedBytes}}{{else}}{{formatBytes .TrafficTotalBytes}}{{end}}"
+  data-quota-percent="{{if gt .QuotaBytes 0}}{{quotaPct .QuotaUsedBytes .QuotaBytes}}{{else}}0{{end}}"
+  data-quota-reset="{{if gt .QuotaBytes 0}}{{nextResetIn .QuotaPeriodStart .QuotaPeriod}}{{else}}—{{end}}"
+  data-download="{{formatBytes .TrafficDownloadedBytes}}"
+  data-upload="{{formatBytes .TrafficUploadedBytes}}"
+  data-total="{{formatBytes .TrafficTotalBytes}}"
+  data-toggle-url="{{$.PanelPath}}users/{{.ID}}/toggle"
+  data-toggle-label="{{if .Enabled}}Disable{{else}}Enable{{end}}"
+  data-rotate-url="{{$.PanelPath}}users/{{.ID}}/rotate"
+  data-suspend-url="{{$.PanelPath}}users/{{.ID}}/suspend"
+  data-suspend-label="{{if .QuotaSuspended}}Unsuspend{{else}}Suspend{{end}}"
+  data-reset-url="{{$.PanelPath}}users/{{.ID}}/quota/reset"
+  data-quota-url="{{$.PanelPath}}users/{{.ID}}/quota"
+  data-delete-url="{{$.PanelPath}}users/{{.ID}}/delete"
 >
-  <td>{{.Label}}</td>
+  <td>
+    <button class="user-link-btn" type="button" data-user-open>
+      <span class="user-link-copy">
+        <strong>{{.Label}}</strong>
+        <span class="user-link-meta mono">{{connectionStatusLabel .ConnectionStatus}}{{if gt .ActiveConnections 0}} · {{.ActiveConnections}} conn{{end}}</span>
+      </span>
+    </button>
+  </td>
   <td>
     {{if .Enabled}}<span class="badge-on">enabled</span>{{else}}<span class="badge-off">disabled</span>{{end}}
     {{if .QuotaSuspended}} <span class="badge-off">suspended</span>{{end}}
@@ -263,6 +284,139 @@ const userListContent = `{{define "page_title"}}Users{{end}}
 </table>
 </div>
 </div>
+</div>
+
+<div class="modal-scrim" data-users-modal hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="users-create-title">
+    <form method="post" action="{{.PanelPath}}users/create">
+      <div class="modal-head">
+        <h2 id="users-create-title">Add user</h2>
+        <p>Create a new MTProto user and issue the first access link.</p>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="label" for="users-create-label">Label</label>
+          <input class="input input--mono" id="users-create-label" type="text" name="label" placeholder="e.g. alice_laptop" required>
+          <p class="field-hint">Use a stable label for audit logs, quota tracking, and Bridge sync.</p>
+        </div>
+        <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-variant="ghost" type="button" data-users-close-create>Cancel</button>
+        <button class="btn" data-variant="primary" type="submit">{{icon "Plus" 13}} Add user</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="drawer-scrim" data-users-drawer-scrim hidden></div>
+<aside class="drawer" data-users-drawer hidden aria-labelledby="users-detail-title">
+  <div class="drawer-head">
+    <div class="col col-zero col-fill">
+      <h2 id="users-detail-title" data-users-detail="label">User</h2>
+      <span class="muted mono muted-sm" data-users-detail="meta">created —</span>
+    </div>
+    <button class="btn" data-size="sm" data-variant="ghost" type="button" data-users-close-drawer>{{icon "X" 14}}</button>
+  </div>
+  <div class="drawer-body">
+    <section class="detail-summary">
+      <div class="detail-summary-badges">
+        <span class="badge" data-tone="accent" data-users-detail="status">enabled</span>
+        <span class="badge" data-tone="accent" data-users-detail="connection">not connected</span>
+      </div>
+      <div class="detail-quota">
+        <div class="detail-quota-head">
+          <span data-users-detail="quota-used">0 B</span>
+          <span data-users-detail="quota-limit">Unlimited</span>
+        </div>
+        <progress class="bar" data-tone="success" max="100" value="0" data-users-detail="quota-bar"></progress>
+        <span class="muted-sm" data-users-detail="quota-reset">—</span>
+      </div>
+      <div class="detail-metrics">
+        <div class="detail-metric">
+          <div class="detail-metric-label">Download</div>
+          <div class="detail-metric-value mono" data-users-detail="download">0 B</div>
+        </div>
+        <div class="detail-metric">
+          <div class="detail-metric-label">Upload</div>
+          <div class="detail-metric-value mono" data-users-detail="upload">0 B</div>
+        </div>
+        <div class="detail-metric">
+          <div class="detail-metric-label">Connections</div>
+          <div class="detail-metric-value mono" data-users-detail="connections">0</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3 class="detail-section-title">Actions</h3>
+      <div class="detail-actions">
+        <form method="post" action="" data-users-form="toggle">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+          <button class="btn" data-variant="ghost" type="submit" data-users-action-label="toggle">Disable</button>
+        </form>
+        <form method="post" action="" data-users-form="rotate">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+          <button class="btn" data-variant="ghost" type="submit">Rotate secret</button>
+        </form>
+        <form method="post" action="" data-users-form="suspend">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+          <button class="btn btn-warn" type="submit" data-users-action-label="suspend">Suspend</button>
+        </form>
+        <form method="post" action="" data-users-form="reset">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+          <button class="btn" data-variant="ghost" type="submit">Reset quota</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3 class="detail-section-title">Details</h3>
+      <div class="detail-list">
+        <div class="detail-row"><span class="detail-row-label">Created</span><span class="detail-row-value mono" data-users-detail="created">—</span></div>
+        <div class="detail-row"><span class="detail-row-label">Quota period</span><span class="detail-row-value" data-users-detail="quota-period">—</span></div>
+        <div class="detail-row"><span class="detail-row-label">Total traffic</span><span class="detail-row-value mono" data-users-detail="total">0 B</span></div>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3 class="detail-section-title">Access Material</h3>
+      <div class="detail-list">
+        <div class="copy-row detail-placeholder">
+          <span class="val mono">tg://proxy?server=...&amp;secret=ee...</span>
+          <button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Copy" 12}}</button>
+        </div>
+        <div class="copy-row detail-placeholder">
+          <span class="val mono">Secret is intentionally not shown again</span>
+          <button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Copy" 12}}</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3 class="detail-section-title">Set quota</h3>
+      <form method="post" action="" class="quota-form" data-users-form="quota">
+        <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+        <input type="number" step="0.1" min="0" name="gb" placeholder="GB" inputmode="decimal" class="quota-number quota-gb">
+        <select name="period">
+          <option value="daily">daily</option>
+          <option value="weekly">weekly</option>
+          <option value="monthly" selected>monthly</option>
+        </select>
+        <input type="number" min="0" max="100" name="warn_pct" value="80" inputmode="numeric" class="quota-number quota-warn">
+        <button class="btn" data-variant="primary" type="submit">Apply quota</button>
+      </form>
+    </section>
+
+    <section class="detail-section">
+      <h3 class="detail-section-title">Danger Zone</h3>
+      <form method="post" action="" data-users-form="delete">
+        <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+        <button class="btn danger" type="submit" data-users-delete>Delete user</button>
+      </form>
+    </section>
+  </div>
+</aside>
 </section>
 {{end}}
 {{template "base" .}}`
@@ -279,11 +433,30 @@ const userCreatedContent = `{{define "page_title"}}User created{{end}}
   </div>
   <div class="actions"><a class="btn" data-variant="ghost" href="{{.PanelPath}}users">Back to users</a></div>
 </section>
-<div class="card form-panel">
-<p><strong>Label:</strong> {{.Label}}</p>
-<p><strong>Telegram link:</strong><br><span class="mono-chip">{{.TelegramURL}}</span></p>
-<p class="warn">Save this link now. The secret will not be shown again.</p>
-</div>
+<section class="grid-12">
+  <div class="col-7">
+    <div class="card">
+      <div class="card-head"><div class="col card-title-stack"><h3>Access material</h3><span class="sub">Shown once immediately after creation.</span></div></div>
+      <div class="card-body col col-panel">
+        <div class="detail-row"><span class="detail-row-label">Label</span><span class="detail-row-value mono">{{.Label}}</span></div>
+        <div class="detail-section">
+          <h3 class="detail-section-title">Telegram link</h3>
+          <div class="copy-row"><span class="val mono">{{.TelegramURL}}</span><button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Copy" 12}}</button></div>
+        </div>
+        <div class="warn-box"><strong>Save this link now.</strong> The secret will not be shown again after you leave this page.</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-5">
+    <div class="card">
+      <div class="card-head"><h3>Next steps</h3></div>
+      <div class="card-body col col-panel">
+        <div class="totp-note-row"><span class="badge ok">Deliver</span><span class="col totp-note-copy"><strong class="totp-note-title">Send securely</strong><span class="help">Use a trusted channel to deliver the link to the user.</span></span></div>
+        <div class="totp-note-row"><span class="badge warn">Rotate</span><span class="col totp-note-copy"><strong class="totp-note-title">Compromise response</strong><span class="help">Rotate the secret from the Users page if you suspect disclosure.</span></span></div>
+      </div>
+    </div>
+  </div>
+</section>
 {{end}}
 {{template "base" .}}`
 

@@ -21,11 +21,11 @@ var loginTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 <h1>Admin Login</h1>
 <p class="page-sub">Authenticate to manage users, Bridge nodes, logs, and TLS settings.</p>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="post">
+<form method="post" class="stack-form">
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Login</label><input type="text" name="login" autocomplete="username" required>
-<label>Password</label><input type="password" name="password" autocomplete="current-password" required>
-<button type="submit">Sign in</button>
+<label class="label">Login</label><input class="input input--mono" type="text" name="login" autocomplete="username" required>
+<label class="label">Password</label><input class="input input--mono" type="password" name="password" autocomplete="current-password" required>
+<button class="btn" data-variant="primary" type="submit">Sign in</button>
 </form>
 </div>
 </main>

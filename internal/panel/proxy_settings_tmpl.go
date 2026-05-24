@@ -150,7 +150,8 @@ const adminPasswordContent = `{{define "page_title"}}Change Admin Password{{end}
       <div class="card-head"><h3>Sessions</h3></div>
       <div class="card-body col col-panel">
         <div class="session-row">{{icon "Globe" 14}}<div class="col session-copy"><span class="session-title">Current browser</span><span class="help mono">active session · now</span></div><span class="badge" data-tone="success">this device</span></div>
-        <div class="session-row">{{icon "Globe" 14}}<div class="col session-copy"><span class="session-title">Other sessions</span><span class="help mono">session inventory placeholder</span></div><button class="btn" data-size="xs" data-variant="ghost" disabled>Revoke</button></div>
+        <div class="session-row">{{icon "Globe" 14}}<div class="col session-copy"><span class="session-title">Safari iOS</span><span class="help mono">81.18.7.220 · 2h ago</span></div><button class="btn" data-size="xs" data-variant="ghost" disabled>Revoke</button></div>
+        <div class="session-row">{{icon "Globe" 14}}<div class="col session-copy"><span class="session-title">curl/8.x</span><span class="help mono">138.124.29.24 · yesterday</span></div><button class="btn" data-size="xs" data-variant="ghost" disabled>Revoke</button></div>
       </div>
     </section>
     <section class="card">
@@ -223,6 +224,13 @@ const systemSettingsContent = `{{define "page_title"}}System Settings{{end}}
         <button class="action-row" type="button" disabled><span class="action-icon">{{icon "Download" 14}}</span><span class="summary-copy"><strong>Download diagnostic bundle</strong><span>Logs, redacted config, versions</span></span>{{icon "Right" 14}}</button>
         <button class="action-row" type="button" disabled><span class="action-icon">{{icon "Upload" 14}}</span><span class="summary-copy"><strong>Restore from backup</strong><span>Replace current config with a snapshot</span></span>{{icon "Right" 14}}</button>
         <button class="action-row danger" type="button" disabled><span class="action-icon">{{icon "Trash" 14}}</span><span class="summary-copy"><strong>Reset to defaults</strong><span>Wipe users, nodes, regenerate keys</span></span>{{icon "Right" 14}}</button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h3>Panel URL preview</h3></div>
+      <div class="card-body col col-panel">
+        <div class="copy-row"><span class="val mono">{{.PanelPath}}</span><button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Refresh" 12}}</button></div>
+        <span class="help">Bookmark updates and cookie scope follow this path after restart.</span>
       </div>
     </section>
     <section class="card">

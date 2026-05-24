@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed panel.css panel.js vendor/*
+//go:embed panel.css panel.js vendor/* fonts/**/*
 var files embed.FS
 
 func Handler() http.Handler {
