@@ -135,3 +135,53 @@ func TestNoopBridgeExecutorAllMethodsSucceed(t *testing.T) {
 		t.Fatal("ServiceActive: want false, got true")
 	}
 }
+
+func TestApplyDevModeSetsExpectedFields(t *testing.T) {
+	srv := &Server{Secure: true}
+	ApplyDevMode(srv)
+
+	if !srv.DevMode {
+		t.Error("want DevMode=true after ApplyDevMode")
+	}
+	if srv.Secure {
+		t.Error("want Secure=false after ApplyDevMode")
+	}
+	if srv.SingboxActive == nil {
+		t.Fatal("want SingboxActive != nil")
+	}
+	if srv.SingboxActive() {
+		t.Error("want SingboxActive()=false in dev mode")
+	}
+	if _, ok := srv.BridgeExec.(noopBridgeExecutor); !ok {
+		t.Errorf("want BridgeExec=noopBridgeExecutor, got %T", srv.BridgeExec)
+	}
+}
+
+func TestApplyDevModeHooksAreNoop(t *testing.T) {
+	origWrite := WriteAndReloadHook
+	origSync := SyncUsersJSONHook
+	origNginx := reloadNginx
+	origSingbox := isSingboxActive
+	t.Cleanup(func() {
+		WriteAndReloadHook = origWrite
+		SyncUsersJSONHook = origSync
+		reloadNginx = origNginx
+		isSingboxActive = origSingbox
+	})
+
+	srv := &Server{}
+	ApplyDevMode(srv)
+
+	if err := WriteAndReloadHook("/nonexistent/teleproxy.toml", []byte("x")); err != nil {
+		t.Fatalf("WriteAndReloadHook should be noop, got %v", err)
+	}
+	if err := SyncUsersJSONHook("/nonexistent/users.json", []byte("x")); err != nil {
+		t.Fatalf("SyncUsersJSONHook should be noop, got %v", err)
+	}
+	if err := reloadNginx(); err != nil {
+		t.Fatalf("reloadNginx should be noop, got %v", err)
+	}
+	if isSingboxActive() {
+		t.Fatal("isSingboxActive should return false in dev mode")
+	}
+}

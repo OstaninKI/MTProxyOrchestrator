@@ -24,6 +24,9 @@ type Server struct {
 	// BridgeExec is the executor for bridge OS operations.
 	// nil means use realBridgeExecutor{} (production default).
 	BridgeExec bridge.Executor
+	// DevMode disables all system side-effects (file writes, systemd, ACME).
+	// Set by ApplyDevMode; never set in production.
+	DevMode bool
 	// RecalcUser, when set, is invoked after admin handlers mutate quota state
 	// so the next periodic tick cannot surprise the just-saved row. Receives
 	// the user label.

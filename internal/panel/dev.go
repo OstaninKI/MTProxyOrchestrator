@@ -106,3 +106,19 @@ func devRandomHex(n int) (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+// ApplyDevMode configures srv for local development: no system writes, no service restarts.
+// Must be called before the server starts accepting requests.
+// Also overrides package-level hooks; not safe to call concurrently with request handling.
+func ApplyDevMode(srv *Server) {
+	srv.DevMode = true
+	srv.Secure = false
+	srv.SingboxActive = func() bool { return false }
+	srv.BridgeExec = noopBridgeExecutor{}
+
+	// Package-level hook overrides — replace real OS operations with no-ops.
+	WriteAndReloadHook = func(_ string, _ []byte) error { return nil }
+	SyncUsersJSONHook = func(_ string, _ []byte) error { return nil }
+	reloadNginx = func() error { return nil }
+	isSingboxActive = func() bool { return false }
+}
