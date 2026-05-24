@@ -1,6 +1,8 @@
 package panel
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
@@ -183,5 +185,62 @@ func TestApplyDevModeHooksAreNoop(t *testing.T) {
 	}
 	if isSingboxActive() {
 		t.Fatal("isSingboxActive should return false in dev mode")
+	}
+}
+
+func TestDevModeUIRoutesRespond(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	if err := SeedDevData(d); err != nil {
+		t.Fatalf("SeedDevData: %v", err)
+	}
+
+	srv := &Server{
+		DB:          d,
+		PanelPath:   "/",
+		RateLimiter: NewRateLimiter(),
+	}
+
+	// Save and restore package-level hooks that ApplyDevMode will override.
+	origWrite := WriteAndReloadHook
+	origSync := SyncUsersJSONHook
+	origNginx := reloadNginx
+	origSingbox := isSingboxActive
+	t.Cleanup(func() {
+		WriteAndReloadHook = origWrite
+		SyncUsersJSONHook = origSync
+		reloadNginx = origNginx
+		isSingboxActive = origSingbox
+	})
+
+	ApplyDevMode(srv)
+
+	h := srv.Handler()
+
+	// Unauthenticated public routes must return 200 or 204.
+	for _, path := range []string{"/login", "/health"} {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK && w.Code != http.StatusNoContent {
+			t.Errorf("GET %s: want 200/204, got %d", path, w.Code)
+		}
+	}
+
+	// Authenticated routes must redirect to login when no session cookie is present.
+	for _, path := range []string{
+		"/dashboard", "/users", "/bridge", "/logs", "/audit",
+		"/settings/proxy", "/settings/certificates", "/settings/stubs",
+	} {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusSeeOther {
+			t.Errorf("GET %s (no session): want 303, got %d", path, w.Code)
+		}
 	}
 }
