@@ -89,7 +89,7 @@ func (s *Server) handleBridgeEnable(w http.ResponseWriter, r *http.Request) {
 
 	paths := s.bridgePaths()
 	svc := &bridge.BridgeService{
-		Exec:     realBridgeExecutor{},
+		Exec:     s.bridgeExec(),
 		NodePath: paths.OutboundsJSON,
 	}
 	enableCfg := bridge.EnableConfig{
@@ -132,7 +132,7 @@ func (s *Server) handleBridgeDisable(w http.ResponseWriter, r *http.Request) {
 
 	paths := s.bridgePaths()
 	svc := &bridge.BridgeService{
-		Exec:     realBridgeExecutor{},
+		Exec:     s.bridgeExec(),
 		NodePath: paths.OutboundsJSON,
 	}
 	disableCfg := bridge.DisableConfig{
@@ -277,6 +277,15 @@ func (s *Server) singboxIsActive() bool {
 		return s.SingboxActive()
 	}
 	return systemctlRun("is-active", "sing-box.service") == nil
+}
+
+// bridgeExec returns the bridge executor to use for OS operations.
+// Falls back to realBridgeExecutor{} when Server.BridgeExec is nil (production).
+func (s *Server) bridgeExec() bridge.Executor {
+	if s.BridgeExec != nil {
+		return s.BridgeExec
+	}
+	return realBridgeExecutor{}
 }
 
 // realBridgeExecutor implements bridge.Executor using real OS calls.
@@ -1227,7 +1236,7 @@ func (s *Server) handleBridgeSetStrategy(w http.ResponseWriter, r *http.Request)
 // rerenderSingboxIfActive re-renders and writes sing-box.json when Bridge is active.
 // Returns an error when re-render fails — callers should surface this to the admin.
 func (s *Server) rerenderSingboxIfActive(nl bridge.NodeList) error {
-	exec := realBridgeExecutor{}
+	exec := s.bridgeExec()
 	active, _ := exec.ServiceActive("sing-box.service")
 	if !active {
 		return nil

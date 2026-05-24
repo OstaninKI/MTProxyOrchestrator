@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 	panelassets "github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel/assets"
 )
@@ -20,6 +21,9 @@ type Server struct {
 	BridgeCfg     *BridgeConfig   // nil → use DefaultPaths and default ports
 	SettingsCfg   *SettingsConfig // nil → empty stub/cert config
 	SingboxActive func() bool     // lets tests stub the sing-box running check; nil = use real systemd
+	// BridgeExec is the executor for bridge OS operations.
+	// nil means use realBridgeExecutor{} (production default).
+	BridgeExec bridge.Executor
 	// RecalcUser, when set, is invoked after admin handlers mutate quota state
 	// so the next periodic tick cannot surprise the just-saved row. Receives
 	// the user label.
