@@ -864,6 +864,22 @@
     });
   }
 
+  function initStubRemoteSearch() {
+    const input = document.querySelector("[data-stub-remote-search]");
+    if (!input || input.dataset.stubSearchInitialized === "true") return;
+    input.dataset.stubSearchInitialized = "true";
+
+    const cards = Array.from(document.querySelectorAll("[data-stub-card]"));
+
+    input.addEventListener("input", () => {
+      const q = input.value.trim().toLowerCase();
+      cards.forEach((card) => {
+        const name = (card.dataset.stubName || "").toLowerCase();
+        card.hidden = q !== "" && !name.includes(q);
+      });
+    });
+  }
+
   function initPanelPage() {
     fillCSRF();
     initLogsPage();
@@ -871,6 +887,7 @@
     initBridgePage();
     initPasswordPage();
     initStubUpload();
+    initStubRemoteSearch();
     initCopyButtons();
   }
 
@@ -887,6 +904,7 @@
     initBridgePage();
     initPasswordPage();
     initStubUpload();
+    initStubRemoteSearch();
     initCopyButtons();
   });
 })();

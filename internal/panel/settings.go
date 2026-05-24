@@ -252,6 +252,8 @@ func (s *Server) handleSettingsStubList(w http.ResponseWriter, r *http.Request) 
 		CSRFField: CSRFField(),
 		CSRFToken: tok,
 		Templates: templates,
+		Domain:    cfg.Domain,
+		HasDomain: cfg.Domain != "",
 		PanelPath: s.PanelPath,
 	})
 }
@@ -442,6 +444,62 @@ func (s *Server) handleSettingsStubUpload(w http.ResponseWriter, r *http.Request
 		ApplySuccess: "custom upload",
 		PanelPath:    s.PanelPath,
 	})
+}
+
+// handleSettingsStubDownload downloads the current stub web root as a ZIP.
+func (s *Server) handleSettingsStubDownload(w http.ResponseWriter, r *http.Request) {
+	cfg := s.settingsConfig()
+	webRoot := cfg.WebRoot
+
+	if webRoot == "" {
+		http.Error(w, "no stub web root configured", http.StatusNotFound)
+		return
+	}
+
+	info, err := os.Stat(webRoot)
+	if err != nil || !info.IsDir() {
+		http.Error(w, "stub web root not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="stub.zip"`)
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	err = filepath.Walk(webRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // skip files with errors
+		}
+
+		if info.IsDir() {
+			return nil // skip directories
+		}
+
+		rel, err := filepath.Rel(webRoot, path)
+		if err != nil {
+			return nil
+		}
+
+		f, err := zw.Create(filepath.ToSlash(rel))
+		if err != nil {
+			return nil
+		}
+
+		src, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer src.Close()
+
+		_, err = io.Copy(f, src)
+		return nil
+	})
+
+	if err == nil {
+		audit.Log(s.DB, s.sessionAdminID(r), "settings.stub_download", "", "", clientIP(r)) //nolint:errcheck
+	}
 }
 
 // handleSettingsCertificates renders the certificate state page.

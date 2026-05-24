@@ -153,6 +153,7 @@ func (s *Server) panelRouter() http.Handler {
 		r.Get("/settings/stubs", withLegacyPanelCSP(s.handleSettingsStubList))
 		r.Post("/settings/stubs/apply", withLegacyPanelCSP(s.handleSettingsStubApply))
 		r.Post("/settings/stubs/upload", withLegacyPanelCSP(s.handleSettingsStubUpload))
+		r.Get("/settings/stubs/download", withLegacyPanelCSP(s.handleSettingsStubDownload))
 		r.Get("/settings/stubs/remote", withLegacyPanelCSP(s.handleSettingsStubRemote))
 		r.Post("/settings/stubs/remote-apply", withLegacyPanelCSP(s.handleSettingsStubRemoteApply))
 		r.Get("/settings/certificates", s.handleSettingsCertificates)

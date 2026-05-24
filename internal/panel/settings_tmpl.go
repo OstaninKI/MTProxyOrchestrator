@@ -15,6 +15,8 @@ type settingsStubListData struct {
 	UploadValidation []string
 	CurrentNav       string
 	PanelPath        string
+	Domain           string
+	HasDomain        bool
 }
 
 type settingsStubRemoteData struct {
@@ -80,9 +82,9 @@ const settingsStubListContent = `{{define "page_title"}}Stub Templates{{end}}
         <h3 class="hero-title">Built-in stub library</h3>
         <span class="muted">{{len .Templates}} local templates available. Upload ZIP archives up to 5 MB.</span>
         <div class="row stub-showcase-actions">
-          <button class="btn" data-variant="primary" disabled>{{icon "Globe" 13}} Preview live</button>
+          {{if .HasDomain}}<a class="btn" data-variant="primary" href="https://{{.Domain}}" target="_blank" rel="noopener">{{icon "Globe" 13}} Preview live</a>{{else}}<button class="btn" data-variant="primary" disabled>{{icon "Globe" 13}} Preview live</button>{{end}}
           <button class="btn" data-variant="ghost" disabled>{{icon "Edit" 13}} Edit files</button>
-          <button class="btn" data-variant="ghost" disabled>{{icon "Download" 13}} Download as ZIP</button>
+          <a class="btn" data-variant="ghost" href="{{.PanelPath}}settings/stubs/download">{{icon "Download" 13}} Download as ZIP</a>
         </div>
       </div>
     </div>
@@ -183,7 +185,7 @@ const settingsStubRemoteContent = `{{define "page_title"}}Remote Templates{{end}
         <span class="muted">{{len .Templates}} templates fetched for this request. Download and apply runs in one step.</span>
         <div class="row stub-showcase-actions">
           <a class="btn" data-variant="primary" href="{{.PanelPath}}settings/stubs">{{icon "Stubs" 13}} Local library</a>
-          <button class="btn" data-variant="ghost" disabled>{{icon "Search" 13}} Search catalog</button>
+          <div class="input-group">{{icon "Search" 14}}<input class="input" type="text" placeholder="Search catalog…" data-stub-remote-search></div>
         </div>
       </div>
     </div>
@@ -196,7 +198,7 @@ const settingsStubRemoteContent = `{{define "page_title"}}Remote Templates{{end}
 <div class="card-body">
 <div class="template-grid">
 {{range .Templates}}
-<article class="template-card stub-card">
+<article class="template-card stub-card" data-stub-card data-stub-name="{{.Name}}">
   <div class="template-card-head">
     <div>
       <h2>{{.Name}}</h2>
