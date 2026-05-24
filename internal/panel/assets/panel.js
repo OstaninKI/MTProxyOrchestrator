@@ -295,6 +295,8 @@
     const rows = Array.from(tbody.querySelectorAll("[data-user-row]"));
     const selectAll = root.querySelector("[data-users-select-all]");
     const selectionEl = root.querySelector('[data-users-role="selection"]');
+    const bulkForm = root.querySelector("[data-users-bulk-form]");
+    const bulkIds = root.querySelector("[data-users-bulk-ids]");
     const sortHeaders = Array.from(root.querySelectorAll("[data-users-sort-key]"));
     const rowMenus = Array.from(root.querySelectorAll(".row-menu"));
 
@@ -318,12 +320,10 @@
         }
       });
       if (selectionEl) {
-        if (checkedCount > 0) {
-          selectionEl.textContent = `${checkedCount} selected`;
-          selectionEl.hidden = false;
-        } else {
-          selectionEl.hidden = true;
-        }
+        selectionEl.textContent = `${checkedCount} selected`;
+      }
+      if (bulkForm) {
+        bulkForm.hidden = checkedCount === 0;
       }
       if (selectAll) {
         const visibleChecked = visible.filter((b) => b.checked).length;
@@ -465,6 +465,14 @@
         deleteButton.dataset.label = row.dataset.label || "user";
       }
 
+      drawer.dataset.linkUrl = row.dataset.linkUrl || "";
+      const linkRow = drawer.querySelector("[data-users-link-row]");
+      if (linkRow) {
+        linkRow.hidden = true;
+        const linkVal = linkRow.querySelector("[data-users-detail='link']");
+        if (linkVal) linkVal.textContent = "";
+      }
+
       setFormAction("toggle", row.dataset.toggleUrl);
       setFormAction("rotate", row.dataset.rotateUrl);
       setFormAction("suspend", row.dataset.suspendUrl);
@@ -545,11 +553,68 @@
         button.addEventListener("click", () => openDrawer(row));
       });
     });
+    const revealButton = drawer.querySelector("[data-users-reveal-link]");
+    if (revealButton) {
+      revealButton.addEventListener("click", async () => {
+        const linkUrl = drawer.dataset.linkUrl;
+        if (!linkUrl) return;
+        const csrfToken = readCookie("csrf_token");
+        try {
+          const resp = await fetch(linkUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: "_csrf=" + encodeURIComponent(csrfToken),
+          });
+          if (!resp.ok) return;
+          const text = await resp.text();
+          const linkRow = drawer.querySelector("[data-users-link-row]");
+          const linkVal = drawer.querySelector("[data-users-detail='link']");
+          if (linkRow && linkVal) {
+            linkVal.textContent = text;
+            linkRow.hidden = false;
+            initCopyButtons();
+          }
+        } catch (_) {}
+      });
+    }
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       if (!createModal.hidden) closeCreateModal();
       if (!drawer.hidden) closeDrawer();
     });
+    if (bulkForm) {
+      bulkForm.addEventListener("submit", (event) => {
+        const boxes = rowCheckboxes();
+        const checked = boxes.filter((b) => b.checked);
+        if (checked.length === 0) {
+          event.preventDefault();
+          return;
+        }
+        const action = event.submitter?.dataset.usersBulkAction;
+        if (action === "delete") {
+          if (!window.confirm(`Delete ${checked.length} selected user(s)? This cannot be undone.`)) {
+            event.preventDefault();
+            return;
+          }
+        }
+        if (bulkIds) {
+          while (bulkIds.firstChild) {
+            bulkIds.removeChild(bulkIds.firstChild);
+          }
+          checked.forEach((box) => {
+            const row = box.closest("[data-user-row]");
+            const id = row?.dataset.id;
+            if (id) {
+              const input = document.createElement("input");
+              input.type = "hidden";
+              input.name = "id";
+              input.value = id;
+              bulkIds.appendChild(input);
+            }
+          });
+        }
+      });
+    }
     applyUsersState();
   }
 

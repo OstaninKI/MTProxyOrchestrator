@@ -97,7 +97,7 @@ func TestNextResetIn(t *testing.T) {
 func TestUserListDashboardLinkUsesPanelPath(t *testing.T) {
 	var buf bytes.Buffer
 
-	userListPage(&buf, nil, "csrf", "", "/p-example/")
+	userListPage(&buf, nil, "csrf", "", "", "/p-example/")
 
 	html := buf.String()
 	if !strings.Contains(html, `href="/p-example/dashboard"`) {
@@ -130,7 +130,7 @@ func TestUserListShowsTrafficBreakdownAndConnectionStatus(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	userListPage(&buf, users, "csrf", "", "/p-example/")
+	userListPage(&buf, users, "csrf", "", "", "/p-example/")
 	html := buf.String()
 
 	for _, want := range []string{

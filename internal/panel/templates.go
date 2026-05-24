@@ -82,6 +82,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
       <span class="kpi-delta kpi-delta--up">{{icon "ArrowUpRight" 12}} live</span>
       <span>selected {{.Period}} window</span>
     </div>
+    {{kpiSparkSVG .TrafficSeries}}
   </article>
   <article class="kpi">
     <div class="kpi-label">{{icon "Users" 13}} Active users</div>
@@ -129,11 +130,14 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
               <span class="summary-copy"><strong>Add user</strong><span>Create a new MTProto user and copy the link</span></span>
               {{icon "Right" 14}}
             </a>
-            <button class="action-row" type="button" disabled>
-              <span class="action-icon">{{icon "Key" 14}}</span>
-              <span class="summary-copy"><strong>Rotate all secrets</strong><span>Placeholder until bulk rotation is wired</span></span>
-              {{icon "Right" 14}}
-            </button>
+            <form method="post" action="{{.PanelPath}}users/rotate-all" class="action-row-form" onsubmit="return confirm('Rotate secrets for all enabled users? Existing share links stop working until you redistribute the new ones.')">
+              <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+              <button class="action-row" type="submit">
+                <span class="action-icon">{{icon "Key" 14}}</span>
+                <span class="summary-copy"><strong>Rotate all secrets</strong><span>Re-issue secrets for all enabled users</span></span>
+                {{icon "Right" 14}}
+              </button>
+            </form>
             <a class="action-row" data-action="bridge" href="{{.PanelPath}}bridge">
               <span class="action-icon">{{icon "Cloud" 14}}</span>
               <span class="summary-copy"><strong>Add outbound node</strong><span>VLESS / Trojan / SS / Hysteria2 / TUIC</span></span>

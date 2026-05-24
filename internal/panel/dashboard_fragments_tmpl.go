@@ -171,6 +171,9 @@ var dashboardFragmentFuncs = template.FuncMap{
 	"trafficChartSVG": func(series []metrics.TrafficBucket) template.HTML {
 		return trafficChartSVG(series)
 	},
+	"kpiSparkSVG": func(series []metrics.TrafficBucket) template.HTML {
+		return kpiSparkSVG(series)
+	},
 	"componentStateLabel": func(name, version string, isBridge bool) string {
 		if version == "" || version == "unknown" {
 			if name == "sing-box" && !isBridge {
@@ -554,6 +557,34 @@ func trafficChartSVG(series []metrics.TrafficBucket) template.HTML {
 	return template.HTML(b.String())
 }
 
+// kpiSparkSVG renders a compact background sparkline for a KPI tile from the
+// per-bucket total (in+out) of a traffic series. Mirrors the design template's
+// kpi-spark element.
+func kpiSparkSVG(series []metrics.TrafficBucket) template.HTML {
+	if len(series) < 2 {
+		return ""
+	}
+	dims := trafficChartDims{width: 260, height: 36, leftPad: 0, rightPad: 0, topPad: 3, botPad: 3}
+	totalMax := int64(1)
+	for _, bucket := range series {
+		if t := bucket.BytesIn + bucket.BytesOut; t > totalMax {
+			totalMax = t
+		}
+	}
+	points := trafficPointsScaled(series, func(bucket metrics.TrafficBucket) int64 {
+		return bucket.BytesIn + bucket.BytesOut
+	}, totalMax, dims)
+	baselineY := dims.topPad + (dims.height - dims.topPad - dims.botPad)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `<svg class="kpi-spark" viewBox="0 0 %.0f %.0f" preserveAspectRatio="none" aria-hidden="true">`, dims.width, dims.height)
+	b.WriteString(`<defs><linearGradient id="kpi-spark-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="oklch(0.78 0.16 240)" stop-opacity="0.35"></stop><stop offset="100%" stop-color="oklch(0.78 0.16 240)" stop-opacity="0"></stop></linearGradient></defs>`)
+	fmt.Fprintf(&b, `<path d="%s" fill="url(#kpi-spark-fill)"></path>`, trafficAreaPathFromPoints(points, baselineY))
+	fmt.Fprintf(&b, `<path d="%s" fill="none" stroke="oklch(0.78 0.16 240)" stroke-width="1.5"></path>`, trafficLinePathFromPoints(points))
+	b.WriteString(`</svg>`)
+	return template.HTML(b.String())
+}
+
 func trafficSeriesMax(series []metrics.TrafficBucket) int64 {
 	maxValue := int64(1)
 	for _, bucket := range series {
@@ -665,6 +696,41 @@ func trafficAreaPathFromPoints(points []svgPoint, baselineY float64) string {
 	last := points[len(points)-1]
 	fmt.Fprintf(&b, " L%.2f,%.2f Z", last.x, baselineY)
 	return b.String()
+}
+
+// userSparkSVG renders a compact sparkline for the Users table Activity column.
+// If len(series) < 2, renders a flat placeholder line. Otherwise scales and renders
+// the per-bucket total (BytesIn+BytesOut) within a 120x28 viewBox.
+func userSparkSVG(series []metrics.TrafficBucket, online bool) template.HTML {
+	var classStr string
+	if online {
+		classStr = `class="user-spark is-online"`
+	} else {
+		classStr = `class="user-spark"`
+	}
+
+	// Flat line for no or minimal data
+	if len(series) < 2 {
+		return template.HTML(fmt.Sprintf(`<svg %s width="120" height="28" viewBox="0 0 120 28" aria-hidden="true" preserveAspectRatio="none"><path d="M0 22 L120 22"></path></svg>`, classStr))
+	}
+
+	// Scale the series to the 120x28 viewBox
+	dims := trafficChartDims{width: 120, height: 28, leftPad: 0, rightPad: 0, topPad: 3, botPad: 3}
+	totalMax := int64(1)
+	for _, bucket := range series {
+		if t := bucket.BytesIn + bucket.BytesOut; t > totalMax {
+			totalMax = t
+		}
+	}
+	points := trafficPointsScaled(series, func(bucket metrics.TrafficBucket) int64 {
+		return bucket.BytesIn + bucket.BytesOut
+	}, totalMax, dims)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `<svg %s width="120" height="28" viewBox="0 0 120 28" aria-hidden="true" preserveAspectRatio="none">`, classStr)
+	fmt.Fprintf(&b, `<path d="%s"></path>`, trafficLinePathFromPoints(points))
+	b.WriteString(`</svg>`)
+	return template.HTML(b.String())
 }
 
 func trafficPoints(series []metrics.TrafficBucket, value func(metrics.TrafficBucket) int64) []svgPoint {

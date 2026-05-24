@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -179,6 +180,286 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.PanelPath, tok)
 }
 
+// handleUserRotateAll re-issues secrets for every enabled user in a single
+// teleproxy reload. On reload failure all rotated secrets are restored.
+func (s *Server) handleUserRotateAll(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	repo := UserRepo{DB: s.DB}
+	users, err := repo.List()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type prevSecret struct {
+		id     int64
+		secret string
+	}
+	var rotated []prevSecret
+	restore := func() {
+		for _, p := range rotated {
+			_ = repo.UpdateSecret(p.id, p.secret)
+		}
+	}
+
+	for _, u := range users {
+		if !u.Enabled {
+			continue
+		}
+		secret, err := secrets.GenerateMTProtoSecret()
+		if err != nil {
+			restore()
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if err := repo.UpdateSecret(u.ID, secret.Hex()); err != nil {
+			restore()
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		rotated = append(rotated, prevSecret{id: u.ID, secret: u.SecretHex})
+	}
+
+	audit.Log(s.DB, s.sessionAdminID(r), "user.rotate_all", "", fmt.Sprintf("%d secrets", len(rotated)), clientIP(r)) //nolint:errcheck
+	if err := s.reloadTeleproxy(); err != nil {
+		restore()
+		audit.Log(s.DB, s.sessionAdminID(r), "user.rotate_all_rollback", "", "secrets restored after reload failure", clientIP(r)) //nolint:errcheck
+		http.Redirect(w, r, s.PanelPath+"users?error=Failed+to+apply+teleproxy+config", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, s.PanelPath+"users?notice="+url.QueryEscape(fmt.Sprintf("Rotated %d secret(s). Re-issue updated share links to users.", len(rotated))), http.StatusSeeOther)
+}
+
+// handleUserBulkSuspend suspends multiple selected users in one teleproxy reload.
+// On reload failure all suspended users are restored.
+func (s *Server) handleUserBulkSuspend(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		// Silently ignore parse error and treat as no ids
+	}
+	ids := r.PostForm["id"]
+	if len(ids) == 0 {
+		http.Redirect(w, r, s.PanelPath+"users", http.StatusSeeOther)
+		return
+	}
+
+	repo := UserRepo{DB: s.DB}
+	users, err := repo.List()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse IDs and build id → user map
+	var parsedIDs []int64
+	userMap := make(map[int64]*UserRow)
+	for _, u := range users {
+		userMap[u.ID] = &u
+	}
+	for _, idStr := range ids {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			continue // Skip invalid IDs
+		}
+		parsedIDs = append(parsedIDs, id)
+	}
+
+	if len(parsedIDs) == 0 {
+		http.Redirect(w, r, s.PanelPath+"users", http.StatusSeeOther)
+		return
+	}
+
+	type prevState struct {
+		id        int64
+		suspended bool
+	}
+	var changed []prevState
+	restore := func() {
+		for _, p := range changed {
+			_ = repo.SetSuspended(p.id, p.suspended)
+		}
+	}
+
+	// Apply suspension and track previous state
+	for _, id := range parsedIDs {
+		u, exists := userMap[id]
+		if !exists {
+			continue
+		}
+		changed = append(changed, prevState{id: id, suspended: u.QuotaSuspended})
+		if err := repo.SetSuspended(id, true); err != nil {
+			restore()
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	audit.Log(s.DB, s.sessionAdminID(r), "user.bulk_suspend", "", fmt.Sprintf("%d user(s)", len(changed)), clientIP(r)) //nolint:errcheck
+	if err := s.reloadTeleproxy(); err != nil {
+		restore()
+		audit.Log(s.DB, s.sessionAdminID(r), "user.bulk_suspend_rollback", "", "users restored after reload failure", clientIP(r)) //nolint:errcheck
+		http.Redirect(w, r, s.PanelPath+"users?error=Failed+to+apply+teleproxy+config", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, s.PanelPath+"users?notice="+url.QueryEscape(fmt.Sprintf("Suspended %d user(s).", len(changed))), http.StatusSeeOther)
+}
+
+// handleUserBulkRotate rotates secrets for multiple selected users in one teleproxy reload.
+// On reload failure all rotated secrets are restored.
+func (s *Server) handleUserBulkRotate(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		// Silently ignore parse error and treat as no ids
+	}
+	ids := r.PostForm["id"]
+	if len(ids) == 0 {
+		http.Redirect(w, r, s.PanelPath+"users", http.StatusSeeOther)
+		return
+	}
+
+	repo := UserRepo{DB: s.DB}
+	users, err := repo.List()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse IDs and build id → user map
+	var parsedIDs []int64
+	userMap := make(map[int64]*UserRow)
+	for _, u := range users {
+		userMap[u.ID] = &u
+	}
+	for _, idStr := range ids {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			continue // Skip invalid IDs
+		}
+		parsedIDs = append(parsedIDs, id)
+	}
+
+	if len(parsedIDs) == 0 {
+		http.Redirect(w, r, s.PanelPath+"users", http.StatusSeeOther)
+		return
+	}
+
+	type prevSecret struct {
+		id     int64
+		secret string
+	}
+	var rotated []prevSecret
+	restore := func() {
+		for _, p := range rotated {
+			_ = repo.UpdateSecret(p.id, p.secret)
+		}
+	}
+
+	// Generate and apply new secrets
+	for _, id := range parsedIDs {
+		u, exists := userMap[id]
+		if !exists {
+			continue
+		}
+		secret, err := secrets.GenerateMTProtoSecret()
+		if err != nil {
+			restore()
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		rotated = append(rotated, prevSecret{id: id, secret: u.SecretHex})
+		if err := repo.UpdateSecret(id, secret.Hex()); err != nil {
+			restore()
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	audit.Log(s.DB, s.sessionAdminID(r), "user.bulk_rotate", "", fmt.Sprintf("%d secret(s)", len(rotated)), clientIP(r)) //nolint:errcheck
+	if err := s.reloadTeleproxy(); err != nil {
+		restore()
+		audit.Log(s.DB, s.sessionAdminID(r), "user.bulk_rotate_rollback", "", "secrets restored after reload failure", clientIP(r)) //nolint:errcheck
+		http.Redirect(w, r, s.PanelPath+"users?error=Failed+to+apply+teleproxy+config", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, s.PanelPath+"users?notice="+url.QueryEscape(fmt.Sprintf("Rotated %d secret(s). Re-issue updated share links.", len(rotated))), http.StatusSeeOther)
+}
+
+// handleUserBulkDelete deletes multiple selected users in one teleproxy reload.
+// On reload failure all deleted users are restored.
+func (s *Server) handleUserBulkDelete(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		// Silently ignore parse error and treat as no ids
+	}
+	ids := r.PostForm["id"]
+	if len(ids) == 0 {
+		http.Redirect(w, r, s.PanelPath+"users", http.StatusSeeOther)
+		return
+	}
+
+	repo := UserRepo{DB: s.DB}
+	users, err := repo.List()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse IDs and build id → user map
+	var parsedIDs []int64
+	userMap := make(map[int64]*UserRow)
+	for _, u := range users {
+		userMap[u.ID] = &u
+	}
+	for _, idStr := range ids {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			continue // Skip invalid IDs
+		}
+		parsedIDs = append(parsedIDs, id)
+	}
+
+	if len(parsedIDs) == 0 {
+		http.Redirect(w, r, s.PanelPath+"users", http.StatusSeeOther)
+		return
+	}
+
+	restore := func() {
+		for _, id := range parsedIDs {
+			_ = repo.Restore(id)
+		}
+	}
+
+	// Delete all selected users
+	for _, id := range parsedIDs {
+		if err := repo.Delete(id); err != nil {
+			restore()
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	audit.Log(s.DB, s.sessionAdminID(r), "user.bulk_delete", "", fmt.Sprintf("%d user(s)", len(parsedIDs)), clientIP(r)) //nolint:errcheck
+	if err := s.reloadTeleproxy(); err != nil {
+		restore()
+		audit.Log(s.DB, s.sessionAdminID(r), "user.bulk_delete_rollback", "", "users restored after reload failure", clientIP(r)) //nolint:errcheck
+		http.Redirect(w, r, s.PanelPath+"users?error=Failed+to+apply+teleproxy+config", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, s.PanelPath+"users?notice="+url.QueryEscape(fmt.Sprintf("Deleted %d user(s).", len(parsedIDs))), http.StatusSeeOther)
+}
+
 // ReloadTeleproxyForQuota is exposed so the quota service can rebuild teleproxy
 // config when a user's suspension state transitions.
 func (s *Server) ReloadTeleproxyForQuota() error { return s.reloadTeleproxy() }
@@ -329,6 +610,50 @@ func (s *Server) handleUserSuspendToggle(w http.ResponseWriter, r *http.Request)
 		s.RecalcUser(target.Label)
 	}
 	http.Redirect(w, r, "../../users", http.StatusSeeOther)
+}
+
+func (s *Server) handleUserShareLink(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	repo := UserRepo{DB: s.DB}
+	users, err := repo.List()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	var target *UserRow
+	for i := range users {
+		if users[i].ID == id {
+			target = &users[i]
+			break
+		}
+	}
+	if target == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	serverAddr := s.settingsConfig().Domain
+	if serverAddr == "" {
+		serverAddr = s.settingsConfig().ServerIP
+	}
+	link := ProxyLink{
+		Server:    serverAddr,
+		Port:      s.bridgeMTProtoPort(),
+		SecretHex: target.SecretHex,
+		MaskHost:  s.bridgeMaskHost(),
+	}
+	url := link.TelegramURL()
+	audit.Log(s.DB, s.sessionAdminID(r), "user.link_reveal", target.Label, "", clientIP(r)) //nolint:errcheck
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write([]byte(url))
 }
 
 // reloadTeleproxy rewrites the Teleproxy config and reloads the service.

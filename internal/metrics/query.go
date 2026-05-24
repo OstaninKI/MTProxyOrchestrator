@@ -247,3 +247,36 @@ func scanRows(rows interface {
 	}
 	return out, rows.Err()
 }
+
+// QueryUserTrafficSeries returns up to buckets most-recent rows from traffic_samples
+// for the given user_label, ordered ascending by ts. Each row is mapped to a TrafficBucket.
+func QueryUserTrafficSeries(d *db.DB, label string, buckets int) ([]TrafficBucket, error) {
+	if buckets <= 0 {
+		buckets = 30
+	}
+	const q = `
+SELECT ts, bytes_in, bytes_out, connections
+FROM traffic_samples
+WHERE user_label = ?
+ORDER BY ts ASC
+LIMIT ?`
+
+	rows, err := d.Query(q, label, buckets)
+	if err != nil {
+		return nil, fmt.Errorf("query user traffic series: %w", err)
+	}
+	defer rows.Close()
+
+	var out []TrafficBucket
+	for rows.Next() {
+		var bucket TrafficBucket
+		if err := rows.Scan(&bucket.TS, &bucket.BytesIn, &bucket.BytesOut, &bucket.Connections); err != nil {
+			return nil, fmt.Errorf("scan user traffic bucket: %w", err)
+		}
+		out = append(out, bucket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate user traffic series: %w", err)
+	}
+	return out, nil
+}

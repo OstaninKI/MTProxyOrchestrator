@@ -12,6 +12,7 @@ import (
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
 )
 
@@ -119,6 +120,8 @@ type UserRow struct {
 	TrafficTotalBytes      int64
 	ActiveConnections      int64
 	ConnectionStatus       UserConnectionStatus
+
+	ActivitySeries []metrics.TrafficBucket
 }
 
 // UserRepo wraps DB operations for users.
@@ -388,6 +391,14 @@ func (s *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// Populate activity series for each user
+	for i := range users {
+		series, err := metrics.QueryUserTrafficSeries(s.DB, users[i].Label, 30)
+		if err == nil {
+			users[i].ActivitySeries = series
+		}
+		// Ignore per-user query errors; leave series nil on error
+	}
 	tok, err := NewCSRFToken()
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -395,7 +406,7 @@ func (s *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 	}
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	userListPage(w, users, tok, r.URL.Query().Get("error"), s.PanelPath)
+	userListPage(w, users, tok, r.URL.Query().Get("error"), r.URL.Query().Get("notice"), s.PanelPath)
 }
 
 func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {

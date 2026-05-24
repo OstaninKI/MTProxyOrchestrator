@@ -444,6 +444,17 @@ a:hover {
 .kpi-delta--up { color: var(--success); }
 .kpi-delta--down { color: var(--danger); }
 
+.kpi-spark {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 36px;
+  opacity: .85;
+  pointer-events: none;
+}
+
 .page-stack {
   display: grid;
   gap: 18px;
@@ -2630,6 +2641,8 @@ body.login-page {
   stroke: rgba(255,255,255,.10);
 }
 
+.action-row-form { margin: 0; display: block; }
+
 .action-row {
   display: flex;
   align-items: center;
@@ -3382,6 +3395,13 @@ th.text-right .th-sort { justify-content: flex-end; }
   height: 1px;
   margin: 4px 0;
   background: var(--border);
+}
+
+.users-bulk {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
 }
 
 @media (max-width: 640px) {

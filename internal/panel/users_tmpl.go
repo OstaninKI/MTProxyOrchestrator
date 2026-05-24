@@ -100,6 +100,7 @@ var userListFuncs = template.FuncMap{
 		}
 		return total
 	},
+	"userSparkSVG": userSparkSVG,
 }
 
 const userListContent = `{{define "page_title"}}Users{{end}}
@@ -146,6 +147,7 @@ const userListContent = `{{define "page_title"}}Users{{end}}
   </article>
 </section>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+{{if .Notice}}<div class="flash">{{.Notice}}</div>{{end}}
 <div data-users-page>
 <div class="card table-card">
 <div class="users-toolbar">
@@ -172,7 +174,14 @@ const userListContent = `{{define "page_title"}}Users{{end}}
     <option value="connections-desc">Connections</option>
   </select>
   <span class="spacer"></span>
-  <span class="users-selection muted" data-users-role="selection" hidden></span>
+  <form class="users-bulk" data-users-bulk-form method="post" action="{{.PanelPath}}users/bulk/suspend" hidden>
+    <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+    <span data-users-bulk-ids></span>
+    <span class="users-selection muted" data-users-role="selection"></span>
+    <button class="btn" data-size="sm" data-variant="ghost" type="submit" formaction="{{.PanelPath}}users/bulk/suspend" data-users-bulk-action="suspend">{{icon "Pause" 12}} Suspend</button>
+    <button class="btn" data-size="sm" data-variant="ghost" type="submit" formaction="{{.PanelPath}}users/bulk/rotate" data-users-bulk-action="rotate">{{icon "Refresh" 12}} Rotate</button>
+    <button class="btn" data-size="sm" data-variant="danger" type="submit" formaction="{{.PanelPath}}users/bulk/delete" data-users-bulk-action="delete">{{icon "Trash" 12}} Delete</button>
+  </form>
   <span class="users-toolbar-count muted sr-only" data-users-role="count">{{len .Users}} users</span>
   <button class="btn" data-size="sm" data-variant="ghost" type="button" disabled>{{icon "Download" 13}} Export</button>
   <button class="btn" data-size="sm" data-variant="primary" type="button" data-users-open-create>{{icon "Plus" 13}} Add user</button>
@@ -220,6 +229,7 @@ const userListContent = `{{define "page_title"}}Users{{end}}
   data-reset-url="{{$.PanelPath}}users/{{.ID}}/quota/reset"
   data-quota-url="{{$.PanelPath}}users/{{.ID}}/quota"
   data-delete-url="{{$.PanelPath}}users/{{.ID}}/delete"
+  data-link-url="{{$.PanelPath}}users/{{.ID}}/link"
 >
   <td class="users-col-select"><input type="checkbox" data-users-select aria-label="Select {{.Label}}"></td>
   <td>
@@ -259,9 +269,7 @@ const userListContent = `{{define "page_title"}}Users{{end}}
       <span class="muted">Unlimited · {{if .QuotaPeriod}}{{.QuotaPeriod}}{{else}}—{{end}}</span>
     {{end}}
   </td>
-  <td>
-    <svg class="user-spark{{if eq (connectionStatusLabel .ConnectionStatus) "online"}} is-online{{end}}" width="120" height="28" viewBox="0 0 120 28" aria-hidden="true" preserveAspectRatio="none"><path d="M0 22 L120 22"></path></svg>
-  </td>
+  <td>{{userSparkSVG .ActivitySeries (eq (connectionStatusLabel .ConnectionStatus) "online")}}</td>
   <td class="text-right">
     <div class="col col-tight col-end">
       <span class="mono font-medium">{{formatBytes .TrafficTotalBytes}}</span>
@@ -403,14 +411,12 @@ const userListContent = `{{define "page_title"}}Users{{end}}
     <section class="detail-section">
       <h3 class="detail-section-title">Access Material</h3>
       <div class="detail-list">
-        <div class="copy-row detail-placeholder">
-          <span class="val mono">tg://proxy?server=...&amp;secret=ee...</span>
-          <button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Copy" 12}}</button>
+        <button class="btn" data-size="sm" data-variant="ghost" type="button" data-users-reveal-link>{{icon "Lock" 13}} Show share link</button>
+        <div class="copy-row" data-users-link-row hidden>
+          <span class="val mono" data-users-detail="link"></span>
+          <button class="btn" data-size="xs" data-variant="ghost" type="button" data-copy disabled>{{icon "Copy" 12}}</button>
         </div>
-        <div class="copy-row detail-placeholder">
-          <span class="val mono">Secret is intentionally not shown again</span>
-          <button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Copy" 12}}</button>
-        </div>
+        <p class="help">The secret is fetched only when you reveal it and is not stored in this page.</p>
       </div>
     </section>
 
@@ -488,6 +494,7 @@ type userListData struct {
 	CSRFField  string
 	CSRFToken  string
 	Error      string
+	Notice     string
 	CurrentNav string
 	PanelPath  string
 }
@@ -501,12 +508,13 @@ type userCreatedData struct {
 	PanelPath   string
 }
 
-func userListPage(w io.Writer, users []UserRow, csrfToken, errMsg, panelPath string) {
+func userListPage(w io.Writer, users []UserRow, csrfToken, errMsg, notice, panelPath string) {
 	userListTmpl.Execute(w, userListData{
 		Users:      users,
 		CSRFField:  CSRFField(),
 		CSRFToken:  csrfToken,
 		Error:      errMsg,
+		Notice:     notice,
 		CurrentNav: "users",
 		PanelPath:  panelPath,
 	})
