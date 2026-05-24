@@ -24,7 +24,8 @@ func (noopBridgeExecutor) ReloadService(_ string) error                      { r
 func (noopBridgeExecutor) ServiceActive(_ string) (bool, error)              { return false, nil }
 
 // SeedDevData populates d with demo admin, users, traffic samples, and settings.
-// Safe to call on a fresh :memory: DB (migrations already applied by db.Open).
+// Must be called exactly once on a freshly opened DB; a second call on the same DB
+// returns an error (duplicate admin row). Migrations are applied by db.Open.
 func SeedDevData(d *db.DB) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte("admin"), 12)
 	if err != nil {
