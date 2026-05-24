@@ -353,7 +353,7 @@ func (s *Server) reloadTeleproxy() error {
 	}
 	cfg := teleproxy.Config{
 		Port:       s.bridgeMTProtoPort(),
-		MaskHost:   s.bridgeMaskHost(),
+		MaskHost:   s.bridgeTeleproxyDomain(),
 		StatsPort:  s.bridgeStatsPort(),
 		SOCKS5Addr: s.bridgeSOCKS5Addr(),
 		Users:      entries,

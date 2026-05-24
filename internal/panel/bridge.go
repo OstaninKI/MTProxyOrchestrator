@@ -25,6 +25,11 @@ import (
 
 const systemctlTimeout = 10 * time.Second
 
+// stubTLSBackendPort is the nginx port that serves real HTTPS for masquerade when
+// the panel domain is used as the teleproxy TLS cover domain. Must match the value
+// in internal/reconcile and internal/install.
+const stubTLSBackendPort = 9443
+
 func systemctlRun(args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), systemctlTimeout)
 	defer cancel()
@@ -92,7 +97,7 @@ func (s *Server) handleBridgeEnable(w http.ResponseWriter, r *http.Request) {
 		Paths:          paths,
 		TeleproxyUsers: entries,
 		MTProtoPort:    s.bridgeMTProtoPort(),
-		MaskHost:       s.bridgeMaskHost(),
+		MaskHost:       s.bridgeTeleproxyDomain(),
 		StatsPort:      s.bridgeStatsPort(),
 		SingboxURL:     singboxDownloadURL(),
 		SingboxSHA256:  singboxDownloadSHA256(),
@@ -134,7 +139,7 @@ func (s *Server) handleBridgeDisable(w http.ResponseWriter, r *http.Request) {
 		Paths:          paths,
 		TeleproxyUsers: entries,
 		MTProtoPort:    s.bridgeMTProtoPort(),
-		MaskHost:       s.bridgeMaskHost(),
+		MaskHost:       s.bridgeTeleproxyDomain(),
 		StatsPort:      s.bridgeStatsPort(),
 	}
 	if err := svc.Disable(disableCfg); err != nil {
@@ -240,6 +245,18 @@ func (s *Server) bridgeMaskHost() string {
 		return s.BridgeCfg.MaskHost
 	}
 	return "www.microsoft.com"
+}
+
+// bridgeTeleproxyDomain returns the value for teleproxy's `domain` config field.
+// When the panel domain is used as the masquerade host (TLS stub backend active),
+// teleproxy's proxy-pass must target nginx on :9443 — not teleproxy itself on :443.
+// In all other cases (e.g. mask_host = "www.microsoft.com") the host is returned as-is.
+func (s *Server) bridgeTeleproxyDomain() string {
+	maskHost := s.bridgeMaskHost()
+	if domain := s.settingsConfig().Domain; domain != "" && maskHost == domain {
+		return fmt.Sprintf("%s:%d", domain, stubTLSBackendPort)
+	}
+	return maskHost
 }
 
 func (s *Server) bridgeStatsPort() int {
@@ -461,10 +478,10 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
     <p class="page-sub">Outbound nodes and routing strategy.</p>
   </div>
   <div class="actions">
-    <a class="btn" data-variant="primary" href="#add-node">{{icon "Plus" 13}} Add node</a>
+    <button class="btn" data-variant="primary" type="button" data-bridge-open-add>{{icon "Plus" 13}} Add node</button>
   </div>
 </section>
-<section class="page-stack">
+<section class="page-stack" data-bridge-page>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 <section class="card bridge-banner">
   <div class="card-body">
@@ -490,57 +507,6 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
     <a class="seg-item" href="#mode-control">Mode control</a>
   </nav>
 </section>
-
-<div id="add-node" class="card">
-<div class="card-head"><h3>Add Outbound Node via Share URL</h3></div>
-<div class="card-body">
-<form method="post" action="{{.PanelPath}}bridge/nodes/add" class="bridge-form">
-<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label class="label">Share URL</label>
-<input class="input input--mono" type="text" name="share_url" placeholder="vless://uuid@host:port?...#tag" required>
-<span class="help">Supported: vless://, trojan://, ss://, hysteria2://, tuic://.</span>
-<button class="btn" data-variant="primary" type="submit">{{icon "Plus" 13}} Add Node</button>
-</form>
-</div>
-</div>
-
-<details class="card disclosure">
-<summary>Add Node Manually</summary>
-<form method="post" action="{{.PanelPath}}bridge/nodes/add-manual" class="bridge-form">
-<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Protocol</label>
-<select name="protocol" required>
-  <option value="vless-reality">VLESS Reality</option>
-  <option value="trojan">Trojan</option>
-  <option value="shadowsocks">Shadowsocks</option>
-  <option value="hysteria2">Hysteria2</option>
-  <option value="tuic">TUIC</option>
-</select>
-<label>Tag (name)</label>
-<input type="text" name="tag" placeholder="my-node" required>
-<label>Host</label>
-<input type="text" name="host" placeholder="1.2.3.4 or hostname" required>
-<label>Port</label>
-<input type="number" name="port" placeholder="443" min="1" max="65535" required>
-<label>UUID (VLESS, TUIC)</label>
-<input type="text" name="uuid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-<label>Password (Trojan, SS, Hysteria2, TUIC)</label>
-<input type="text" name="password" placeholder="password">
-<label>SNI (VLESS Reality, Trojan, Hysteria2, TUIC)</label>
-<input type="text" name="sni" placeholder="example.com">
-<label>Public Key (VLESS Reality)</label>
-<input type="text" name="public_key" placeholder="base64 public key">
-<label>Short ID (VLESS Reality, may be empty)</label>
-<input type="text" name="short_id" placeholder="">
-<label>Flow (VLESS Reality, optional)</label>
-<input type="text" name="flow" placeholder="xtls-rprx-vision">
-<label>Method/Cipher (Shadowsocks)</label>
-<input type="text" name="method" placeholder="chacha20-ietf-poly1305">
-<label>Congestion Control (TUIC, default: bbr)</label>
-<input type="text" name="congestion_control" placeholder="bbr">
-<button type="submit">Add Node Manually</button>
-</form>
-</details>
 
 {{if .Nodes}}
 <div id="nodes" class="card table-card">
@@ -576,17 +542,16 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
     <div class="bridge-actions">
     <form method="post" action="{{$.PanelPath}}bridge/nodes/{{.ID}}/toggle" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-      <button type="submit" class="btn-warn">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+      <button class="btn" data-size="xs" type="submit">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
     </form>
     <form method="post" action="{{$.PanelPath}}bridge/nodes/{{.ID}}/ping" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-      <button type="submit">Test Latency</button>
+      <button class="btn" data-size="xs" data-variant="ghost" type="submit">Test latency</button>
     </form>
-    <a href="{{$.PanelPath}}bridge/nodes/{{.ID}}/edit"><button type="button">Edit</button></a>
-    <form method="post" action="{{$.PanelPath}}bridge/nodes/{{.ID}}/delete" class="inline"
-          onsubmit="return confirm('Delete node {{.Tag}}?')">
+    <a class="btn" data-size="xs" data-variant="ghost" href="{{$.PanelPath}}bridge/nodes/{{.ID}}/edit">Edit</a>
+    <form method="post" action="{{$.PanelPath}}bridge/nodes/{{.ID}}/delete" class="inline">
       <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-      <button type="submit" class="danger">Delete</button>
+      <button class="btn danger" data-size="xs" type="submit">Delete</button>
     </form>
     </div>
   </td>
@@ -612,20 +577,96 @@ var bridgeTmpl = layoutTemplate("bridge", `{{define "page_title"}}Bridge Mode{{e
 </div>
 </div>
 
-<div id="mode-control" class="card form-panel">
-<h2>Mode Control</h2>
-<form method="post" action="{{.PanelPath}}bridge/enable" class="bridge-form">
-<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Enable Bridge with share URL</label>
-<input type="text" name="vless_url" placeholder="vless://...#tag (VLESS Reality only for first enable)">
-<button type="submit">Enable Bridge</button>
-</form>
-<form method="post" action="{{.PanelPath}}bridge/disable" class="bridge-form">
-<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<button type="submit" class="danger">Disable Bridge (return to Single)</button>
-</form>
+<div id="mode-control" class="grid-12">
+  <div class="col-7">
+    <section class="card">
+      <div class="card-head"><div class="col card-title-stack"><h3>Mode control</h3><span class="sub">Switch between Single and Bridge mode.</span></div></div>
+      <div class="card-body">
+        <form method="post" action="{{.PanelPath}}bridge/enable" class="bridge-form">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
+          <label class="label">Enable Bridge with share URL</label>
+          <input class="input input--mono" type="text" name="vless_url" placeholder="vless://...#tag (VLESS Reality only for first enable)">
+          <span class="help">Bootstraps Bridge mode from a single VLESS Reality share URL.</span>
+          <button class="btn" data-variant="primary" type="submit">{{icon "Check" 12}} Enable Bridge</button>
+        </form>
+      </div>
+    </section>
+  </div>
+  <div class="col-5">
+    <section class="card">
+      <div class="card-head"><h3>Return to Single</h3></div>
+      <div class="card-body">
+        <form method="post" action="{{.PanelPath}}bridge/disable" class="bridge-form">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
+          <p class="panel-note">Stops sing-box and rewrites Teleproxy back to Single mode.</p>
+          <button class="btn danger" type="submit">Disable Bridge</button>
+        </form>
+      </div>
+    </section>
+  </div>
 </div>
 {{end}}
+
+<div class="modal-scrim" data-bridge-modal hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bridge-add-title">
+    <div class="modal-head">
+      <h2 id="bridge-add-title">Add outbound node</h2>
+      <p>Import from a share URL or enter the routing fields manually.</p>
+    </div>
+    <div class="modal-body">
+      <section class="detail-section">
+        <h3 class="detail-section-title">From share URL</h3>
+        <form method="post" action="{{.PanelPath}}bridge/nodes/add" class="bridge-form">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+          <label class="label">Share URL</label>
+          <input class="input input--mono" type="text" name="share_url" placeholder="vless://uuid@host:port?...#tag" required>
+          <span class="help">Supported: vless://, trojan://, ss://, hysteria2://, tuic://.</span>
+          <div class="row row-end row-tight"><button class="btn" data-variant="primary" type="submit">{{icon "Plus" 13}} Add node</button></div>
+        </form>
+      </section>
+      <details class="card disclosure">
+        <summary>Add node manually</summary>
+        <form method="post" action="{{.PanelPath}}bridge/nodes/add-manual" class="bridge-form">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+          <label class="label">Protocol</label>
+          <select class="select" name="protocol" required>
+            <option value="vless-reality">VLESS Reality</option>
+            <option value="trojan">Trojan</option>
+            <option value="shadowsocks">Shadowsocks</option>
+            <option value="hysteria2">Hysteria2</option>
+            <option value="tuic">TUIC</option>
+          </select>
+          <label class="label">Tag (name)</label>
+          <input class="input" type="text" name="tag" placeholder="my-node" required>
+          <label class="label">Host</label>
+          <input class="input" type="text" name="host" placeholder="1.2.3.4 or hostname" required>
+          <label class="label">Port</label>
+          <input class="input input--mono" type="number" name="port" placeholder="443" min="1" max="65535" required>
+          <label class="label">UUID (VLESS, TUIC)</label>
+          <input class="input input--mono" type="text" name="uuid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+          <label class="label">Password (Trojan, SS, Hysteria2, TUIC)</label>
+          <input class="input input--mono" type="text" name="password" placeholder="password">
+          <label class="label">SNI (VLESS Reality, Trojan, Hysteria2, TUIC)</label>
+          <input class="input" type="text" name="sni" placeholder="example.com">
+          <label class="label">Public Key (VLESS Reality)</label>
+          <input class="input input--mono" type="text" name="public_key" placeholder="base64 public key">
+          <label class="label">Short ID (VLESS Reality, may be empty)</label>
+          <input class="input input--mono" type="text" name="short_id" placeholder="">
+          <label class="label">Flow (VLESS Reality, optional)</label>
+          <input class="input input--mono" type="text" name="flow" placeholder="xtls-rprx-vision">
+          <label class="label">Method/Cipher (Shadowsocks)</label>
+          <input class="input input--mono" type="text" name="method" placeholder="chacha20-ietf-poly1305">
+          <label class="label">Congestion Control (TUIC, default: bbr)</label>
+          <input class="input input--mono" type="text" name="congestion_control" placeholder="bbr">
+          <div class="row row-end row-tight"><button class="btn" data-variant="primary" type="submit">{{icon "Plus" 13}} Add manually</button></div>
+        </form>
+      </details>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-variant="ghost" type="button" data-bridge-close-add>Close</button>
+    </div>
+  </div>
+</div>
 </section>
 {{end}}
 {{template "base" .}}`, bridgeTemplateFuncs)
@@ -648,28 +689,46 @@ var editNodeTmpl = layoutTemplate("editNode", `{{define "page_title"}}Edit Node{
   </div>
   <div class="actions"><a class="btn" data-variant="ghost" href="{{.PanelPath}}bridge">Back to bridge</a></div>
 </section>
-<div class="card form-panel">
-{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="post" action="" class="stack-form">
-<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<label>Tag (name)</label>
-<input type="text" name="tag" value="{{.Node.Tag}}" required>
-<label>Host</label>
-<input type="text" name="host" value="{{.Node.Host}}" required>
-<label>Port</label>
-<input type="number" name="port" value="{{.Node.Port}}" min="1" max="65535" required>
-<label>SNI</label>
-<input type="text" name="sni" value="{{.Node.SNI}}">
-<label>Flow (VLESS Reality)</label>
-<input type="text" name="flow" value="{{.Node.Flow}}">
-<label>Method/Cipher (Shadowsocks)</label>
-<input type="text" name="method" value="{{.Node.Method}}">
-<label>Congestion Control (TUIC)</label>
-<input type="text" name="congestion_control" value="{{.Node.CongestionControl}}">
-<p class="field-hint">Credentials (UUID, password, public key, short ID) are not shown and cannot be changed here. Delete and re-add the node to change credentials.</p>
-<button type="submit">Save</button>
-</form>
-</div>
+<section class="grid-12">
+  <div class="col-7">
+    <div class="card">
+      {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+      <div class="card-head"><div class="col card-title-stack"><h3>Visible routing fields</h3><span class="sub">Credentials stay write-only.</span></div></div>
+      <div class="card-body">
+        <form method="post" action="" class="stack-form">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
+          <label class="label">Tag (name)</label>
+          <input class="input" type="text" name="tag" value="{{.Node.Tag}}" required>
+          <label class="label">Host</label>
+          <input class="input" type="text" name="host" value="{{.Node.Host}}" required>
+          <label class="label">Port</label>
+          <input class="input input--mono" type="number" name="port" value="{{.Node.Port}}" min="1" max="65535" required>
+          <label class="label">SNI</label>
+          <input class="input" type="text" name="sni" value="{{.Node.SNI}}">
+          <label class="label">Flow (VLESS Reality)</label>
+          <input class="input input--mono" type="text" name="flow" value="{{.Node.Flow}}">
+          <label class="label">Method/Cipher (Shadowsocks)</label>
+          <input class="input input--mono" type="text" name="method" value="{{.Node.Method}}">
+          <label class="label">Congestion Control (TUIC)</label>
+          <input class="input input--mono" type="text" name="congestion_control" value="{{.Node.CongestionControl}}">
+          <div class="row row-end row-tight">
+            <a class="btn" data-variant="ghost" href="{{.PanelPath}}bridge">Cancel</a>
+            <button class="btn" data-variant="primary" type="submit">{{icon "Check" 12}} Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-5">
+    <div class="card">
+      <div class="card-head"><h3>Notes</h3></div>
+      <div class="card-body col col-panel">
+        <div class="totp-note-row"><span class="badge warn">Credentials</span><span class="col totp-note-copy"><strong class="totp-note-title">Write-only</strong><span class="help">UUID, password, public key, and short ID are intentionally hidden here.</span></span></div>
+        <div class="totp-note-row"><span class="badge">Rotation</span><span class="col totp-note-copy"><strong class="totp-note-title">Re-import to replace secrets</strong><span class="help">Delete and add the node again if credential material changed.</span></span></div>
+      </div>
+    </div>
+  </div>
+</section>
 {{end}}
 {{template "base" .}}`, nil)
 
