@@ -138,12 +138,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Start metrics sampler goroutine.
-	go func() {
-		if err := sampler.Run(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "metrics sampler: %v\n", err)
-		}
-	}()
+	// Start metrics sampler goroutine (skip in dev mode: no Teleproxy stats endpoint).
+	if !devMode {
+		go func() {
+			if err := sampler.Run(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "metrics sampler: %v\n", err)
+			}
+		}()
+	}
 
 	// Start retention/aggregation goroutine on a daily schedule.
 	go func() {
