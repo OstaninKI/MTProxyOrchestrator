@@ -23,8 +23,12 @@ func TestPanelAssetsServedUnderPanelPath(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/css") {
 		t.Fatalf("Content-Type = %q, want css", ct)
 	}
-	if cc := rec.Header().Get("Cache-Control"); cc != "public, max-age=3600" {
-		t.Fatalf("Cache-Control = %q, want %q", cc, "public, max-age=3600")
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Fatalf("Cache-Control = %q, want %q", cc, "no-cache")
+	}
+	etag := rec.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("panel.css served without ETag; clients cannot revalidate after upgrade")
 	}
 	css := rec.Body.String()
 	for _, want := range []string{
@@ -46,6 +50,35 @@ func TestPanelAssetsServedUnderPanelPath(t *testing.T) {
 		if strings.Contains(css, forbidden) {
 			t.Fatalf("panel.css must not reference remote font asset %q", forbidden)
 		}
+	}
+}
+
+func TestPanelAssetsRevalidateWithETag(t *testing.T) {
+	s := newDashboardTestServer(t)
+
+	for _, name := range []string{"panel.css", "panel.js"} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/p-example/assets/"+name, nil)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+
+			etag := rec.Header().Get("ETag")
+			if etag == "" {
+				t.Fatalf("%s served without ETag", name)
+			}
+			if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
+				t.Fatalf("%s Cache-Control = %q, want no-cache", name, cc)
+			}
+
+			condReq := httptest.NewRequest(http.MethodGet, "/p-example/assets/"+name, nil)
+			condReq.Header.Set("If-None-Match", etag)
+			condRec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(condRec, condReq)
+
+			if condRec.Code != http.StatusNotModified {
+				t.Fatalf("conditional GET %s status = %d, want 304", name, condRec.Code)
+			}
+		})
 	}
 }
 
