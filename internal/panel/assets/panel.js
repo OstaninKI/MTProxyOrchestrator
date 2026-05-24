@@ -610,12 +610,53 @@
     renderMatch();
   }
 
+  // initCopyButtons enables every [data-copy] button on the page and wires up
+  // clipboard copy on click. The button must sit inside a .copy-row container
+  // alongside a .val element whose text will be copied. Buttons start as
+  // disabled in HTML so they are inert when JS is unavailable.
+  function initCopyButtons() {
+    document.querySelectorAll("[data-copy]").forEach((btn) => {
+      btn.disabled = false;
+      // Guard against double-binding when called again after htmx swaps.
+      if (btn.dataset.copyInit === "true") return;
+      btn.dataset.copyInit = "true";
+      btn.addEventListener("click", () => {
+        const row = btn.closest(".copy-row");
+        if (!row) return;
+        const val = row.querySelector(".val");
+        if (!val) return;
+        const text = val.textContent.trim();
+        // Clone child nodes so we can restore the icon after the feedback label.
+        const origNodes = Array.from(btn.childNodes).map((n) => n.cloneNode(true));
+        const showFeedback = () => {
+          btn.textContent = "Copied!";
+          setTimeout(() => {
+            btn.textContent = "";
+            origNodes.forEach((n) => btn.appendChild(n));
+          }, 1500);
+        };
+        const fallback = () => {
+          const range = document.createRange();
+          range.selectNodeContents(val);
+          const sel = window.getSelection();
+          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+        };
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(showFeedback).catch(fallback);
+        } else {
+          fallback();
+        }
+      });
+    });
+  }
+
   function initPanelPage() {
     fillCSRF();
     initLogsPage();
     initUsersPage();
     initBridgePage();
     initPasswordPage();
+    initCopyButtons();
   }
 
   if (document.readyState === "loading") {
@@ -630,5 +671,6 @@
     initUsersPage();
     initBridgePage();
     initPasswordPage();
+    initCopyButtons();
   });
 })();

@@ -441,7 +441,7 @@ const userCreatedContent = `{{define "page_title"}}User created{{end}}
         <div class="detail-row"><span class="detail-row-label">Label</span><span class="detail-row-value mono">{{.Label}}</span></div>
         <div class="detail-section">
           <h3 class="detail-section-title">Telegram link</h3>
-          <div class="copy-row"><span class="val mono">{{.TelegramURL}}</span><button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Copy" 12}}</button></div>
+          <div class="copy-row"><span class="val mono">{{.TelegramURL}}</span><button class="btn" data-size="xs" data-variant="ghost" data-copy type="button" disabled>{{icon "Copy" 12}}</button></div>
         </div>
         <div class="warn-box"><strong>Save this link now.</strong> The secret will not be shown again after you leave this page.</div>
       </div>
