@@ -61,13 +61,14 @@ type DNSChecker func(domain string) (addrs []string, err error)
 
 // Manager handles certificate lifecycle.
 type Manager struct {
-	DB             *db.DB
-	CertDir        string     // where to store certs, e.g. /etc/tgproxy/certs
-	AccountKeyPath string     // persisted ACME account key, e.g. /etc/tgproxy/certs/account.key
-	CADirURL       string     // ACME directory URL; empty = Let's Encrypt production
-	ServerIP       string     // host's public IP for A record check
-	DNSCheck       DNSChecker // defaults to net.LookupHost
-	Now            func() time.Time
+	DB              *db.DB
+	CertDir         string     // where to store certs, e.g. /etc/tgproxy/certs
+	AccountKeyPath  string     // persisted ACME account key, e.g. /etc/tgproxy/certs/account.key
+	CADirURL        string     // ACME directory URL; empty = Let's Encrypt production
+	ServerIP        string     // host's public IP for A record check
+	DNSCheck        DNSChecker // defaults to net.LookupHost
+	Now             func() time.Time
+	RenewBeforeDays int // days before expiry to trigger renewal; 0 = default (30)
 }
 
 // DefaultManager returns a Manager with real DNS and real time.
@@ -82,9 +83,13 @@ func DefaultManager(database *db.DB, certDir, serverIP string) Manager {
 	}
 }
 
-// NeedsRenewal returns true when the cert expires within 30 days.
+// NeedsRenewal returns true when the cert expires within the configured days (default 30).
 func (m Manager) NeedsRenewal(info CertInfo) bool {
-	return info.ExpiresAt.Before(m.Now().Add(30 * 24 * time.Hour))
+	days := m.RenewBeforeDays
+	if days <= 0 {
+		days = 30
+	}
+	return info.ExpiresAt.Before(m.Now().Add(time.Duration(days) * 24 * time.Hour))
 }
 
 // CheckDNS verifies the domain's A record resolves to m.ServerIP.

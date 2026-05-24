@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +32,16 @@ var reloadNginx = func() error {
 
 // maxUploadBytes is the request body size limit for stub ZIP uploads (5 MB).
 const maxUploadBytes = stub.MaxZipSize
+
+// certRenewDays returns the configured certificate renewal threshold in days (default 30).
+func (s *Server) certRenewDays() int {
+	v := s.DB.GetSetting(settingCertRenewDays, "30")
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > 89 {
+		return 30
+	}
+	return n
+}
 
 // BuiltinStubTemplate describes a built-in stub template available for selection.
 type BuiltinStubTemplate struct {
@@ -458,6 +470,7 @@ func (s *Server) handleSettingsCertificates(w http.ResponseWriter, r *http.Reque
 			CertDir: cfg.CertDir,
 			Now:     time.Now,
 		}
+		mgr.RenewBeforeDays = s.certRenewDays()
 
 		// Try ACME cert first (domain-based), then self-signed.
 		if cfg.Domain != "" {
@@ -490,6 +503,9 @@ func (s *Server) handleSettingsCertificates(w http.ResponseWriter, r *http.Reque
 		// Load recent renewal attempts.
 		data.Renewals = loadRecentRenewals(s, cfg.Domain)
 	}
+
+	data.RenewDays = s.certRenewDays()
+	data.Notice = r.URL.Query().Get("notice")
 
 	setStrictPanelCSP(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -532,6 +548,25 @@ func loadRecentRenewals(s *Server, domain string) []RenewalAttempt {
 		out = append(out, ra)
 	}
 	return out
+}
+
+// handleSettingsCertRenewalConfig updates the certificate renewal threshold.
+func (s *Server) handleSettingsCertRenewalConfig(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("renew_days")))
+	if err != nil || n < 1 || n > 89 {
+		http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Threshold must be 1–89 days."), http.StatusSeeOther)
+		return
+	}
+	if err := s.DB.SetSetting(settingCertRenewDays, strconv.Itoa(n)); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_renew_days", "", strconv.Itoa(n), clientIP(r)) //nolint:errcheck
+	http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Renewal threshold saved."), http.StatusSeeOther)
 }
 
 // handleSettingsCertRenew forces a Let's Encrypt renewal regardless of expiry.

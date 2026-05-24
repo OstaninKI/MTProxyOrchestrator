@@ -166,6 +166,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Start ACME renewal loop when domain and email are configured (not in dev mode).
 	if !devMode && domain != "" && acmeEmail != "" {
 		mgr := acme.DefaultManager(d, certDir, "")
+		if v := d.GetSetting("cert_renew_days", "30"); v != "" {
+			if n, e := strconv.Atoi(v); e == nil && n >= 1 && n <= 89 {
+				mgr.RenewBeforeDays = n
+			}
+		}
 		webRootDir := filepath.Join(certDir, ".well-known-webroot")
 		runner := acme.DefaultRunner(mgr, webRootDir)
 		certPath := filepath.Join(certDir, domain, "cert.pem")

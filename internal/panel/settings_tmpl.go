@@ -39,6 +39,8 @@ type settingsCertData struct {
 	IsValid      bool
 	NeedsRenewal bool
 	Renewals     []RenewalAttempt
+	RenewDays    int
+	Notice       string
 	CurrentNav   string
 	PanelPath    string
 }
@@ -246,6 +248,8 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
   <a class="seg-item" href="{{.PanelPath}}settings/system">System</a>
 </nav>
 
+{{if .Notice}}<div class="flash">{{.Notice}}</div>{{end}}
+
 {{if not .HasDomain}}
 <div class="warn-box">
   <strong>No domain configured.</strong> This server was installed with an IP address only.
@@ -296,7 +300,14 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
       <div class="card-head"><h3>Renewal settings</h3></div>
       <div class="card-body col col-panel">
         <div class="field"><span class="label">Provider</span><select class="select" disabled><option>Let's Encrypt (production)</option></select></div>
-        <div class="field"><span class="label">Auto-renew threshold (days)</span><input class="input input--mono" value="30" disabled></div>
+        <form method="post" action="{{.PanelPath}}settings/certificates/config" class="field">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
+          <span class="label">Auto-renew threshold (days)</span>
+          <div class="row row-tight">
+            <input class="input input--mono" type="number" name="renew_days" value="{{.RenewDays}}" min="1" max="89" required>
+            <button class="btn" data-variant="primary" data-size="sm" type="submit">{{icon "Check" 12}} Save</button>
+          </div>
+        </form>
         <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Auto-renew enabled</span><span class="help">Renews via cron when threshold reached.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
         <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Notify on renewal</span><span class="help">Email and Telegram notifications are not implemented yet.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
         <button class="btn" data-variant="primary" disabled>{{icon "Check" 12}} Save settings</button>

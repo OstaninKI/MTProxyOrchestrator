@@ -20,6 +20,7 @@ const (
 	settingLogLevel            = "log_level"
 	settingRetentionMinuteDays = "retention_minutes_days"
 	settingRetentionHourlyDays = "retention_hourly_days"
+	settingCertRenewDays       = "cert_renew_days"
 )
 
 // loadAdminSessions loads active admin sessions from the DB.
