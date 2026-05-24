@@ -43,6 +43,7 @@ var (
 	stubDir     string
 	domain      string
 	acmeEmail   string
+	devMode     bool
 )
 
 var serveCmd = &cobra.Command{
@@ -62,6 +63,7 @@ func init() {
 	serveCmd.Flags().StringVar(&stubDir, "stub-dir", "/var/www/tgproxy-stub", "web root directory for stub pages")
 	serveCmd.Flags().StringVar(&domain, "domain", "", "panel domain; enables ACME renewal loop when set with --acme-email")
 	serveCmd.Flags().StringVar(&acmeEmail, "acme-email", "", "email for Let's Encrypt renewal notifications")
+	serveCmd.Flags().BoolVar(&devMode, "dev", false, "run in development mode: in-memory DB, demo data, no system changes")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -105,6 +107,17 @@ func applyDBSettings(d *db.DB, ret *metrics.Retainer, mtprotoPort *int, maskHost
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	// Dev mode: override defaults before any resource is opened.
+	if devMode {
+		dbPath = ":memory:"
+		if !cmd.Flags().Changed("listen") {
+			listenAddr = "127.0.0.1:8080"
+		}
+		if !cmd.Flags().Changed("path") {
+			panelPath = "/"
+		}
+	}
+
 	d, err := db.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -148,8 +161,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Start ACME renewal loop when domain and email are configured.
-	if domain != "" && acmeEmail != "" {
+	// Start ACME renewal loop when domain and email are configured (not in dev mode).
+	if !devMode && domain != "" && acmeEmail != "" {
 		mgr := acme.DefaultManager(d, certDir, "")
 		webRootDir := filepath.Join(certDir, ".well-known-webroot")
 		runner := acme.DefaultRunner(mgr, webRootDir)
@@ -181,6 +194,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		_, _, _ = quotaSvc.Recalculate(ctx, label)
 	}
 	go quotaSvc.RunPeriodic(ctx, 5*time.Minute)
+
+	if devMode {
+		if err := panel.SeedDevData(d); err != nil {
+			return fmt.Errorf("seed dev data: %w", err)
+		}
+		panel.ApplyDevMode(srv)
+		fmt.Fprintf(cmd.OutOrStdout(), "⚠  DEV MODE — in-memory DB, demo data, no system changes\n")
+	}
 
 	httpSrv := newPanelHTTPServer(listenAddr, srv.Handler())
 
