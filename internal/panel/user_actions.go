@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"encoding/base64"
 	"fmt"
 	"math"
 	"net/http"
@@ -654,6 +655,55 @@ func (s *Server) handleUserShareLink(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Write([]byte(url))
+}
+
+func (s *Server) handleUserShareQR(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	repo := UserRepo{DB: s.DB}
+	users, err := repo.List()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	var target *UserRow
+	for i := range users {
+		if users[i].ID == id {
+			target = &users[i]
+			break
+		}
+	}
+	if target == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	serverAddr := s.settingsConfig().Domain
+	if serverAddr == "" {
+		serverAddr = s.settingsConfig().ServerIP
+	}
+	link := ProxyLink{
+		Server:    serverAddr,
+		Port:      s.bridgeMTProtoPort(),
+		SecretHex: target.SecretHex,
+		MaskHost:  s.bridgeMaskHost(),
+	}
+	png, err := link.QRPNG(256)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	b64 := base64.StdEncoding.EncodeToString(png)
+	audit.Log(s.DB, s.sessionAdminID(r), "user.qr_reveal", target.Label, "", clientIP(r)) //nolint:errcheck
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write([]byte(b64))
 }
 
 // reloadTeleproxy rewrites the Teleproxy config and reloads the service.

@@ -466,11 +466,18 @@
       }
 
       drawer.dataset.linkUrl = row.dataset.linkUrl || "";
+      drawer.dataset.qrUrl = row.dataset.qrUrl || "";
       const linkRow = drawer.querySelector("[data-users-link-row]");
       if (linkRow) {
         linkRow.hidden = true;
         const linkVal = linkRow.querySelector("[data-users-detail='link']");
         if (linkVal) linkVal.textContent = "";
+      }
+      const qrFrame = drawer.querySelector("[data-users-qr-frame]");
+      if (qrFrame) {
+        qrFrame.hidden = true;
+        const qrImg = qrFrame.querySelector("[data-users-qr-img]");
+        if (qrImg) qrImg.src = "";
       }
 
       setFormAction("toggle", row.dataset.toggleUrl);
@@ -573,6 +580,29 @@
             linkVal.textContent = text;
             linkRow.hidden = false;
             initCopyButtons();
+          }
+        } catch (_) {}
+      });
+    }
+    const revealQRButton = drawer.querySelector("[data-users-reveal-qr]");
+    if (revealQRButton) {
+      revealQRButton.addEventListener("click", async () => {
+        const qrUrl = drawer.dataset.qrUrl;
+        if (!qrUrl) return;
+        const csrfToken = readCookie("csrf_token");
+        try {
+          const resp = await fetch(qrUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: "_csrf=" + encodeURIComponent(csrfToken),
+          });
+          if (!resp.ok) return;
+          const b64 = await resp.text();
+          const qrFrame = drawer.querySelector("[data-users-qr-frame]");
+          const qrImg = drawer.querySelector("[data-users-qr-img]");
+          if (qrFrame && qrImg) {
+            qrImg.src = "data:image/png;base64," + b64;
+            qrFrame.hidden = false;
           }
         } catch (_) {}
       });

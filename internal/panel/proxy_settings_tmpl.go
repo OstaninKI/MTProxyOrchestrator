@@ -4,6 +4,13 @@ import (
 	"io"
 )
 
+type sessionView struct {
+	ID       string
+	IP       string
+	LastSeen string // formatted, e.g. "2006-01-02 15:04 UTC"
+	Current  bool
+}
+
 type proxySettingsData struct {
 	CSRFField   string
 	CSRFToken   string
@@ -23,6 +30,7 @@ type adminPasswordData struct {
 	Error      string
 	CurrentNav string
 	PanelPath  string
+	Sessions   []sessionView
 }
 
 type systemSettingsData struct {
@@ -149,9 +157,13 @@ const adminPasswordContent = `{{define "page_title"}}Change Admin Password{{end}
     <section class="card">
       <div class="card-head"><h3>Sessions</h3></div>
       <div class="card-body col col-panel">
-        <div class="session-row">{{icon "Globe" 14}}<div class="col session-copy"><span class="session-title">Current browser</span><span class="help mono">active session · now</span></div><span class="badge" data-tone="success">this device</span></div>
-        <div class="session-row">{{icon "Globe" 14}}<div class="col session-copy"><span class="session-title">Safari iOS</span><span class="help mono">81.18.7.220 · 2h ago</span></div><button class="btn" data-size="xs" data-variant="ghost" disabled>Revoke</button></div>
-        <div class="session-row">{{icon "Globe" 14}}<div class="col session-copy"><span class="session-title">curl/8.x</span><span class="help mono">138.124.29.24 · yesterday</span></div><button class="btn" data-size="xs" data-variant="ghost" disabled>Revoke</button></div>
+        {{range .Sessions}}
+        <div class="session-row">{{icon "Globe" 14}}<div class="col session-copy"><span class="session-title">{{if .Current}}This device{{else}}Session{{end}}</span><span class="help mono">{{.IP}} · {{.LastSeen}}</span></div>
+        {{if .Current}}<span class="badge" data-tone="success">this device</span>{{else}}<form method="post" action="{{$.PanelPath}}settings/sessions/{{.ID}}/revoke" class="inline"><input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}" class="js-csrf"><button class="btn" data-size="xs" data-variant="ghost" type="submit">Revoke</button></form>{{end}}
+        </div>
+        {{else}}
+        <p class="help">No active sessions.</p>
+        {{end}}
       </div>
     </section>
     <section class="card">

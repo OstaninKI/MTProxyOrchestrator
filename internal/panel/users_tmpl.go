@@ -230,6 +230,7 @@ const userListContent = `{{define "page_title"}}Users{{end}}
   data-quota-url="{{$.PanelPath}}users/{{.ID}}/quota"
   data-delete-url="{{$.PanelPath}}users/{{.ID}}/delete"
   data-link-url="{{$.PanelPath}}users/{{.ID}}/link"
+  data-qr-url="{{$.PanelPath}}users/{{.ID}}/qr"
 >
   <td class="users-col-select"><input type="checkbox" data-users-select aria-label="Select {{.Label}}"></td>
   <td>
@@ -411,11 +412,15 @@ const userListContent = `{{define "page_title"}}Users{{end}}
     <section class="detail-section">
       <h3 class="detail-section-title">Access Material</h3>
       <div class="detail-list">
-        <button class="btn" data-size="sm" data-variant="ghost" type="button" data-users-reveal-link>{{icon "Lock" 13}} Show share link</button>
+        <div class="row row-tight row-wrap">
+          <button class="btn" data-size="sm" data-variant="ghost" type="button" data-users-reveal-link>{{icon "Lock" 13}} Show share link</button>
+          <button class="btn" data-size="sm" data-variant="ghost" type="button" data-users-reveal-qr>{{icon "Code" 13}} Show QR</button>
+        </div>
         <div class="copy-row" data-users-link-row hidden>
           <span class="val mono" data-users-detail="link"></span>
           <button class="btn" data-size="xs" data-variant="ghost" type="button" data-copy disabled>{{icon "Copy" 12}}</button>
         </div>
+        <div class="totp-qr-frame" data-users-qr-frame hidden><img alt="Telegram proxy QR code" data-users-qr-img></div>
         <p class="help">The secret is fetched only when you reveal it and is not stored in this page.</p>
       </div>
     </section>

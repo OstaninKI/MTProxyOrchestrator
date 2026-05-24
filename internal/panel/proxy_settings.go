@@ -21,6 +21,58 @@ const (
 	settingRetentionHourlyDays = "retention_hourly_days"
 )
 
+// loadAdminSessions loads active admin sessions from the DB.
+func (s *Server) loadAdminSessions(r *http.Request) []sessionView {
+	// Get current session ID from cookie.
+	currentID := ""
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		currentID = cookie.Value
+	}
+
+	// Get admin ID.
+	adminID := s.sessionAdminID(r)
+
+	// Query active sessions.
+	rows, err := s.DB.Query(`
+		SELECT id, COALESCE(ip,''), COALESCE(last_seen_at, created_at)
+		FROM sessions
+		WHERE admin_id=? AND expires_at > datetime('now')
+		ORDER BY last_seen_at DESC
+	`, adminID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var sessions []sessionView
+	for rows.Next() {
+		var id, ip, tsStr string
+		if err := rows.Scan(&id, &ip, &tsStr); err != nil {
+			continue
+		}
+
+		// Parse timestamp and reformat.
+		lastSeen := tsStr
+		if t, err := parseSessionTime(tsStr); err == nil {
+			lastSeen = t.UTC().Format("2006-01-02 15:04 UTC")
+		}
+
+		// Handle empty IP.
+		if ip == "" {
+			ip = "—"
+		}
+
+		sessions = append(sessions, sessionView{
+			ID:       id,
+			IP:       ip,
+			LastSeen: lastSeen,
+			Current:  (id == currentID),
+		})
+	}
+
+	return sessions
+}
+
 // handleSettingsProxyGet renders the proxy settings form.
 func (s *Server) handleSettingsProxyGet(w http.ResponseWriter, r *http.Request) {
 	tok, err := NewCSRFToken()
@@ -54,18 +106,18 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 
 	// Validate mask_host.
 	if maskHost == "" {
-		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "mask host is required")
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "mask host is required")
 		return
 	}
 	if !isValidMaskHost(maskHost) {
-		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "mask host must be a valid hostname")
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "mask host must be a valid hostname")
 		return
 	}
 
 	// Validate port.
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
-		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "port must be between 1 and 65535")
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "port must be between 1 and 65535")
 		return
 	}
 
@@ -94,7 +146,7 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 
 	// Reload Teleproxy.
 	if err := s.reloadTeleproxy(); err != nil {
-		renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, port, serverAddr, "failed to reload teleproxy")
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, port, serverAddr, "failed to reload teleproxy")
 		return
 	}
 
@@ -114,6 +166,42 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// handleSettingsSessionRevoke revokes a session by its ID.
+func (s *Server) handleSettingsSessionRevoke(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	// Get current session ID from cookie.
+	currentID := ""
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		currentID = cookie.Value
+	}
+
+	// Refuse to revoke the current session.
+	if id == currentID {
+		http.Redirect(w, r, s.PanelPath+"settings/admin-password", http.StatusSeeOther)
+		return
+	}
+
+	adminID := s.sessionAdminID(r)
+
+	// Delete the session from DB.
+	_, _ = s.DB.Exec("DELETE FROM sessions WHERE id=? AND admin_id=?", id, adminID)
+
+	// Audit log.
+	audit.Log(s.DB, adminID, "session.revoke", "", id, clientIP(r)) //nolint:errcheck
+
+	http.Redirect(w, r, s.PanelPath+"settings/admin-password", http.StatusSeeOther)
+}
+
 // handleSettingsAdminPasswordGet renders the admin password change form.
 func (s *Server) handleSettingsAdminPasswordGet(w http.ResponseWriter, r *http.Request) {
 	tok, err := NewCSRFToken()
@@ -127,6 +215,7 @@ func (s *Server) handleSettingsAdminPasswordGet(w http.ResponseWriter, r *http.R
 		CSRFField: CSRFField(),
 		CSRFToken: tok,
 		PanelPath: s.PanelPath,
+		Sessions:  s.loadAdminSessions(r),
 	})
 }
 
@@ -144,13 +233,13 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 
 	// Validate new password.
 	if err := validateNewPassword(newPassword); err != nil {
-		renderAdminPasswordError(w, r, s.Secure, s.PanelPath, err.Error())
+		s.renderAdminPasswordError(w, r, s.Secure, s.PanelPath, err.Error())
 		return
 	}
 
 	// Validate passwords match.
 	if newPassword != confirmPassword {
-		renderAdminPasswordError(w, r, s.Secure, s.PanelPath, "passwords do not match")
+		s.renderAdminPasswordError(w, r, s.Secure, s.PanelPath, "passwords do not match")
 		return
 	}
 
@@ -164,7 +253,7 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 
 	// Verify current password.
 	if !CheckPassword(hash, currentPassword) {
-		renderAdminPasswordError(w, r, s.Secure, s.PanelPath, "current password is incorrect")
+		s.renderAdminPasswordError(w, r, s.Secure, s.PanelPath, "current password is incorrect")
 		return
 	}
 
@@ -200,6 +289,7 @@ func (s *Server) handleSettingsAdminPasswordPost(w http.ResponseWriter, r *http.
 		CSRFToken: tok,
 		Success:   "Password changed successfully.",
 		PanelPath: s.PanelPath,
+		Sessions:  s.loadAdminSessions(r),
 	})
 }
 
@@ -392,7 +482,7 @@ func isValidMaskHost(host string) bool {
 
 // --- render error helpers ---
 
-func renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, maskHost string, port int, serverAddr, errMsg string) {
+func (s *Server) renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, maskHost string, port int, serverAddr, errMsg string) {
 	tok, _ := NewCSRFToken()
 	SetCSRFCookie(w, tok, secure, panelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -407,7 +497,7 @@ func renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure boo
 	})
 }
 
-func renderAdminPasswordError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, errMsg string) {
+func (s *Server) renderAdminPasswordError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, errMsg string) {
 	tok, _ := NewCSRFToken()
 	SetCSRFCookie(w, tok, secure, panelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -416,6 +506,7 @@ func renderAdminPasswordError(w http.ResponseWriter, r *http.Request, secure boo
 		CSRFToken: tok,
 		Error:     errMsg,
 		PanelPath: panelPath,
+		Sessions:  s.loadAdminSessions(r),
 	})
 }
 
