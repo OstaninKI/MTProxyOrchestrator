@@ -562,7 +562,7 @@ func TestDashboardPageRendersKPIAndQuickActions(t *testing.T) {
 		`class="kpi-grid"`,
 		`Throughput`,
 		`Active users`,
-		`Quick Actions`,
+		`Quick actions`,
 		`href="/p-example/logs"`,
 		`data-action="users"`,
 		`data-action="bridge"`,

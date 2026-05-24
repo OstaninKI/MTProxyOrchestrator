@@ -3,10 +3,29 @@ package panel
 import (
 	"html/template"
 	"io"
+	"strings"
 	"time"
 )
 
 var userListFuncs = template.FuncMap{
+	"initials": func(label string) string {
+		label = strings.TrimSpace(label)
+		if label == "" {
+			return "—"
+		}
+		r := []rune(label)
+		if len(r) >= 2 {
+			return strings.ToUpper(string(r[:2]))
+		}
+		return strings.ToUpper(string(r))
+	},
+	"avatarHue": func(label string) int {
+		sum := 0
+		for _, c := range label {
+			sum += int(c)
+		}
+		return sum % 360
+	},
 	"formatBytes": func(n int64) string {
 		if n < 0 {
 			return "0 B"
@@ -100,40 +119,38 @@ const userListContent = `{{define "page_title"}}Users{{end}}
   <article class="col-3 card stat-card">
     <div class="card-body">
       <div class="stat-head"><span class="stat-icon">{{icon "Users" 15}}</span><span class="stat-label">Total</span></div>
-      <strong class="stat-value mono">{{len .Users}}</strong>
+      <strong class="stat-value">{{len .Users}}</strong>
       <span class="stat-hint">All users</span>
     </div>
   </article>
   <article class="col-3 card stat-card">
     <div class="card-body">
       <div class="stat-head"><span class="stat-icon" data-tone="success">{{icon "Activity" 15}}</span><span class="stat-label">Online</span></div>
-      <strong class="stat-value mono">{{countOnlineUsers .Users}}</strong>
+      <strong class="stat-value">{{countOnlineUsers .Users}}</strong>
       <span class="stat-hint">Live Teleproxy connections</span>
     </div>
   </article>
   <article class="col-3 card stat-card">
     <div class="card-body">
       <div class="stat-head"><span class="stat-icon">{{icon "Power" 15}}</span><span class="stat-label">Offline</span></div>
-      <strong class="stat-value mono">{{countOfflineUsers .Users}}</strong>
+      <strong class="stat-value">{{countOfflineUsers .Users}}</strong>
       <span class="stat-hint">Last seen or idle</span>
     </div>
   </article>
   <article class="col-3 card stat-card">
     <div class="card-body">
       <div class="stat-head"><span class="stat-icon" data-tone="warn">{{icon "Pause" 15}}</span><span class="stat-label">Suspended</span></div>
-      <strong class="stat-value mono">{{countSuspendedUsers .Users}}</strong>
+      <strong class="stat-value">{{countSuspendedUsers .Users}}</strong>
       <span class="stat-hint">{{formatBytes (sumUserTraffic .Users)}} total traffic</span>
     </div>
   </article>
 </section>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <div data-users-page>
-<div class="card users-toolbar-card">
-<div class="card-body users-toolbar">
-  <div class="users-toolbar-group users-toolbar-search">
-    <div class="input-group">{{icon "Search" 13}}<input class="input" id="users-search" type="text" placeholder="Search users by label..." data-users-role="search"></div>
-  </div>
-  <div class="users-filter-seg" data-users-role="status-buttons">
+<div class="card table-card">
+<div class="users-toolbar">
+  <div class="input-group users-toolbar-search">{{icon "Search" 14}}<input class="input" id="users-search" type="text" placeholder="Search users by label…" data-users-role="search"></div>
+  <div class="seg" data-users-role="status-buttons" role="tablist">
     <button class="seg-item active" type="button" data-users-status-value="all">All ({{len .Users}})</button>
     <button class="seg-item" type="button" data-users-status-value="online">Online ({{countOnlineUsers .Users}})</button>
     <button class="seg-item" type="button" data-users-status-value="offline">Offline ({{countOfflineUsers .Users}})</button>
@@ -148,23 +165,31 @@ const userListContent = `{{define "page_title"}}Users{{end}}
       <option value="offline">Offline</option>
       <option value="not connected">Not connected</option>
   </select>
-  <div class="users-toolbar-group users-toolbar-sort">
-    <select class="select" id="users-sort" data-users-role="sort">
-      <option value="label">Label</option>
-      <option value="created-desc">Newest</option>
-      <option value="traffic-desc">Traffic</option>
-      <option value="connections-desc">Connections</option>
-    </select>
-  </div>
-  <span class="toolbar-spacer"></span>
+  <select class="select sr-only" id="users-sort" data-users-role="sort">
+    <option value="label">Label</option>
+    <option value="created-desc">Newest</option>
+    <option value="traffic-desc">Traffic</option>
+    <option value="connections-desc">Connections</option>
+  </select>
+  <span class="spacer"></span>
+  <span class="users-selection muted" data-users-role="selection" hidden></span>
+  <span class="users-toolbar-count muted sr-only" data-users-role="count">{{len .Users}} users</span>
   <button class="btn" data-size="sm" data-variant="ghost" type="button" disabled>{{icon "Download" 13}} Export</button>
-  <span class="users-toolbar-count muted" data-users-role="count">{{len .Users}} users</span>
+  <button class="btn" data-size="sm" data-variant="primary" type="button" data-users-open-create>{{icon "Plus" 13}} Add user</button>
 </div>
-</div>
-<div class="card table-card">
 <div class="table-wrap users-table-wrap">
 <table class="tbl users-table">
-<thead><tr><th>Label</th><th>Status</th><th>Quota</th><th>Usage</th><th>Created</th><th>Actions</th></tr></thead>
+<thead><tr>
+  <th class="users-col-select"><input type="checkbox" data-users-select-all aria-label="Select all users"></th>
+  <th><button class="th-sort" type="button" data-users-sort-key="label">User <span class="th-sort-arrow">{{icon "Down" 10}}</span></button></th>
+  <th>Status</th>
+  <th>Quota</th>
+  <th>Activity</th>
+  <th class="text-right"><button class="th-sort th-sort-right" type="button" data-users-sort-key="traffic-desc">Total <span class="th-sort-arrow">{{icon "Down" 10}}</span></button></th>
+  <th class="text-right"><button class="th-sort th-sort-right" type="button" data-users-sort-key="connections-desc">Conn <span class="th-sort-arrow">{{icon "Down" 10}}</span></button></th>
+  <th><button class="th-sort" type="button" data-users-sort-key="created-desc">Created <span class="th-sort-arrow">{{icon "Down" 10}}</span></button></th>
+  <th class="users-col-actions"></th>
+</tr></thead>
 <tbody>
 {{range .Users}}
 <tr
@@ -196,84 +221,80 @@ const userListContent = `{{define "page_title"}}Users{{end}}
   data-quota-url="{{$.PanelPath}}users/{{.ID}}/quota"
   data-delete-url="{{$.PanelPath}}users/{{.ID}}/delete"
 >
+  <td class="users-col-select"><input type="checkbox" data-users-select aria-label="Select {{.Label}}"></td>
   <td>
     <button class="user-link-btn" type="button" data-user-open>
+      <span class="user-avatar" style="--hue:{{avatarHue .Label}}">{{initials .Label}}</span>
       <span class="user-link-copy">
         <strong>{{.Label}}</strong>
-        <span class="user-link-meta mono">{{connectionStatusLabel .ConnectionStatus}}{{if gt .ActiveConnections 0}} · {{.ActiveConnections}} conn{{end}}</span>
+        <span class="user-link-meta mono">{{if eq (connectionStatusLabel .ConnectionStatus) "online"}}<span class="user-meta-online">online now</span>{{else}}{{connectionStatusLabel .ConnectionStatus}}{{end}}{{if gt .ActiveConnections 0}} · {{.ActiveConnections}} conn{{end}}</span>
       </span>
     </button>
   </td>
   <td>
-    {{if .Enabled}}<span class="badge-on">enabled</span>{{else}}<span class="badge-off">disabled</span>{{end}}
-    {{if .QuotaSuspended}} <span class="badge-off">suspended</span>{{end}}
-    <div class="user-connection {{connectionStatusClass .ConnectionStatus}}">
-      {{connectionStatusLabel .ConnectionStatus}}{{if gt .ActiveConnections 0}} · {{.ActiveConnections}} conn{{end}}
+    <div class="row row-tight row-wrap">
+      {{if .QuotaSuspended}}<span class="badge" data-tone="warn"><span class="dot"></span>Suspended</span>
+      {{else if .Enabled}}<span class="badge" data-tone="success"><span class="dot"></span>Enabled</span>
+      {{else}}<span class="badge" data-tone="danger"><span class="dot"></span>Disabled</span>{{end}}
+      {{if and .Enabled (eq (connectionStatusLabel .ConnectionStatus) "offline")}}<span class="badge" data-tone="warn"><span class="dot"></span>Offline</span>{{end}}
     </div>
   </td>
-  <td>{{if gt .QuotaBytes 0}}{{formatBytes .QuotaBytes}} / {{.QuotaPeriod}}{{else}}<span class="muted">unlimited</span>{{end}}</td>
   <td>
     {{if gt .QuotaBytes 0}}
       {{- $pct := quotaPct .QuotaUsedBytes .QuotaBytes -}}
-      {{- $color := "" -}}
-      {{- if or .QuotaSuspended (ge $pct 100) -}}{{- $color = "qbar-red" -}}
-      {{- else if and (gt .QuotaWarnPct 0) (ge $pct .QuotaWarnPct) -}}{{- $color = "qbar-amber" -}}
-      {{- else -}}{{- $color = "qbar-green" -}}{{- end -}}
-      <progress class="qbar {{$color}}"
-           aria-valuenow="{{$pct}}" aria-valuemin="0" aria-valuemax="100"
-           aria-label="{{formatBytes .QuotaUsedBytes}} of {{formatBytes .QuotaBytes}} used ({{$pct}}%)"
-           value="{{$pct}}" max="100"></progress>
-      <div class="qmeta">{{formatBytes .QuotaUsedBytes}} / {{formatBytes .QuotaBytes}} ({{$pct}}%)
-        {{- $r := nextResetIn .QuotaPeriodStart .QuotaPeriod -}}
-        {{- if $r}} · {{$r}}{{end -}}
+      {{- $tone := "success" -}}
+      {{- if or .QuotaSuspended (ge $pct 100) -}}{{- $tone = "danger" -}}
+      {{- else if and (gt .QuotaWarnPct 0) (ge $pct .QuotaWarnPct) -}}{{- $tone = "warn" -}}{{- end -}}
+      <div class="col col-tight quota-cell">
+        <div class="row row-between quota-cell-head">
+          <span class="mono">{{formatBytes .QuotaUsedBytes}} / {{formatBytes .QuotaBytes}}</span>
+          <span class="muted mono">{{$pct}}%</span>
+        </div>
+        <div class="bar" data-tone="{{$tone}}"
+          aria-label="{{formatBytes .QuotaUsedBytes}} of {{formatBytes .QuotaBytes}} used ({{$pct}}%)">
+          <span class="meter-fill" style="width:{{$pct}}%"></span>
+        </div>
       </div>
     {{else}}
-      <div class="usage-stack">
-        <strong>{{formatBytes .TrafficDownloadedBytes}}</strong>
-        <span>Downloaded</span>
-        <span>{{formatBytes .TrafficUploadedBytes}} Uploaded</span>
-        <span>{{formatBytes .TrafficTotalBytes}} Total</span>
-      </div>
+      <span class="muted">Unlimited · {{if .QuotaPeriod}}{{.QuotaPeriod}}{{else}}—{{end}}</span>
     {{end}}
   </td>
-  <td>{{.CreatedAt.Format "2006-01-02"}}</td>
   <td>
-    <details class="disclosure user-actions-menu">
-      <summary>Actions</summary>
-      <div class="user-actions-panel">
-        <form method="post" action="{{$.PanelPath}}users/{{.ID}}/toggle" class="inline">
-          <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-          <button type="submit">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
-        </form>
+    <svg class="user-spark{{if eq (connectionStatusLabel .ConnectionStatus) "online"}} is-online{{end}}" width="120" height="28" viewBox="0 0 120 28" aria-hidden="true" preserveAspectRatio="none"><path d="M0 22 L120 22"></path></svg>
+  </td>
+  <td class="text-right">
+    <div class="col col-tight col-end">
+      <span class="mono font-medium">{{formatBytes .TrafficTotalBytes}}</span>
+      <span class="muted mono muted-sm">↓ {{formatBytes .TrafficDownloadedBytes}} ↑ {{formatBytes .TrafficUploadedBytes}}</span>
+    </div>
+  </td>
+  <td class="text-right mono">{{.ActiveConnections}}</td>
+  <td class="mono muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+  <td class="users-col-actions">
+    <details class="row-menu">
+      <summary class="btn" data-variant="ghost" data-size="sm" data-icon-only="true" aria-label="Row actions">{{icon "More" 14}}</summary>
+      <div class="row-menu-panel">
+        <button class="row-menu-item" type="button" data-user-open>{{icon "Right" 13}} Open details</button>
         <form method="post" action="{{$.PanelPath}}users/{{.ID}}/rotate" class="inline">
           <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-          <button type="submit">Rotate secret</button>
+          <button class="row-menu-item" type="submit">{{icon "Refresh" 13}} Rotate secret</button>
         </form>
         <form method="post" action="{{$.PanelPath}}users/{{.ID}}/suspend" class="inline">
           <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-          <button type="submit" class="btn-warn">{{if .QuotaSuspended}}Unsuspend{{else}}Suspend{{end}}</button>
+          <button class="row-menu-item" type="submit">{{icon "Pause" 13}} {{if .QuotaSuspended}}Unsuspend{{else}}Suspend{{end}}</button>
+        </form>
+        <form method="post" action="{{$.PanelPath}}users/{{.ID}}/toggle" class="inline">
+          <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
+          <button class="row-menu-item" type="submit">{{icon "Power" 13}} {{if .Enabled}}Disable{{else}}Enable{{end}}</button>
         </form>
         <form method="post" action="{{$.PanelPath}}users/{{.ID}}/quota/reset" class="inline">
           <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-          <button type="submit">Reset quota</button>
+          <button class="row-menu-item" type="submit">{{icon "Edit" 13}} Reset quota</button>
         </form>
-        <details class="disclosure user-quota-menu">
-          <summary>Set quota</summary>
-          <form method="post" action="{{$.PanelPath}}users/{{.ID}}/quota" class="quota-form">
-            <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-            <input type="number" step="0.1" min="0" name="gb" placeholder="GB" inputmode="decimal" class="quota-number quota-gb">
-            <select name="period">
-              <option value="daily">daily</option>
-              <option value="weekly">weekly</option>
-              <option value="monthly" selected>monthly</option>
-            </select>
-            <input type="number" min="0" max="100" name="warn_pct" value="80" inputmode="numeric" class="quota-number quota-warn">
-            <button type="submit">Apply quota</button>
-          </form>
-        </details>
+        <div class="row-menu-divider"></div>
         <form method="post" action="{{$.PanelPath}}users/{{.ID}}/delete" class="inline">
           <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-          <button type="submit" class="danger" onclick="return confirm('Delete {{.Label}}?')">Delete</button>
+          <button class="row-menu-item row-menu-item--danger" type="submit" onclick="return confirm('Delete {{.Label}}?')">{{icon "Trash" 13}} Delete user</button>
         </form>
       </div>
     </details>

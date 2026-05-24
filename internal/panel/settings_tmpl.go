@@ -122,13 +122,15 @@ const settingsStubListContent = `{{define "page_title"}}Stub Templates{{end}}
 <div class="card">
 <div class="card-head"><h3>Upload custom template</h3><span class="sub">ZIP up to 5 MB: HTML, CSS, JS, images, fonts</span></div>
 <div class="card-body">
-<form method="post" action="{{.PanelPath}}settings/stubs/upload" enctype="multipart/form-data" class="stack-form">
+<form method="post" action="{{.PanelPath}}settings/stubs/upload" enctype="multipart/form-data" class="stack-form" data-stub-upload>
 <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-<div class="upload-drop">
+<label class="upload-drop" data-stub-dropzone>
   {{icon "Upload" 28}}
   <p>Drop ZIP file here</p>
-  <input type="file" name="stub_zip" accept=".zip" required>
-</div>
+  <p class="upload-drop-hint">or <span class="upload-browse">browse</span> to upload</p>
+  <input type="file" name="stub_zip" accept=".zip" required class="sr-only" data-stub-file>
+  <span class="upload-filename muted-sm" data-stub-filename hidden></span>
+</label>
 <button class="btn" data-variant="primary" type="submit">Upload and apply</button>
 </form>
 </div>

@@ -77,7 +77,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
 <section class="kpi-grid" aria-label="Dashboard overview">
   <article class="kpi">
     <div class="kpi-label">{{icon "Activity" 13}} Throughput</div>
-    <div class="kpi-value mono">{{formatBytes (latestTrafficTotal .TrafficSeries)}}</div>
+    <div class="kpi-value">{{formatBytes (latestTrafficTotal .TrafficSeries)}}</div>
     <div class="kpi-sub">
       <span class="kpi-delta kpi-delta--up">{{icon "ArrowUpRight" 12}} live</span>
       <span>selected {{.Period}} window</span>
@@ -85,7 +85,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
   </article>
   <article class="kpi">
     <div class="kpi-label">{{icon "Users" 13}} Active users</div>
-    <div class="kpi-value mono">{{len .LiveConnections}}</div>
+    <div class="kpi-value">{{len .LiveConnections}}</div>
     <div class="kpi-sub">
       <span>{{len .Users}} configured</span>
       <span>{{sumLiveConnections .LiveConnections}} connections</span>
@@ -93,7 +93,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
   </article>
   <article class="kpi">
     <div class="kpi-label">{{icon "Bridge" 13}} Bridge nodes</div>
-    <div class="kpi-value mono">{{countEnabledNodes .BridgeNodes}}/{{len .BridgeNodes}}</div>
+    <div class="kpi-value">{{countEnabledNodes .BridgeNodes}}/{{len .BridgeNodes}}</div>
     <div class="kpi-sub">
       {{if .IsBridge}}<span>enabled for routing</span>{{else}}<span>optional in Single mode</span>{{end}}
     </div>
@@ -121,7 +121,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
     </div>
     <div class="col-4">
       <section class="card">
-        <div class="card-head"><h3>Quick Actions</h3></div>
+        <div class="card-head"><h3>Quick actions</h3></div>
         <div class="card-body">
           <div class="col col-panel">
             <a class="action-row" data-action="users" href="{{.PanelPath}}users#create-user">

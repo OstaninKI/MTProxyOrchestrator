@@ -290,11 +290,59 @@
       return;
     }
 
+    root.dataset.usersInitialized = "true";
     const tbody = table.tBodies[0];
     const rows = Array.from(tbody.querySelectorAll("[data-user-row]"));
-    if (!rows.length) return;
+    const selectAll = root.querySelector("[data-users-select-all]");
+    const selectionEl = root.querySelector('[data-users-role="selection"]');
+    const sortHeaders = Array.from(root.querySelectorAll("[data-users-sort-key]"));
+    const rowMenus = Array.from(root.querySelectorAll(".row-menu"));
 
-    root.dataset.usersInitialized = "true";
+    function rowCheckboxes() {
+      return rows
+        .map((row) => row.querySelector("[data-users-select]"))
+        .filter(Boolean);
+    }
+
+    function updateSelection() {
+      const boxes = rowCheckboxes();
+      const visible = boxes.filter((b) => !b.closest("[data-user-row]").hidden);
+      let checkedCount = 0;
+      boxes.forEach((b) => {
+        const row = b.closest("[data-user-row]");
+        if (b.checked) {
+          checkedCount += 1;
+          row.dataset.selected = "true";
+        } else {
+          delete row.dataset.selected;
+        }
+      });
+      if (selectionEl) {
+        if (checkedCount > 0) {
+          selectionEl.textContent = `${checkedCount} selected`;
+          selectionEl.hidden = false;
+        } else {
+          selectionEl.hidden = true;
+        }
+      }
+      if (selectAll) {
+        const visibleChecked = visible.filter((b) => b.checked).length;
+        selectAll.checked = visible.length > 0 && visibleChecked === visible.length;
+        selectAll.indeterminate = visibleChecked > 0 && visibleChecked < visible.length;
+      }
+    }
+
+    function updateSortHeaders() {
+      sortHeaders.forEach((header) => {
+        header.classList.toggle("active", header.dataset.usersSortKey === sortSelect.value);
+      });
+    }
+
+    function closeRowMenus(except) {
+      rowMenus.forEach((menu) => {
+        if (menu !== except) menu.removeAttribute("open");
+      });
+    }
 
     function asNumber(value) {
       const n = Number.parseInt(value || "0", 10);
@@ -335,6 +383,8 @@
       statusButtons.forEach((button) => {
         button.classList.toggle("active", button.dataset.usersStatusValue === status);
       });
+      updateSortHeaders();
+      updateSelection();
     }
 
     function toggleBodyLock() {
@@ -422,6 +472,7 @@
       setFormAction("quota", row.dataset.quotaUrl);
       setFormAction("delete", row.dataset.deleteUrl);
 
+      closeRowMenus();
       drawer.hidden = false;
       drawerScrim.hidden = false;
       toggleBodyLock();
@@ -443,6 +494,35 @@
       });
     });
     sortSelect.addEventListener("change", applyUsersState);
+    sortHeaders.forEach((header) => {
+      header.addEventListener("click", () => {
+        const key = header.dataset.usersSortKey;
+        if (sortSelect.value !== key) sortSelect.value = key;
+        applyUsersState();
+      });
+    });
+    if (selectAll) {
+      selectAll.addEventListener("change", () => {
+        rowCheckboxes().forEach((box) => {
+          if (!box.closest("[data-user-row]").hidden) box.checked = selectAll.checked;
+        });
+        updateSelection();
+      });
+    }
+    rowCheckboxes().forEach((box) => box.addEventListener("change", updateSelection));
+    rowMenus.forEach((menu) => {
+      const summary = menu.querySelector("summary");
+      if (summary) {
+        summary.addEventListener("click", () => {
+          if (!menu.open) closeRowMenus(menu);
+        });
+      }
+    });
+    document.addEventListener("click", (event) => {
+      rowMenus.forEach((menu) => {
+        if (menu.open && !menu.contains(event.target)) menu.removeAttribute("open");
+      });
+    });
     openCreateButton.addEventListener("click", openCreateModal);
     closeCreateButton.addEventListener("click", closeCreateModal);
     createModal.addEventListener("click", (event) => {
@@ -650,12 +730,52 @@
     });
   }
 
+  function initStubUpload() {
+    const form = document.querySelector("[data-stub-upload]");
+    if (!form || form.dataset.stubUploadInitialized === "true") return;
+    const zone = form.querySelector("[data-stub-dropzone]");
+    const input = form.querySelector("[data-stub-file]");
+    const filename = form.querySelector("[data-stub-filename]");
+    if (!zone || !input || !filename) return;
+
+    form.dataset.stubUploadInitialized = "true";
+
+    function showName() {
+      const file = input.files && input.files[0];
+      if (file) {
+        filename.textContent = file.name;
+        filename.hidden = false;
+      } else {
+        filename.hidden = true;
+      }
+    }
+
+    input.addEventListener("change", showName);
+    ["dragenter", "dragover"].forEach((evt) =>
+      zone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        zone.classList.add("is-dragover");
+      }),
+    );
+    ["dragleave", "dragend", "drop"].forEach((evt) =>
+      zone.addEventListener(evt, () => zone.classList.remove("is-dragover")),
+    );
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        showName();
+      }
+    });
+  }
+
   function initPanelPage() {
     fillCSRF();
     initLogsPage();
     initUsersPage();
     initBridgePage();
     initPasswordPage();
+    initStubUpload();
     initCopyButtons();
   }
 
@@ -671,6 +791,7 @@
     initUsersPage();
     initBridgePage();
     initPasswordPage();
+    initStubUpload();
     initCopyButtons();
   });
 })();
