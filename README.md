@@ -94,6 +94,29 @@ Key paths used by the current implementation:
 - Authenticated UI: mounted under the generated random path only
 - Dashboard navigation and subpage back links preserve the generated panel path.
 
+## Local Development (Dev Mode)
+
+Run the panel locally without a Linux server or any installed services:
+
+```bash
+go run ./cmd/tgproxy-panel/ serve --dev
+```
+
+The panel starts at **http://127.0.0.1:8080/login**. Log in with `admin` / `admin`.
+
+What dev mode does:
+- Uses an in-memory SQLite database (no files written)
+- Seeds demo data: 5 users, traffic history, settings
+- Stubs all OS side-effects: no systemd calls, no file writes to `/etc/tgproxy/`, no ACME renewal
+- Sets `Secure=false` so session cookies work over plain HTTP
+- Defaults to `127.0.0.1:8080` and path `/`
+
+Override defaults if needed:
+
+```bash
+go run ./cmd/tgproxy-panel/ serve --dev --listen 0.0.0.0:9000 --path /p-dev/
+```
+
 ## Common Commands
 
 ```bash
