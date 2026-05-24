@@ -164,6 +164,7 @@ func (s *Server) panelRouter() http.Handler {
 		r.Post("/settings/admin-password", withLegacyPanelCSP(s.handleSettingsAdminPasswordPost))
 		r.Get("/settings/system", withLegacyPanelCSP(s.handleSettingsSystemGet))
 		r.Post("/settings/system", withLegacyPanelCSP(s.handleSettingsSystemPost))
+		r.Post("/settings/system/restart", withLegacyPanelCSP(s.handleSettingsRestartServices))
 		r.Get("/settings/totp", withLegacyPanelCSP(s.handleSettingsTOTPGet))
 		r.Post("/settings/totp/begin", withLegacyPanelCSP(s.handleSettingsTOTPBegin))
 		r.Post("/settings/totp/confirm", withLegacyPanelCSP(s.handleSettingsTOTPConfirm))

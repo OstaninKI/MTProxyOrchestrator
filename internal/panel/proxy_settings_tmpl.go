@@ -207,9 +207,10 @@ const systemSettingsContent = `{{define "page_title"}}System Settings{{end}}
 <strong>Note:</strong> Panel path and log level changes require restarting tgproxy-panel to take effect.
 </div>
 
-<form method="post" class="grid-12">
-<input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
+<div class="grid-12">
   <div class="col-7">
+    <form method="post">
+    <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
     <section class="card">
       <div class="card-head"><div class="col card-title-stack"><h3>Panel access</h3><span class="sub">Hide the admin panel behind a hard-to-guess prefix.</span></div></div>
       <div class="card-body">
@@ -227,12 +228,16 @@ const systemSettingsContent = `{{define "page_title"}}System Settings{{end}}
         <div class="row row-end row-tight"><button class="btn" data-variant="ghost" type="reset">Reset</button><button class="btn" data-variant="primary" type="submit">Save &amp; restart</button></div>
       </div>
     </section>
+    </form>
   </div>
   <div class="col-5">
     <section class="card">
       <div class="card-head"><h3>Maintenance</h3></div>
       <div class="card-body col col-panel">
-        <button class="action-row" type="button" disabled><span class="action-icon">{{icon "Refresh" 14}}</span><span class="summary-copy"><strong>Restart all services</strong><span>teleproxy, tgproxy-panel, nginx-stub</span></span>{{icon "Right" 14}}</button>
+        <form method="post" action="{{.PanelPath}}settings/system/restart" class="action-row-form" onsubmit="return confirm('Restart teleproxy and nginx now? Active connections may briefly drop.')">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
+          <button class="action-row" type="submit"><span class="action-icon">{{icon "Refresh" 14}}</span><span class="summary-copy"><strong>Restart all services</strong><span>teleproxy, nginx (panel stays up)</span></span>{{icon "Right" 14}}</button>
+        </form>
         <button class="action-row" type="button" disabled><span class="action-icon">{{icon "Download" 14}}</span><span class="summary-copy"><strong>Download diagnostic bundle</strong><span>Logs, redacted config, versions</span></span>{{icon "Right" 14}}</button>
         <button class="action-row" type="button" disabled><span class="action-icon">{{icon "Upload" 14}}</span><span class="summary-copy"><strong>Restore from backup</strong><span>Replace current config with a snapshot</span></span>{{icon "Right" 14}}</button>
         <button class="action-row danger" type="button" disabled><span class="action-icon">{{icon "Trash" 14}}</span><span class="summary-copy"><strong>Reset to defaults</strong><span>Wipe users, nodes, regenerate keys</span></span>{{icon "Right" 14}}</button>
@@ -241,7 +246,7 @@ const systemSettingsContent = `{{define "page_title"}}System Settings{{end}}
     <section class="card">
       <div class="card-head"><h3>Panel URL preview</h3></div>
       <div class="card-body col col-panel">
-        <div class="copy-row"><span class="val mono">{{.PanelPath}}</span><button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Refresh" 12}}</button></div>
+        <div class="copy-row"><span class="val mono">{{.PanelPath}}</span><button class="btn" data-size="xs" data-variant="ghost" type="button" data-copy disabled>{{icon "Copy" 12}}</button></div>
         <span class="help">Bookmark updates and cookie scope follow this path after restart.</span>
       </div>
     </section>
@@ -252,7 +257,7 @@ const systemSettingsContent = `{{define "page_title"}}System Settings{{end}}
       </div>
     </section>
   </div>
-</form>
+</div>
 </section>
 {{end}}
 {{template "base" .}}`

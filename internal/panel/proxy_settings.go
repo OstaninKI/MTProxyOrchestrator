@@ -3,6 +3,7 @@ package panel
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
@@ -333,6 +334,8 @@ func (s *Server) handleSettingsSystemGet(w http.ResponseWriter, r *http.Request)
 		LogLevel:            logLevel,
 		RetentionMinuteDays: retMinutes,
 		RetentionHourlyDays: retHourly,
+		Success:             r.URL.Query().Get("notice"),
+		Error:               r.URL.Query().Get("error"),
 	})
 }
 
@@ -407,6 +410,33 @@ func (s *Server) handleSettingsSystemPost(w http.ResponseWriter, r *http.Request
 		RetentionHourlyDays: retHour,
 		Success:             "System settings saved. Panel path and log level changes require restarting tgproxy-panel.",
 	})
+}
+
+// handleSettingsRestartServices restarts teleproxy and nginx services.
+func (s *Server) handleSettingsRestartServices(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	var err error
+	if !s.DevMode {
+		if e := systemctlRun("restart", "teleproxy.service"); e != nil {
+			err = e
+		}
+		if e := systemctlRun("restart", "nginx"); e != nil && err == nil {
+			err = e
+		}
+	}
+
+	audit.Log(s.DB, s.sessionAdminID(r), "settings.restart_services", "", "teleproxy, nginx", clientIP(r)) //nolint:errcheck
+
+	if err != nil {
+		http.Redirect(w, r, s.PanelPath+"settings/system?error="+url.QueryEscape("Failed to restart services: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, s.PanelPath+"settings/system?notice="+url.QueryEscape("Services restarted."), http.StatusSeeOther)
 }
 
 // --- validation helpers ---
