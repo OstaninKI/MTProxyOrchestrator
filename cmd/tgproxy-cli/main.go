@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/acme"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/install"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/update"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -154,6 +158,11 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	binaries, err := resolveLocalBinaries()
+	if err != nil {
+		return err
+	}
+
 	// Obtain Let's Encrypt certificate before building the plan.
 	// Uses a standalone HTTP server on port 80 (nginx not yet started).
 	if cfg.PanelDomain != "" && cfg.ACMEEmail != "" {
@@ -167,11 +176,6 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		cfg.PanelCertPath = certPath
 		cfg.PanelKeyPath = keyPath
 		fmt.Fprintf(cmd.OutOrStdout(), "Certificate obtained: %s\n", certPath)
-	}
-
-	binaries, err := resolveLocalBinaries()
-	if err != nil {
-		return err
 	}
 
 	var plan install.Plan
@@ -272,12 +276,36 @@ func currentLocalBinaries() (install.LocalBinaries, error) {
 func siblingLocalBinaries(cliPath string) (install.LocalBinaries, error) {
 	panelPath := filepath.Join(filepath.Dir(cliPath), "tgproxy-panel")
 	if _, err := os.Stat(panelPath); err != nil {
-		return install.LocalBinaries{}, fmt.Errorf("resolve tgproxy-panel рядом с %s: expected %s: %w", cliPath, panelPath, err)
+		if errors.Is(err, fs.ErrNotExist) {
+			if downloadErr := downloadPanelBinary(panelPath); downloadErr != nil {
+				return install.LocalBinaries{}, fmt.Errorf("tgproxy-panel not found next to %s and could not be downloaded automatically; place the binary at %s manually: %w", cliPath, panelPath, downloadErr)
+			}
+		} else {
+			return install.LocalBinaries{}, fmt.Errorf("stat tgproxy-panel at %s: %w", panelPath, err)
+		}
 	}
 	return install.LocalBinaries{
 		CLI:   cliPath,
 		Panel: panelPath,
 	}, nil
+}
+
+// downloadPanelBinary fetches tgproxy-panel pinned to the running CLI's own
+// version into destPath, verifying its SHA256 against the release checksums.
+var downloadPanelBinary = func(destPath string) error {
+	ver := version.Version
+	if strings.TrimSpace(ver) == "" || ver == "dev" {
+		return fmt.Errorf("cannot auto-download tgproxy-panel for a development build (version %q); place the binary next to tgproxy-cli manually", ver)
+	}
+	url, sha, err := update.ResolvePinnedAsset(nil, update.ComponentPanel, ver)
+	if err != nil {
+		return fmt.Errorf("resolve tgproxy-panel release asset: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "tgproxy-panel not found locally; downloading v%s ...\n", ver)
+	if err := (component.Downloader{}).Download(url, sha, destPath); err != nil {
+		return fmt.Errorf("download tgproxy-panel: %w", err)
+	}
+	return nil
 }
 
 func formatCheckResult(result install.CheckResult) string {

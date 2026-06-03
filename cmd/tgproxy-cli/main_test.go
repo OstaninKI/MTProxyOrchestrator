@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -831,5 +832,147 @@ func TestRunInstallCallsObtainACMEWhenEmailSet(t *testing.T) {
 	}
 	if gotCfg.ACMEEmail != "admin@example.com" {
 		t.Errorf("ACMEEmail in config = %s, want admin@example.com", gotCfg.ACMEEmail)
+	}
+}
+
+func TestRunInstallResolvesBinariesBeforeACME(t *testing.T) {
+	oldUnattended := unattended
+	oldPanelDomain := panelDomain
+	oldPanelEmail := panelEmail
+	oldPanelCert := panelCert
+	oldPanelKey := panelKey
+	oldChecker := defaultChecker
+	oldResolve := resolveLocalBinaries
+	oldBuild := buildSinglePlan
+	oldExec := newExecutor
+	oldObtain := obtainACMECert
+	oldPostInstall := runPostInstallCheck
+	t.Cleanup(func() {
+		unattended = oldUnattended
+		panelDomain = oldPanelDomain
+		panelEmail = oldPanelEmail
+		panelCert = oldPanelCert
+		panelKey = oldPanelKey
+		defaultChecker = oldChecker
+		resolveLocalBinaries = oldResolve
+		buildSinglePlan = oldBuild
+		newExecutor = oldExec
+		obtainACMECert = oldObtain
+		runPostInstallCheck = oldPostInstall
+	})
+
+	unattended = true
+	panelDomain = "example.com"
+	panelEmail = "a@example.com"
+	panelCert = ""
+	panelKey = ""
+	defaultChecker = func() preflightRunner { return &stubPreflightRunner{} }
+
+	var order []string
+	resolveLocalBinaries = func() (install.LocalBinaries, error) {
+		order = append(order, "binaries")
+		return install.LocalBinaries{CLI: "/tmp/tgproxy-cli", Panel: "/tmp/tgproxy-panel"}, nil
+	}
+	obtainACMECert = func(_ context.Context, _ *acme.Runner, _, _ string) (string, string, error) {
+		order = append(order, "acme")
+		return "/tmp/cert.pem", "/tmp/key.pem", nil
+	}
+	buildSinglePlan = func(config.Config, config.InstallPaths, int, install.LocalBinaries) (install.Plan, error) {
+		return install.Plan{
+			Creds: install.GeneratedCreds{
+				PanelPath:     "/p-test/",
+				AdminLogin:    "admin",
+				AdminPassword: "password",
+				FirstUser:     secrets.UserSecret{Label: "user1"},
+			},
+		}, nil
+	}
+	newExecutor = func() install.Executor { return stubExecutor{} }
+	runPostInstallCheck = func() error { return nil }
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := runInstall(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 2 || order[0] != "binaries" || order[1] != "acme" {
+		t.Fatalf("call order = %v, want [binaries acme]", order)
+	}
+}
+
+func TestSiblingLocalBinariesDownloadsMissingPanel(t *testing.T) {
+	oldDownload := downloadPanelBinary
+	t.Cleanup(func() { downloadPanelBinary = oldDownload })
+
+	tmp := t.TempDir()
+	cliPath := filepath.Join(tmp, "tgproxy-cli")
+	if err := os.WriteFile(cliPath, []byte("cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedPanelPath := filepath.Join(tmp, "tgproxy-panel")
+	var gotDestPath string
+	downloadPanelBinary = func(destPath string) error {
+		gotDestPath = destPath
+		// Create the file so siblingLocalBinaries can proceed.
+		return os.WriteFile(destPath, []byte("panel"), 0o755)
+	}
+
+	bins, err := siblingLocalBinaries(cliPath)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if gotDestPath != expectedPanelPath {
+		t.Errorf("downloadPanelBinary called with %q, want %q", gotDestPath, expectedPanelPath)
+	}
+	if bins.Panel != expectedPanelPath {
+		t.Errorf("bins.Panel = %q, want %q", bins.Panel, expectedPanelPath)
+	}
+}
+
+func TestSiblingLocalBinariesDownloadFailureReturnsEnglishError(t *testing.T) {
+	oldDownload := downloadPanelBinary
+	t.Cleanup(func() { downloadPanelBinary = oldDownload })
+
+	tmp := t.TempDir()
+	cliPath := filepath.Join(tmp, "tgproxy-cli")
+	if err := os.WriteFile(cliPath, []byte("cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	downloadErr := fmt.Errorf("network unreachable")
+	downloadPanelBinary = func(string) error { return downloadErr }
+
+	_, err := siblingLocalBinaries(cliPath)
+	if err == nil {
+		t.Fatal("expected error when download fails")
+	}
+	if !strings.Contains(err.Error(), "could not be downloaded") {
+		t.Errorf("error must mention 'could not be downloaded': %v", err)
+	}
+	if !strings.Contains(err.Error(), "tgproxy-panel") {
+		t.Errorf("error must mention 'tgproxy-panel': %v", err)
+	}
+	if strings.Contains(err.Error(), "рядом") {
+		t.Errorf("error must not contain Cyrillic text 'рядом': %v", err)
+	}
+	if !strings.Contains(err.Error(), downloadErr.Error()) {
+		t.Errorf("error must wrap the download error: %v", err)
+	}
+}
+
+func TestDownloadPanelBinaryRejectsDevBuild(t *testing.T) {
+	// version.Version is "dev" in tests — no network call should be made.
+	destPath := filepath.Join(t.TempDir(), "tgproxy-panel")
+	err := downloadPanelBinary(destPath)
+	if err == nil {
+		t.Fatal("expected error for dev build")
+	}
+	if !strings.Contains(err.Error(), "development build") {
+		t.Errorf("error must mention 'development build': %v", err)
+	}
+	if _, statErr := os.Stat(destPath); statErr == nil {
+		t.Errorf("downloadPanelBinary must not create a file for dev build")
 	}
 }
