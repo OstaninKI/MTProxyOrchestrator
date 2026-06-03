@@ -5,12 +5,14 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -39,6 +41,8 @@ type Downloader struct {
 	MaxSize int64  // maximum download size in bytes; 0 means use the default for the download type
 }
 
+var renameFile = os.Rename
+
 // Download fetches url to destPath, verifies sha256hex, sets mode 0755.
 // Writes to a temp file first, verifies, then os.Rename (atomic on same fs).
 // Removes the temp file on any error.
@@ -66,9 +70,9 @@ func (d Downloader) Download(url, sha256hex, destPath string) error {
 		return fmt.Errorf("chmod: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, filepath.Clean(destPath)); err != nil {
+	if err := installExecutable(tmpPath, filepath.Clean(destPath)); err != nil {
 		os.Remove(tmpPath)
-		return fmt.Errorf("rename to dest: %w", err)
+		return err
 	}
 
 	return nil
@@ -120,9 +124,64 @@ func (d Downloader) DownloadTarGzBinary(url, sha256hex, memberName, destPath str
 		os.Remove(tmpPath)
 		return fmt.Errorf("chmod: %w", err)
 	}
-	if err := os.Rename(tmpPath, filepath.Clean(destPath)); err != nil {
+	if err := installExecutable(tmpPath, filepath.Clean(destPath)); err != nil {
 		os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+func installExecutable(tmpPath, destPath string) error {
+	if err := renameFile(tmpPath, destPath); err == nil {
+		return nil
+	} else if !errors.Is(err, syscall.EXDEV) {
 		return fmt.Errorf("rename to dest: %w", err)
+	}
+
+	if err := copyAcrossDevices(tmpPath, destPath); err != nil {
+		return err
+	}
+	if err := os.Remove(tmpPath); err != nil {
+		return fmt.Errorf("remove temp after cross-device copy: %w", err)
+	}
+	return nil
+}
+
+func copyAcrossDevices(srcPath, destPath string) error {
+	destDir := filepath.Dir(destPath)
+	tmpDest := filepath.Join(destDir, ".tgproxy-install-tmp")
+	_ = os.Remove(tmpDest)
+
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return fmt.Errorf("open source for cross-device copy: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(tmpDest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+	if err != nil {
+		return fmt.Errorf("create destination temp for cross-device copy: %w", err)
+	}
+	cleanup := func() {
+		dst.Close()
+		os.Remove(tmpDest)
+	}
+
+	if _, err := io.Copy(dst, src); err != nil {
+		cleanup()
+		return fmt.Errorf("copy across devices: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		os.Remove(tmpDest)
+		return fmt.Errorf("close destination temp: %w", err)
+	}
+	if err := os.Chmod(tmpDest, 0o755); err != nil {
+		os.Remove(tmpDest)
+		return fmt.Errorf("chmod destination temp: %w", err)
+	}
+	if err := renameFile(tmpDest, destPath); err != nil {
+		os.Remove(tmpDest)
+		return fmt.Errorf("rename copied temp to dest: %w", err)
 	}
 	return nil
 }
