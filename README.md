@@ -10,6 +10,7 @@ MTProto Proxy Orchestrator manages a Teleproxy-based Telegram MTProto proxy on U
 - Supports user management, Bridge runtime switching, metrics, logs, backups, restore, and verified updates in the codebase
 - Enforces optional per-user traffic quotas with daily, weekly, or monthly periods, soft warning, and hard suspension
 - Supports optional TOTP-based 2FA per admin account with single-use bcrypt-hashed recovery codes
+- Exposes DPI-resistance controls in the panel under Settings → Proxy Settings: MSS clamp, JA4 fingerprint logging, Fake-TLS vs random-padding link transport, and optional TLS backend / wildcard masquerade domain
 - Publishes and consumes release assets from `github.com/mtproto-orchestrator/mtproto-orchestrator`
 
 ## Important Current Limitation
@@ -133,15 +134,14 @@ tgproxy-cli uninstall
 
 ## Updates
 
-- Binary downloads are verified by SHA256 before replacement
+- All four components are version-checked against GitHub Releases: tgproxy-cli, tgproxy-panel (OstaninKI/MTProxyOrchestrator), teleproxy (teleproxy/teleproxy), and sing-box (SagerNet/sing-box)
+- Binary downloads are verified by SHA256 before replacement; sing-box ships as a tar.gz asset and its binary is extracted from the verified archive
 - Failed service restart or health check triggers rollback from the backup binary
-- Release asset selection currently targets the GitHub Releases repository above
 
 ## Docs
 
 - [Operations](docs/OPERATIONS.md)
 - [Security](docs/SECURITY.md)
-- [Technical specification](docs/TECHNICAL_SPEC.md)
 
 ## License
 

@@ -90,6 +90,16 @@ Out of scope for v1:
 - Operator-visible logs are component-scoped (`panel`, `teleproxy`, `sing-box`, `nginx`) and should be treated as potentially sensitive operational data.
 - Teleproxy metric scraping and GitHub update metadata checks use explicit HTTP client timeouts; metric responses are size-capped before parsing.
 
+## DPI Resistance
+
+Generated client links default to Fake-TLS transport (the `ee`-prefix secret with a masquerade domain). MSS clamp and JA4 fingerprint logging are both enabled by default, providing fragmentation of ClientHello across TCP segments and per-connection fingerprint visibility on Teleproxy's `/stats` and `/metrics` endpoints.
+
+Operators may switch a proxy to random-padding (Obfuscated2, `dd`-prefix secret) links via Settings → Proxy Settings. This is an explicit DPI-resistance downgrade relative to Fake-TLS: Obfuscated2 traffic is older, lacks a TLS masquerade domain, and is easier to fingerprint by network-layer DPI. It should be a deliberate, intentional choice.
+
+Teleproxy serves both transports simultaneously. Toggling `random_padding` only changes newly generated share links; previously distributed links continue to function without interruption.
+
+**Known limitation**: the Telegram client's own TLS fingerprint is negotiated client-side and cannot be altered or fixed server-side.
+
 ## Known Non-Goals
 
 - No multi-tenant admin roles

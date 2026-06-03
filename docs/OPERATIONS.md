@@ -227,6 +227,64 @@ The restore flow:
 4. restores into `/etc/tgproxy/`
 5. restarts services
 
+## DPI Resistance
+
+Teleproxy supports several DPI-resistance features that are configurable in the admin panel under **Settings → Proxy Settings**. The settings are stored in the `settings` table of the panel DB and are mirrored as `config.toml` keys. Changes take effect after saving; the panel re-renders `teleproxy.toml` and restarts Teleproxy automatically.
+
+### Settings reference
+
+| Panel label | Key | Type | Default | Purpose |
+|---|---|---|---|---|
+| ClientHello MSS clamp | `mss_clamp` | bool | `true` | Forces TCP MSS clamping so that the TLS ClientHello is fragmented across TCP segments, defeating segment-level DPI inspection. |
+| JA4 probe logging | `ja4_log` | bool | `true` | Logs a per-connection JA4 fingerprint on Teleproxy's `/stats` and `/metrics` endpoints. Useful for diagnosing which client TLS stacks are being fingerprinted. |
+| Padded (dd) links | `random_padding` | bool | `false` | Selects the share-link transport (see below). Default `false` means Fake-TLS links are generated. |
+| TLS backend | `tls_backend` | string | _(empty)_ | Address (e.g. `127.0.0.1:9443` or `proxy.example.com:443`) where Teleproxy forwards invalid probe connections. When empty, the built-in stub is used. |
+| Wildcard mask | `wildcard_mask` | string | _(empty)_ | Wildcard masquerade hostname (e.g. `*.example.com`). Requires `tls_backend` to be set. |
+
+### Share-link transport: Fake-TLS vs random padding
+
+**Fake-TLS** (`random_padding = false`, the default) generates secrets of the form `ee<secret><hex(mask_host)>`. This is the DPI-resistant mode: the proxy masquerades as TLS traffic to the configured mask host, making it harder for deep-packet inspection to distinguish Telegram traffic from ordinary HTTPS.
+
+**Random padding / Obfuscated2** (`random_padding = true`) generates secrets of the form `dd<secret>`, with no domain component. This is an older transport that is easier for DPI systems to fingerprint and is considered a DPI downgrade. Use it only if a specific client or network requires it.
+
+Teleproxy serves both transports simultaneously. Toggling the setting only affects newly generated share links; existing client links continue to work. The `mask_host` value is not changed by this toggle.
+
+### Switching share-link transport
+
+1. Open the panel: **Settings → Proxy Settings**.
+2. Check or uncheck **Padded (dd) links**.
+3. Click **Save**. The panel re-renders `teleproxy.toml` and reloads Teleproxy.
+4. Re-share each user's link or QR code from the Users section — the old links remain functional, but only the newly generated links reflect the new transport.
+
+### Config file rendering
+
+`mss_clamp` renders as a top-level key in `teleproxy.toml`:
+
+```toml
+mss_clamp = true
+```
+
+When `ja4_log` is enabled, a `[stats]` section is added:
+
+```toml
+[stats]
+ja4_log = true
+```
+
+When `wildcard_mask` and `tls_backend` are both set, the domain entry uses the extended form:
+
+```toml
+domain = [{ name = "*.example.com", backend = "127.0.0.1:9443" }]
+```
+
+Without a TLS backend, the simple form is used:
+
+```toml
+domain = "proxy.example.com"
+```
+
+The DPI settings also become `ExecStart` flags on `tgproxy-panel.service`: `--mss-clamp=`, `--ja4-log=`, `--random-padding=`, and `--tls-backend` / `--wildcard-mask` when set.
+
 ## Updates
 
 Manual update:
@@ -237,14 +295,15 @@ sudo tgproxy-cli update
 
 Current behavior:
 
-- checks GitHub Releases immediately
-- verifies SHA256 before replacing any binary
+- checks GitHub Releases immediately for `tgproxy-cli`, `tgproxy-panel` (OstaninKI/MTProxyOrchestrator), `teleproxy` (teleproxy/teleproxy), and `sing-box` (SagerNet/sing-box)
+- verifies SHA256 before replacing any binary; sing-box is distributed as a tar.gz archive and its binary is extracted after the archive is verified
+- detects the installed version of `teleproxy` and `sing-box` by running the binary and parsing the semver from its version output (tries the `version` subcommand and `--version`)
 - reconciles all config templates (systemd units, nginx, teleproxy.toml) with current config.toml and DB settings before restarting
 - rolls back on restart/health failure
 
 ### Config reconciliation
 
-Before restarting services after an update, `tgproxy-cli update` re-renders all generated config files from the current `config.toml` and runtime DB settings. This ensures that new binaries receive up-to-date ExecStart flags, systemd hardening, and nginx security headers even if the template format changed between releases.
+Before restarting services after an update, `tgproxy-cli update` re-renders all generated config files from the current `config.toml` and runtime DB settings. This ensures that new binaries receive up-to-date ExecStart flags, systemd hardening, and nginx security headers.
 
 The reconciliation step:
 
@@ -257,6 +316,8 @@ The reconciliation step:
 
 All file writes use atomic rename (write to temp, rename) to avoid partial writes.
 
+**Important:** the reconciliation step runs with the **pre-update** (currently installed) CLI binary. This means that when a release changes the config template format or the version-detection logic itself, those new behaviors take effect only on the **next** `update` run, executed by the freshly installed binary. When upgrading across such a release, run `sudo tgproxy-cli update` twice. Alternatively, saving the panel's Proxy Settings re-renders `teleproxy.toml` immediately using the new binary without a second full update pass.
+
 ### SHA256 verification
 
 SHA256 checksums are resolved in this order:
@@ -265,6 +326,8 @@ SHA256 checksums are resolved in this order:
 2. The `digest` field from the GitHub Releases API (format `sha256:<hex>`). This covers components like sing-box that do not publish separate checksum files.
 
 If neither source provides a valid SHA256, the update is rejected (fail-closed).
+
+sing-box is shipped as a tar.gz asset. `tgproxy-cli update` verifies the SHA256 of the downloaded archive before extracting the binary from it.
 
 ### Version format
 
