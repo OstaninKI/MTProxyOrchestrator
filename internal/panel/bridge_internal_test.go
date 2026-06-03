@@ -187,6 +187,48 @@ func (e *bridgeEnableExec) ServiceActive(name string) (bool, error) {
 	return e.services[name], nil
 }
 
+func TestHandleBridgeAddNodeExactVLESSURLSwitchesSingleToBridge(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	teleproxyPath := filepath.Join(dir, "teleproxy.toml")
+	if err := os.WriteFile(teleproxyPath, []byte("port = 443\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := newBridgeTestServer(t, nodePath)
+	srv.BridgeCfg.Paths.TeleproxyTOML = teleproxyPath
+	srv.BridgeCfg.Paths.SingboxService = filepath.Join(dir, "sing-box.service")
+	srv.BridgeCfg.Paths.SingboxBin = filepath.Join(dir, "sing-box")
+	srv.SingboxActive = func() bool { return false }
+	srv.SingboxInstalled = func() bool { return true }
+	exec := newBridgeEnableExec()
+	srv.BridgeExec = exec
+	sessionCookie := addAuthSession(t, srv)
+
+	form := url.Values{CSRFField(): {"token"}, "share_url": {pe4enk0VLESSURL}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/nodes/add", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeAddNode(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303, body: %s", rec.Code, rec.Body.String())
+	}
+
+	tp := string(exec.writes[teleproxyPath])
+	if !strings.Contains(tp, `socks5 = "127.0.0.1:1080"`) {
+		t.Fatalf("add-node did not switch Teleproxy to Bridge SOCKS5 mode:\n%s", tp)
+	}
+	if !exec.services["sing-box.service"] || !exec.services["teleproxy.service"] {
+		t.Fatalf("add-node did not activate Bridge services: %+v", exec.services)
+	}
+	nl := readNodeList(t, nodePath)
+	if len(nl.Nodes) != 1 || nl.Nodes[0].Tag != "v2.pe4enk0.com-mtpr" {
+		t.Fatalf("node list after add = %+v, want exact VLESS node", nl.Nodes)
+	}
+}
+
 func TestHandleBridgeEditNodeRollsBackNodeFileOnRerenderFailure(t *testing.T) {
 	dir := t.TempDir()
 	nodePath := filepath.Join(dir, "outbounds.json")

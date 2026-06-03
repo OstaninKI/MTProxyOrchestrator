@@ -27,11 +27,16 @@ func TestBridgeAddNodeRedirectsToPanelBridge(t *testing.T) {
 		PanelPath: "/p-example/",
 		BridgeCfg: &BridgeConfig{
 			Paths: config.InstallPaths{
-				OutboundsJSON: filepath.Join(dir, "outbounds.json"),
+				OutboundsJSON:  filepath.Join(dir, "outbounds.json"),
+				TeleproxyTOML:  filepath.Join(dir, "teleproxy.toml"),
+				SingboxJSON:    filepath.Join(dir, "sing-box.json"),
+				SingboxService: filepath.Join(dir, "sing-box.service"),
+				SingboxBin:     filepath.Join(dir, "sing-box"),
 			},
 		},
 		SingboxActive:    func() bool { return false },
 		SingboxInstalled: func() bool { return true },
+		BridgeExec:       newBridgeEnableExec(),
 	}
 
 	const csrf = "tok"

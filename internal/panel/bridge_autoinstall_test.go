@@ -17,6 +17,7 @@ import (
 // is fetched on demand. All other operations are no-ops.
 type recordingBridgeExec struct {
 	downloads []downloadCall
+	services  map[string]bool
 }
 
 type downloadCall struct {
@@ -28,12 +29,33 @@ func (e *recordingBridgeExec) Download(url, sha256, dest string) error {
 	e.downloads = append(e.downloads, downloadCall{url, sha256, dest})
 	return nil
 }
-func (e *recordingBridgeExec) EnableService(string) error         { return nil }
-func (e *recordingBridgeExec) StartService(string) error          { return nil }
-func (e *recordingBridgeExec) StopService(string) error           { return nil }
-func (e *recordingBridgeExec) DisableService(string) error        { return nil }
-func (e *recordingBridgeExec) ReloadService(string) error         { return nil }
-func (e *recordingBridgeExec) ServiceActive(string) (bool, error) { return false, nil }
+func (e *recordingBridgeExec) EnableService(string) error { return nil }
+func (e *recordingBridgeExec) StartService(name string) error {
+	e.ensureServices()
+	e.services[name] = true
+	return nil
+}
+func (e *recordingBridgeExec) StopService(name string) error {
+	e.ensureServices()
+	e.services[name] = false
+	return nil
+}
+func (e *recordingBridgeExec) DisableService(string) error { return nil }
+func (e *recordingBridgeExec) ReloadService(name string) error {
+	e.ensureServices()
+	e.services[name] = true
+	return nil
+}
+func (e *recordingBridgeExec) ServiceActive(name string) (bool, error) {
+	e.ensureServices()
+	return e.services[name], nil
+}
+
+func (e *recordingBridgeExec) ensureServices() {
+	if e.services == nil {
+		e.services = make(map[string]bool)
+	}
+}
 
 func newAutoInstallServer(t *testing.T, exec *recordingBridgeExec, installed bool) *Server {
 	t.Helper()

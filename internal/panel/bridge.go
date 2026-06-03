@@ -136,6 +136,44 @@ func (s *Server) handleBridgeDisable(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
+func (s *Server) enableBridgeModeWithNode(node bridge.Node) error {
+	users, err := UserRepo{DB: s.DB}.List()
+	if err != nil {
+		return fmt.Errorf("list users: %w", err)
+	}
+	var entries []teleproxy.UserEntry
+	for _, u := range users {
+		if u.Enabled && u.DeletedAt == nil {
+			entries = append(entries, teleproxy.UserEntry{Label: u.Label, Secret: u.SecretHex})
+		}
+	}
+
+	paths := s.bridgePaths()
+	svc := &bridge.BridgeService{
+		Exec:     s.bridgeExec(),
+		NodePath: paths.OutboundsJSON,
+	}
+	enableCfg := bridge.EnableConfig{
+		Node:           node,
+		Paths:          paths,
+		TeleproxyUsers: entries,
+		MTProtoPort:    s.bridgeMTProtoPort(),
+		MaskHost:       s.bridgeMaskHost(),
+		TLSBackend:     s.bridgeTLSBackend(),
+		WildcardMask:   s.bridgeWildcardMask(),
+		MSSClamp:       s.bridgeMSSClamp(),
+		JA4Log:         s.bridgeJA4Log(),
+		StatsPort:      s.bridgeStatsPort(),
+		SingboxURL:     singboxDownloadURL(),
+		SingboxSHA256:  singboxDownloadSHA256(),
+	}
+	if s.singboxInstalled() {
+		enableCfg.SingboxURL = ""
+		enableCfg.SingboxSHA256 = ""
+	}
+	return svc.Enable(enableCfg)
+}
+
 func (s *Server) disableBridgeMode() error {
 	users, err := UserRepo{DB: s.DB}.List()
 	if err != nil {
@@ -845,6 +883,17 @@ func (s *Server) handleBridgeAddNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !s.singboxIsActive() {
+		if err := s.enableBridgeModeWithNode(node); err != nil {
+			http.Error(w, "bridge enable failed", http.StatusInternalServerError)
+			return
+		}
+		audit.Log(s.DB, s.sessionAdminID(r), "bridge.enable", node.Tag, "", clientIP(r))           //nolint:errcheck
+		audit.Log(s.DB, s.sessionAdminID(r), "node.add", node.Tag, string(node.Type), clientIP(r)) //nolint:errcheck
+		http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
+		return
+	}
+
 	// Install sing-box on demand if the system was set up in Single mode.
 	if err := s.ensureSingboxInstalled(); err != nil {
 		http.Error(w, "could not install sing-box: "+err.Error(), http.StatusInternalServerError)
@@ -969,6 +1018,17 @@ func (s *Server) handleBridgeAddNodeManual(w http.ResponseWriter, r *http.Reques
 		Method:            method,
 		CongestionControl: congestionControl,
 		Enabled:           true,
+	}
+
+	if !s.singboxIsActive() {
+		if err := s.enableBridgeModeWithNode(node); err != nil {
+			http.Error(w, "bridge enable failed", http.StatusInternalServerError)
+			return
+		}
+		audit.Log(s.DB, s.sessionAdminID(r), "bridge.enable", tag, "", clientIP(r))          //nolint:errcheck
+		audit.Log(s.DB, s.sessionAdminID(r), "node.add", tag, string(nodeType), clientIP(r)) //nolint:errcheck
+		http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
+		return
 	}
 
 	// Install sing-box on demand if the system was set up in Single mode.
