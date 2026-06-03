@@ -1416,25 +1416,43 @@ body.login-page {
   box-shadow: var(--shadow);
 }
 
+.login-card .page-eyebrow {
+  margin-bottom: .25rem;
+}
+
 .login-card h1 {
-  margin-bottom: .75rem;
+  margin-top: .25rem;
+  margin-bottom: .5rem;
   font-size: 1.65rem;
 }
 
-.login-card label {
-  margin-top: 0;
-  margin-bottom: .25rem;
+.login-card .page-sub {
+  margin-bottom: 1.5rem;
+}
+
+/* Remove conflicting legacy margin overrides — .stack-form grid gap handles spacing */
+.login-card .stack-form {
+  gap: 8px;
+}
+
+.login-card .label {
+  margin-top: 8px;
+  margin-bottom: 2px;
   font-size: .875rem;
 }
 
-.login-card input {
-  margin-bottom: 1rem;
+.login-card .label:first-child {
+  margin-top: 0;
+}
+
+.login-card .input {
   font-size: 1rem;
   background: var(--surface);
 }
 
-.login-card button {
+.login-card .btn {
   width: 100%;
+  margin-top: 8px;
   padding: .7rem;
   font-size: 1rem;
 }
@@ -2362,6 +2380,12 @@ body.login-page {
   overflow: hidden;
 }
 
+/* Restore login-card padding after the generic .card padding:0 override above */
+.login-card {
+  padding: 2rem;
+  overflow: visible;
+}
+
 .card-head {
   display: flex;
   align-items: center;
@@ -2422,6 +2446,9 @@ body.login-page {
 .tbl tbody tr:last-child td { border-bottom: 0; }
 .tbl tbody tr:hover td { background: rgba(255,255,255,.02); }
 .tbl--compact tbody td { padding: 8px 14px; }
+/* Components table: name column never wraps; detail column truncates to one line */
+.cell-name { white-space: nowrap; }
+.cell-detail { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .row { display: flex; align-items: center; gap: 10px; }
 .col { display: flex; flex-direction: column; gap: 10px; }

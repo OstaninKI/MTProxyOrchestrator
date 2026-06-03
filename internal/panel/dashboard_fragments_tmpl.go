@@ -277,12 +277,6 @@ const dashboardFragments = `
       <thead><tr><th>Step</th><th>Status</th></tr></thead>
       <tbody>{{range .BridgeSteps}}<tr><td>{{.Name}}</td><td>{{if .OK}}<span class="badge" data-tone="success"><span class="dot"></span>ok</span>{{else}}<span class="badge" data-tone="danger"><span class="dot"></span>down</span>{{end}}</td></tr>{{end}}</tbody>
     </table></div>
-    {{else if .Services}}
-    <div class="divider"></div>
-    <div class="table-wrap table-wrap--plain"><table class="tbl tbl--compact">
-      <thead><tr><th>Service</th><th>Status</th><th>Message</th></tr></thead>
-      <tbody>{{range .Services}}<tr><td>{{.Name}}</td><td>{{if .Active}}<span class="badge" data-tone="success"><span class="dot"></span>running</span>{{else}}<span class="badge" data-tone="danger"><span class="dot"></span>down</span>{{end}}</td><td>{{.Message}}</td></tr>{{end}}</tbody>
-    </table></div>
     {{end}}
   </div>
 </section>
@@ -361,20 +355,20 @@ const dashboardFragments = `
   <tbody>
   {{range .Components}}
   <tr>
-    <td><span class="mono">{{.Name}}</span></td>
+    <td class="cell-name"><span class="mono">{{.Name}}</span></td>
     <td><span class="badge" data-tone="accent">{{.Version}}</span></td>
     <td><span class="badge {{componentStateClass .Name .Version $.IsBridge}}" data-tone="{{componentStateClass .Name .Version $.IsBridge}}"><span class="dot"></span>{{componentStateLabel .Name .Version $.IsBridge}}</span></td>
-    <td class="muted">{{componentNote .Name $.IsBridge}}</td>
+    <td class="muted cell-detail" title="{{componentNote .Name $.IsBridge}}">{{componentNote .Name $.IsBridge}}</td>
     <td class="mono text-right">0</td>
     <td class="actions-cell"><button class="btn" data-size="xs" data-variant="ghost" disabled>{{icon "Refresh" 12}} Restart</button></td>
   </tr>
   {{end}}
   {{range .Services}}
   <tr>
-    <td><span class="mono">{{.Name}}</span></td>
+    <td class="cell-name"><span class="mono">{{.Name}}</span></td>
     <td><span class="badge" data-tone="accent">systemd</span></td>
     <td>{{if .Active}}<span class="badge" data-tone="success"><span class="dot"></span>Running</span>{{else}}<span class="badge" data-tone="danger"><span class="dot"></span>Down</span>{{end}}</td>
-    <td class="muted">{{.Message}}</td>
+    <td class="muted cell-detail" title="{{.Message}}">{{.Message}}</td>
     <td class="mono text-right">0</td>
     <td></td>
   </tr>

@@ -62,12 +62,12 @@ func collectComponentVersions() []ComponentVersion {
 	paths := config.DefaultPaths()
 
 	teleproxyVersion := "unknown"
-	if out, err := exec.Command(paths.TeleproxyBin, "--version").Output(); err == nil {
+	if out, err := exec.Command(paths.TeleproxyBin, "--version").CombinedOutput(); err == nil {
 		teleproxyVersion = strings.TrimSpace(string(out))
 	}
 
 	singboxVersion := "unknown"
-	if out, err := exec.Command(paths.SingboxBin, "version").Output(); err == nil {
+	if out, err := exec.Command(paths.SingboxBin, "version").CombinedOutput(); err == nil {
 		lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
 		if len(lines) > 0 {
 			singboxVersion = strings.TrimSpace(lines[0])

@@ -739,9 +739,8 @@ func TestDashboardHealthFragmentRendersSingleMode(t *testing.T) {
 	if !strings.Contains(html, `id="dashboard-health"`) {
 		t.Fatalf("health fragment missing stable target id:\n%s", html)
 	}
-	if !strings.Contains(html, "teleproxy.service") || !strings.Contains(html, "running") {
-		t.Fatalf("health fragment missing service data:\n%s", html)
-	}
+	// Services are no longer rendered in the health fragment for Single mode;
+	// they are displayed in the "Services & Components" panel instead.
 	if strings.Contains(html, "sing-box.service") {
 		t.Fatalf("single-mode health fragment must not require sing-box:\n%s", html)
 	}
