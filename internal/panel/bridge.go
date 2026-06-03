@@ -39,10 +39,15 @@ func systemctlRun(args ...string) error {
 // BridgeConfig holds panel-level settings for Bridge mode operations.
 // Populated from installation config; injected via Server.BridgeCfg.
 type BridgeConfig struct {
-	Paths       config.InstallPaths
-	MTProtoPort int
-	MaskHost    string
-	StatsPort   int
+	Paths         config.InstallPaths
+	MTProtoPort   int
+	MaskHost      string
+	TLSBackend    string
+	WildcardMask  string
+	MSSClamp      bool
+	RandomPadding bool
+	JA4Log        bool
+	StatsPort     int
 }
 
 // handleBridgePage renders the Bridge mode management page.
@@ -97,7 +102,11 @@ func (s *Server) handleBridgeEnable(w http.ResponseWriter, r *http.Request) {
 		Paths:          paths,
 		TeleproxyUsers: entries,
 		MTProtoPort:    s.bridgeMTProtoPort(),
-		MaskHost:       s.bridgeTeleproxyDomain(),
+		MaskHost:       s.bridgeMaskHost(),
+		TLSBackend:     s.bridgeTLSBackend(),
+		WildcardMask:   s.bridgeWildcardMask(),
+		MSSClamp:       s.bridgeMSSClamp(),
+		JA4Log:         s.bridgeJA4Log(),
 		StatsPort:      s.bridgeStatsPort(),
 		SingboxURL:     singboxDownloadURL(),
 		SingboxSHA256:  singboxDownloadSHA256(),
@@ -139,7 +148,11 @@ func (s *Server) handleBridgeDisable(w http.ResponseWriter, r *http.Request) {
 		Paths:          paths,
 		TeleproxyUsers: entries,
 		MTProtoPort:    s.bridgeMTProtoPort(),
-		MaskHost:       s.bridgeTeleproxyDomain(),
+		MaskHost:       s.bridgeMaskHost(),
+		TLSBackend:     s.bridgeTLSBackend(),
+		WildcardMask:   s.bridgeWildcardMask(),
+		MSSClamp:       s.bridgeMSSClamp(),
+		JA4Log:         s.bridgeJA4Log(),
 		StatsPort:      s.bridgeStatsPort(),
 	}
 	if err := svc.Disable(disableCfg); err != nil {
@@ -247,16 +260,42 @@ func (s *Server) bridgeMaskHost() string {
 	return "www.microsoft.com"
 }
 
-// bridgeTeleproxyDomain returns the value for teleproxy's `domain` config field.
-// When the panel domain is used as the masquerade host (TLS stub backend active),
-// teleproxy's proxy-pass must target nginx on :9443 — not teleproxy itself on :443.
-// In all other cases (e.g. mask_host = "www.microsoft.com") the host is returned as-is.
-func (s *Server) bridgeTeleproxyDomain() string {
-	maskHost := s.bridgeMaskHost()
-	if domain := s.settingsConfig().Domain; domain != "" && maskHost == domain {
-		return fmt.Sprintf("%s:%d", domain, stubTLSBackendPort)
+func (s *Server) bridgeTLSBackend() string {
+	if s.BridgeCfg != nil && s.BridgeCfg.TLSBackend != "" {
+		return s.BridgeCfg.TLSBackend
 	}
-	return maskHost
+	if domain := s.settingsConfig().Domain; domain != "" && s.bridgeMaskHost() == domain {
+		return fmt.Sprintf("127.0.0.1:%d", stubTLSBackendPort)
+	}
+	return ""
+}
+
+func (s *Server) bridgeWildcardMask() string {
+	if s.BridgeCfg != nil {
+		return s.BridgeCfg.WildcardMask
+	}
+	return ""
+}
+
+func (s *Server) bridgeMSSClamp() bool {
+	if s.BridgeCfg != nil {
+		return s.BridgeCfg.MSSClamp
+	}
+	return true
+}
+
+func (s *Server) bridgeRandomPadding() bool {
+	if s.BridgeCfg != nil {
+		return s.BridgeCfg.RandomPadding
+	}
+	return false
+}
+
+func (s *Server) bridgeJA4Log() bool {
+	if s.BridgeCfg != nil {
+		return s.BridgeCfg.JA4Log
+	}
+	return true
 }
 
 func (s *Server) bridgeStatsPort() int {

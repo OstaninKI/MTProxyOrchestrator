@@ -36,11 +36,22 @@ func UnmarshalUsersJSON(data []byte) ([]UserEntry, error) {
 // When SOCKS5Addr is empty the output is Single mode (direct to Telegram DCs).
 // When SOCKS5Addr is set the output is Bridge mode (traffic via local sing-box).
 type Config struct {
-	Port       int
-	MaskHost   string
-	StatsPort  int
-	SOCKS5Addr string
-	Users      []UserEntry
+	Port         int
+	MaskHost     string
+	TLSBackend   string
+	WildcardMask string
+	StatsPort    int
+	SOCKS5Addr   string
+	MSSClamp     bool
+	JA4Log       bool
+	Users        []UserEntry
+}
+
+func (c Config) DomainName() string {
+	if c.WildcardMask != "" {
+		return c.WildcardMask
+	}
+	return c.MaskHost
 }
 
 // Render produces a deterministic teleproxy.toml byte slice.
@@ -61,9 +72,19 @@ var teleproxyTmpl = template.Must(template.New("teleproxy").Parse(`port = {{.Por
 stats_port = {{.StatsPort}}
 http_stats = true
 direct = true
-domain = "{{.MaskHost}}"
+mss_clamp = {{.MSSClamp}}
+{{- if .TLSBackend}}
+domain = [{ name = "{{.DomainName}}", backend = "{{.TLSBackend}}" }]
+{{- else}}
+domain = "{{.DomainName}}"
+{{- end}}
 {{- if .SOCKS5Addr}}
 socks5 = "{{.SOCKS5Addr}}"
+{{- end}}
+{{- if .JA4Log}}
+
+[stats]
+ja4_log = true
 {{- end}}
 {{range .Users}}
 [[secret]]

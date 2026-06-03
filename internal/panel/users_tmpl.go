@@ -525,12 +525,13 @@ func userListPage(w io.Writer, users []UserRow, csrfToken, errMsg, notice, panel
 	})
 }
 
-func userCreatedPage(w io.Writer, label, secretHex, serverAddr string, port int, maskHost, panelPath, csrfToken string) {
+func userCreatedPage(w io.Writer, label, secretHex, serverAddr string, port int, maskHost string, randomPadding bool, panelPath, csrfToken string) {
 	link := ProxyLink{
-		Server:    serverAddr,
-		Port:      port,
-		SecretHex: secretHex,
-		MaskHost:  maskHost,
+		Server:        serverAddr,
+		Port:          port,
+		SecretHex:     secretHex,
+		MaskHost:      maskHost,
+		RandomPadding: randomPadding,
 	}
 	userCreatedTmpl.Execute(w, userCreatedData{
 		CSRFField:   CSRFField(),

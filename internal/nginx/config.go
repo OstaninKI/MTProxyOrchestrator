@@ -42,6 +42,7 @@ var stubTmpl = template.Must(template.New("nginx-stub").Parse(`server {
 // TLSStubConfig holds fields for the loopback HTTPS stub backend that Teleproxy
 // forwards invalid probes to when a site certificate is available.
 type TLSStubConfig struct {
+	ListenAddr string
 	ListenPort int
 	ServerName string
 	StubRoot   string
@@ -50,6 +51,9 @@ type TLSStubConfig struct {
 }
 
 func (c TLSStubConfig) Render() []byte {
+	if c.ListenAddr == "" {
+		c.ListenAddr = "127.0.0.1"
+	}
 	var buf bytes.Buffer
 	if err := tlsStubTmpl.Execute(&buf, c); err != nil {
 		panic(fmt.Sprintf("nginx TLS stub config render: %v", err))
@@ -58,7 +62,7 @@ func (c TLSStubConfig) Render() []byte {
 }
 
 var tlsStubTmpl = template.Must(template.New("nginx-tls-stub").Parse(`server {
-    listen 0.0.0.0:{{.ListenPort}} ssl;
+    listen {{.ListenAddr}}:{{.ListenPort}} ssl;
     server_name {{.ServerName}};
     server_tokens off;
 

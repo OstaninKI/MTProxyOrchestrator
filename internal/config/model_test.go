@@ -19,6 +19,15 @@ func TestDefaultConfig(t *testing.T) {
 	if c.MaskHost != "www.microsoft.com" {
 		t.Errorf("MaskHost = %q, want www.microsoft.com", c.MaskHost)
 	}
+	if !c.MSSClamp {
+		t.Error("MSSClamp must default to true")
+	}
+	if c.RandomPadding {
+		t.Error("RandomPadding must default to false (Fake-TLS)")
+	}
+	if !c.JA4Log {
+		t.Error("JA4Log must default to true")
+	}
 	if c.BridgeStrategy != "urltest" {
 		t.Errorf("BridgeStrategy = %q, want urltest", c.BridgeStrategy)
 	}

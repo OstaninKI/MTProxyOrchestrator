@@ -14,6 +14,11 @@ type Config struct {
 	Mode           Mode
 	MTProtoPort    int
 	MaskHost       string
+	TLSBackend     string
+	WildcardMask   string
+	MSSClamp       bool
+	RandomPadding  bool
+	JA4Log         bool
 	BridgeStrategy string
 	LogLevel       string
 	TCPKeepalive   time.Duration
@@ -39,6 +44,9 @@ func Default() Config {
 		Mode:           ModeSingle,
 		MTProtoPort:    443,
 		MaskHost:       "www.microsoft.com",
+		MSSClamp:       true,
+		RandomPadding:  false,
+		JA4Log:         true,
 		BridgeStrategy: "urltest",
 		LogLevel:       "info",
 		TCPKeepalive:   60 * time.Second,

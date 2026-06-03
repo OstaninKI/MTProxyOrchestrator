@@ -21,6 +21,8 @@ func singleCfg() teleproxy.Config {
 		Port:      443,
 		MaskHost:  "www.microsoft.com",
 		StatsPort: 9091,
+		MSSClamp:  true,
+		JA4Log:    true,
 		Users:     []teleproxy.UserEntry{userAlice, userBob},
 	}
 }
@@ -31,6 +33,8 @@ func bridgeCfg() teleproxy.Config {
 		MaskHost:   "www.microsoft.com",
 		StatsPort:  9091,
 		SOCKS5Addr: "socks5://127.0.0.1:2080",
+		MSSClamp:   true,
+		JA4Log:     true,
 		Users:      []teleproxy.UserEntry{userAlice},
 	}
 }
@@ -68,6 +72,45 @@ func TestRenderContainsUserLabels(t *testing.T) {
 		if !bytes.Contains(got, []byte(u.Secret)) {
 			t.Errorf("output missing secret for %q", u.Label)
 		}
+	}
+}
+
+func TestRenderCustomTLSBackend(t *testing.T) {
+	cfg := singleCfg()
+	cfg.TLSBackend = "127.0.0.1:9443"
+	got := cfg.Render()
+	want := `domain = [{ name = "www.microsoft.com", backend = "127.0.0.1:9443" }]`
+	if !bytes.Contains(got, []byte(want)) {
+		t.Fatalf("output missing domain backend %q:\n%s", want, got)
+	}
+}
+
+func TestRenderWildcardMaskWithBackend(t *testing.T) {
+	cfg := singleCfg()
+	cfg.WildcardMask = "*.example.com"
+	cfg.TLSBackend = "proxy.example.com:443"
+	got := cfg.Render()
+	want := `domain = [{ name = "*.example.com", backend = "proxy.example.com:443" }]`
+	if !bytes.Contains(got, []byte(want)) {
+		t.Fatalf("output missing wildcard backend %q:\n%s", want, got)
+	}
+}
+
+func TestRenderCanDisableMSSClamp(t *testing.T) {
+	cfg := singleCfg()
+	cfg.MSSClamp = false
+	got := cfg.Render()
+	if !bytes.Contains(got, []byte("mss_clamp = false")) {
+		t.Fatalf("output must explicitly disable MSS clamp:\n%s", got)
+	}
+}
+
+func TestRenderCanDisableJA4Log(t *testing.T) {
+	cfg := singleCfg()
+	cfg.JA4Log = false
+	got := cfg.Render()
+	if bytes.Contains(got, []byte("ja4_log")) {
+		t.Fatalf("output must not enable JA4 logging when disabled:\n%s", got)
 	}
 }
 

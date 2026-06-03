@@ -119,6 +119,31 @@ func TestFormatDuration(t *testing.T) {
 	}
 }
 
+func TestExtractVersionFromCommandOutput(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain", in: "4.15.0\n", want: "4.15.0"},
+		{name: "teleproxy prefixed", in: "teleproxy v4.15.0\n", want: "4.15.0"},
+		{name: "teleproxy version subcommand", in: "teleproxy version 4.15.0\n", want: "4.15.0"},
+		{name: "sing-box multiline", in: "sing-box version 1.13.12\nEnvironment: go1.26 linux/amd64\n", want: "1.13.12"},
+		{name: "date release", in: "tgproxy-cli version v2026.5.10-f3\n", want: "2026.5.10-f3"},
+		{name: "tgproxy-cli short version", in: "tgproxy-cli v2026.5.24-f3\n", want: "2026.5.24-f3"},
+		{name: "no version here", in: "no version here\n", want: "unknown"},
+		{name: "unknown", in: "development build\n", want: "unknown"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractVersion(tc.in); got != tc.want {
+				t.Fatalf("extractVersion(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResetAdminPasswordInvalidatesExistingSessions(t *testing.T) {
 	oldPaths := defaultPaths
 	t.Cleanup(func() { defaultPaths = oldPaths })

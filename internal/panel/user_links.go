@@ -9,16 +9,24 @@ import (
 
 // ProxyLink holds the parts needed to generate a Telegram proxy link.
 type ProxyLink struct {
-	Server    string // IP or hostname
-	Port      int
-	SecretHex string // 32 hex chars (plain MTProto secret)
-	MaskHost  string // FakeTLS domain, e.g. "www.microsoft.com"
+	Server        string // IP or hostname
+	Port          int
+	SecretHex     string // 32 hex chars (plain MTProto secret)
+	MaskHost      string // FakeTLS domain, e.g. "www.microsoft.com"
+	RandomPadding bool   // use Obfuscated2 (dd) transport instead of Fake-TLS (ee)
 }
 
 // TelegramURL returns the tg://proxy deep-link for this proxy.
-// Secret format: "ee" + SecretHex + hex(MaskHost) — FakeTLS encoding used by Teleproxy.
+// Two transports are mutually exclusive:
+//   - Fake-TLS (default, RandomPadding=false): secret = "ee" + SecretHex + hex(MaskHost)
+//   - Obfuscated2 / padded (RandomPadding=true): secret = "dd" + SecretHex (no domain)
 func (p ProxyLink) TelegramURL() string {
-	secret := buildFakeTLSSecret(p.SecretHex, p.MaskHost)
+	var secret string
+	if p.RandomPadding {
+		secret = "dd" + p.SecretHex
+	} else {
+		secret = buildFakeTLSSecret(p.SecretHex, p.MaskHost)
+	}
 	v := url.Values{}
 	v.Set("server", p.Server)
 	v.Set("port", fmt.Sprintf("%d", p.Port))

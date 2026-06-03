@@ -39,12 +39,13 @@ func Reconcile(opts Options) error {
 	cfg = rt.MergeInto(cfg)
 
 	effectiveMaskHost := cfg.MaskHost
-	teleproxyDomain := cfg.MaskHost
+	tlsBackend := cfg.TLSBackend
 	hasTLSStubBackend := cfg.PanelDomain != "" && cfg.PanelCertPath != "" && cfg.PanelKeyPath != ""
 	if hasTLSStubBackend {
 		effectiveMaskHost = cfg.PanelDomain
-		teleproxyDomain = fmt.Sprintf("%s:%d", cfg.PanelDomain, stubTLSBackendPort)
+		tlsBackend = fmt.Sprintf("127.0.0.1:%d", stubTLSBackendPort)
 		cfg.MaskHost = effectiveMaskHost
+		cfg.TLSBackend = tlsBackend
 	}
 
 	socks5Addr := ""
@@ -58,11 +59,15 @@ func Reconcile(opts Options) error {
 	}
 
 	tpCfg := teleproxy.Config{
-		Port:       cfg.MTProtoPort,
-		MaskHost:   teleproxyDomain,
-		StatsPort:  9091,
-		SOCKS5Addr: socks5Addr,
-		Users:      users,
+		Port:         cfg.MTProtoPort,
+		MaskHost:     effectiveMaskHost,
+		TLSBackend:   tlsBackend,
+		WildcardMask: cfg.WildcardMask,
+		StatsPort:    9091,
+		SOCKS5Addr:   socks5Addr,
+		MSSClamp:     cfg.MSSClamp,
+		JA4Log:       cfg.JA4Log,
+		Users:        users,
 	}
 	newTpCfg := tpCfg.Render()
 	oldTpCfg, _ := os.ReadFile(opts.Paths.TeleproxyTOML)
@@ -81,23 +86,28 @@ func Reconcile(opts Options) error {
 	}
 
 	panelUnit := systemd.PanelUnitConfig{
-		BinaryPath:  opts.Paths.PanelBin,
-		ConfigPath:  opts.Paths.ConfigFile,
-		DBPath:      opts.Paths.PanelDB,
-		PanelPath:   cfg.PanelPath,
-		ListenAddr:  fmt.Sprintf("127.0.0.1:%d", panelBackendPort),
-		MTProtoPort: cfg.MTProtoPort,
-		MaskHost:    effectiveMaskHost,
-		StatsPort:   9091,
-		LogPath:     opts.Paths.PanelLog,
-		ConfigDir:   opts.Paths.ConfigDir,
-		LogDir:      opts.Paths.LogDir,
-		BinDir:      opts.Paths.BinDir,
-		SystemdDir:  opts.Paths.SystemdDir,
-		StubDir:     opts.Paths.StubDir,
-		CertDir:     opts.Paths.CertDir,
-		Domain:      cfg.PanelDomain,
-		ACMEEmail:   cfg.ACMEEmail,
+		BinaryPath:    opts.Paths.PanelBin,
+		ConfigPath:    opts.Paths.ConfigFile,
+		DBPath:        opts.Paths.PanelDB,
+		PanelPath:     cfg.PanelPath,
+		ListenAddr:    fmt.Sprintf("127.0.0.1:%d", panelBackendPort),
+		MTProtoPort:   cfg.MTProtoPort,
+		MaskHost:      effectiveMaskHost,
+		TLSBackend:    tlsBackend,
+		WildcardMask:  cfg.WildcardMask,
+		MSSClamp:      cfg.MSSClamp,
+		RandomPadding: cfg.RandomPadding,
+		JA4Log:        cfg.JA4Log,
+		StatsPort:     9091,
+		LogPath:       opts.Paths.PanelLog,
+		ConfigDir:     opts.Paths.ConfigDir,
+		LogDir:        opts.Paths.LogDir,
+		BinDir:        opts.Paths.BinDir,
+		SystemdDir:    opts.Paths.SystemdDir,
+		StubDir:       opts.Paths.StubDir,
+		CertDir:       opts.Paths.CertDir,
+		Domain:        cfg.PanelDomain,
+		ACMEEmail:     cfg.ACMEEmail,
 	}
 	newPanelUnit := panelUnit.Render()
 	oldPanelUnit, _ := os.ReadFile(opts.Paths.PanelService)

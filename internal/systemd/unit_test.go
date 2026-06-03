@@ -18,19 +18,22 @@ var baseTeleproxy = systemd.TeleproxyUnitConfig{
 }
 
 var basePanel = systemd.PanelUnitConfig{
-	BinaryPath:  "/usr/local/bin/tgproxy-panel",
-	ConfigPath:  "/etc/tgproxy/config.toml",
-	DBPath:      "/etc/tgproxy/panel.db",
-	PanelPath:   "/p-example/",
-	ListenAddr:  "127.0.0.1:8443",
-	MTProtoPort: 443,
-	MaskHost:    "www.microsoft.com",
-	StatsPort:   9091,
-	LogPath:     "/var/log/tgproxy/panel.log",
-	ConfigDir:   "/etc/tgproxy",
-	LogDir:      "/var/log/tgproxy",
-	BinDir:      "/usr/local/bin",
-	SystemdDir:  "/etc/systemd/system",
+	BinaryPath:    "/usr/local/bin/tgproxy-panel",
+	ConfigPath:    "/etc/tgproxy/config.toml",
+	DBPath:        "/etc/tgproxy/panel.db",
+	PanelPath:     "/p-example/",
+	ListenAddr:    "127.0.0.1:8443",
+	MTProtoPort:   443,
+	MaskHost:      "www.microsoft.com",
+	MSSClamp:      true,
+	RandomPadding: true,
+	JA4Log:        true,
+	StatsPort:     9091,
+	LogPath:       "/var/log/tgproxy/panel.log",
+	ConfigDir:     "/etc/tgproxy",
+	LogDir:        "/var/log/tgproxy",
+	BinDir:        "/usr/local/bin",
+	SystemdDir:    "/etc/systemd/system",
 }
 
 func TestTeleproxyUnitHasNoNewPrivileges(t *testing.T) {
@@ -119,6 +122,9 @@ func TestPanelUnitPassesServeFlags(t *testing.T) {
 		"--listen 127.0.0.1:8443",
 		"--mtproto-port 443",
 		"--mask-host www.microsoft.com",
+		"--mss-clamp=true",
+		"--random-padding=true",
+		"--ja4-log=true",
 		"--stats-port 9091",
 	} {
 		if !bytes.Contains(got, []byte(want)) {

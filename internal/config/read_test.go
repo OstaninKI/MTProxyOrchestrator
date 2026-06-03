@@ -14,6 +14,11 @@ func TestReadConfigParsesAllFields(t *testing.T) {
 mode = "bridge"
 mtproto_port = 8443
 mask_host = "cdn.example.com"
+tls_backend = "127.0.0.1:9443"
+wildcard_mask = "*.example.com"
+mss_clamp = false
+random_padding = false
+ja4_log = false
 bridge_strategy = "random"
 log_level = "debug"
 tcp_keepalive_seconds = 120
@@ -42,6 +47,21 @@ acme_email = "admin@example.com"
 	}
 	if cfg.MaskHost != "cdn.example.com" {
 		t.Errorf("MaskHost = %q, want cdn.example.com", cfg.MaskHost)
+	}
+	if cfg.TLSBackend != "127.0.0.1:9443" {
+		t.Errorf("TLSBackend = %q, want 127.0.0.1:9443", cfg.TLSBackend)
+	}
+	if cfg.WildcardMask != "*.example.com" {
+		t.Errorf("WildcardMask = %q, want *.example.com", cfg.WildcardMask)
+	}
+	if cfg.MSSClamp {
+		t.Error("MSSClamp = true, want false")
+	}
+	if cfg.RandomPadding {
+		t.Error("RandomPadding = true, want false")
+	}
+	if cfg.JA4Log {
+		t.Error("JA4Log = true, want false")
 	}
 	if cfg.BridgeStrategy != "random" {
 		t.Errorf("BridgeStrategy = %q, want random", cfg.BridgeStrategy)
@@ -90,6 +110,15 @@ func TestReadConfigFillsDefaultsForMissingFields(t *testing.T) {
 	}
 	if cfg.MaskHost != "www.microsoft.com" {
 		t.Errorf("MaskHost = %q, want www.microsoft.com", cfg.MaskHost)
+	}
+	if !cfg.MSSClamp {
+		t.Error("MSSClamp must default to true")
+	}
+	if cfg.RandomPadding {
+		t.Error("RandomPadding must default to false (Fake-TLS)")
+	}
+	if !cfg.JA4Log {
+		t.Error("JA4Log must default to true")
 	}
 	if cfg.BridgeStrategy != "urltest" {
 		t.Errorf("BridgeStrategy = %q, want urltest", cfg.BridgeStrategy)

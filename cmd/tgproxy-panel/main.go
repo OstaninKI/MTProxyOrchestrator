@@ -33,17 +33,22 @@ var rootCmd = &cobra.Command{
 }
 
 var (
-	dbPath      string
-	panelPath   string
-	listenAddr  string
-	mtprotoPort int
-	maskHost    string
-	statsPort   int
-	certDir     string
-	stubDir     string
-	domain      string
-	acmeEmail   string
-	devMode     bool
+	dbPath        string
+	panelPath     string
+	listenAddr    string
+	mtprotoPort   int
+	maskHost      string
+	tlsBackend    string
+	wildcardMask  string
+	mssClamp      bool
+	randomPadding bool
+	ja4Log        bool
+	statsPort     int
+	certDir       string
+	stubDir       string
+	domain        string
+	acmeEmail     string
+	devMode       bool
 )
 
 var serveCmd = &cobra.Command{
@@ -58,6 +63,11 @@ func init() {
 	serveCmd.Flags().StringVar(&listenAddr, "listen", "127.0.0.1:18080", "listen address")
 	serveCmd.Flags().IntVar(&mtprotoPort, "mtproto-port", 443, "MTProto listen port used when rendering Teleproxy config")
 	serveCmd.Flags().StringVar(&maskHost, "mask-host", "www.microsoft.com", "FakeTLS mask host used when rendering Teleproxy config")
+	serveCmd.Flags().StringVar(&tlsBackend, "tls-backend", "", "TLS backend for invalid Teleproxy handshakes")
+	serveCmd.Flags().StringVar(&wildcardMask, "wildcard-mask", "", "wildcard certificate mask for Teleproxy")
+	serveCmd.Flags().BoolVar(&mssClamp, "mss-clamp", true, "enable Teleproxy MSS clamp for ClientHello fragmentation")
+	serveCmd.Flags().BoolVar(&randomPadding, "random-padding", false, "generate Obfuscated2 (dd) padded links instead of Fake-TLS")
+	serveCmd.Flags().BoolVar(&ja4Log, "ja4-log", true, "enable Teleproxy JA4 probe logging")
 	serveCmd.Flags().IntVar(&statsPort, "stats-port", 9091, "Teleproxy stats port used when rendering Teleproxy config")
 	serveCmd.Flags().StringVar(&certDir, "cert-dir", "/etc/tgproxy/certs", "directory for TLS certificates")
 	serveCmd.Flags().StringVar(&stubDir, "stub-dir", "/var/www/tgproxy-stub", "web root directory for stub pages")
@@ -85,9 +95,24 @@ func newPanelHTTPServer(addr string, handler http.Handler) *http.Server {
 // applyDBSettings overwrites CLI flag values with any values stored in the DB,
 // and populates the retainer's configurable retention fields.
 // Errors reading individual settings are silently ignored — flags keep their defaults.
-func applyDBSettings(d *db.DB, ret *metrics.Retainer, mtprotoPort *int, maskHost *string) {
+func applyDBSettings(d *db.DB, ret *metrics.Retainer, mtprotoPort *int, maskHost, tlsBackend, wildcardMask *string, mssClamp, randomPadding, ja4Log *bool) {
 	if v := d.GetSetting("mask_host", ""); v != "" {
 		*maskHost = v
+	}
+	if v := d.GetSetting("tls_backend", ""); v != "" {
+		*tlsBackend = v
+	}
+	if v := d.GetSetting("wildcard_mask", ""); v != "" {
+		*wildcardMask = v
+	}
+	if v, ok := boolDBSetting(d, "mss_clamp"); ok {
+		*mssClamp = v
+	}
+	if v, ok := boolDBSetting(d, "random_padding"); ok {
+		*randomPadding = v
+	}
+	if v, ok := boolDBSetting(d, "ja4_log"); ok {
+		*ja4Log = v
 	}
 	if v := d.GetSetting("mtproto_port", ""); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 65535 {
@@ -103,6 +128,17 @@ func applyDBSettings(d *db.DB, ret *metrics.Retainer, mtprotoPort *int, maskHost
 		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
 			ret.HourlyRetentionDays = n
 		}
+	}
+}
+
+func boolDBSetting(d *db.DB, key string) (bool, bool) {
+	switch d.GetSetting(key, "") {
+	case "1", "true", "on", "yes":
+		return true, true
+	case "0", "false", "off", "no":
+		return false, true
+	default:
+		return false, false
 	}
 }
 
@@ -132,7 +168,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Now:    func() int64 { return time.Now().Unix() },
 	}
 	retainer := metrics.Retainer{DB: d}
-	applyDBSettings(d, &retainer, &mtprotoPort, &maskHost)
+	applyDBSettings(d, &retainer, &mtprotoPort, &maskHost, &tlsBackend, &wildcardMask, &mssClamp, &randomPadding, &ja4Log)
 
 	// Context that is cancelled on SIGINT/SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -183,9 +219,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		RateLimiter: panel.NewRateLimiter(),
 		Secure:      true,
 		BridgeCfg: &panel.BridgeConfig{
-			MTProtoPort: mtprotoPort,
-			MaskHost:    maskHost,
-			StatsPort:   statsPort,
+			MTProtoPort:   mtprotoPort,
+			MaskHost:      maskHost,
+			TLSBackend:    tlsBackend,
+			WildcardMask:  wildcardMask,
+			MSSClamp:      mssClamp,
+			RandomPadding: randomPadding,
+			JA4Log:        ja4Log,
+			StatsPort:     statsPort,
 		},
 		SettingsCfg: &panel.SettingsConfig{
 			CertDir:   certDir,

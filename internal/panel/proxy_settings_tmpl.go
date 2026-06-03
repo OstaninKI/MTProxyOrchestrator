@@ -12,15 +12,20 @@ type sessionView struct {
 }
 
 type proxySettingsData struct {
-	CSRFField   string
-	CSRFToken   string
-	MaskHost    string
-	MTProtoPort int
-	ServerAddr  string
-	Success     string
-	Error       string
-	CurrentNav  string
-	PanelPath   string
+	CSRFField     string
+	CSRFToken     string
+	MaskHost      string
+	TLSBackend    string
+	WildcardMask  string
+	MSSClamp      bool
+	RandomPadding bool
+	JA4Log        bool
+	MTProtoPort   int
+	ServerAddr    string
+	Success       string
+	Error         string
+	CurrentNav    string
+	PanelPath     string
 }
 
 type adminPasswordData struct {
@@ -72,12 +77,21 @@ const proxySettingsContent = `{{define "page_title"}}Proxy Settings{{end}}
       <div class="card-body">
         <form method="post" class="stack-form">
         <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-        <div class="field"><label class="label" for="mask_host">Mask host</label><input class="input input--mono" type="text" id="mask_host" name="mask_host" value="{{.MaskHost}}" required><span class="help">Used as fake SNI for camouflage.</span></div>
+        <div class="field"><label class="label" for="mask_host">Mask host</label><input class="input input--mono" type="text" id="mask_host" name="mask_host" value="{{.MaskHost}}" required><span class="help">Used as fake SNI in client links.</span></div>
+        <div class="grid-3">
+          <div class="field span2"><label class="label" for="tls_backend">TLS backend</label><input class="input input--mono" type="text" id="tls_backend" name="tls_backend" value="{{.TLSBackend}}" placeholder="127.0.0.1:9443 or proxy.example.com:443"><span class="help">Invalid probes are forwarded here when set.</span></div>
+          <div class="field"><label class="label" for="wildcard_mask">Wildcard mask</label><input class="input input--mono" type="text" id="wildcard_mask" name="wildcard_mask" value="{{.WildcardMask}}" placeholder="*.example.com"><span class="help">Requires an explicit backend.</span></div>
+        </div>
+        <div class="grid-3">
+          <label class="check-row"><input type="checkbox" name="mss_clamp" value="1" {{if .MSSClamp}}checked{{end}}> <span>ClientHello MSS clamp</span></label>
+          <label class="check-row"><input type="checkbox" name="random_padding" value="1" {{if .RandomPadding}}checked{{end}}> <span>Padded (dd) links</span></label>
+          <label class="check-row"><input type="checkbox" name="ja4_log" value="1" {{if .JA4Log}}checked{{end}}> <span>JA4 probe logging</span></label>
+        </div>
         <div class="grid-3">
           <div class="field"><label class="label" for="mtproto_port">MTProto port</label><input class="input input--mono" type="number" id="mtproto_port" name="mtproto_port" value="{{.MTProtoPort}}" min="1" max="65535" required></div>
           <div class="field span2"><label class="label" for="server_addr">Server IP / domain</label><input class="input input--mono" type="text" id="server_addr" name="server_addr" value="{{.ServerAddr}}" placeholder="e.g. 1.2.3.4 or proxy.example.com"><span class="help">Used in generated share links.</span></div>
         </div>
-        <div class="field"><span class="label">Preview share link</span><div class="copy-row"><span class="val mono">tg://proxy?server={{.ServerAddr}}&amp;port={{.MTProtoPort}}&amp;secret=ee...</span><button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Copy" 12}}</button></div></div>
+        <div class="field"><span class="label">Preview share link</span><div class="copy-row"><span class="val mono">tg://proxy?server={{.ServerAddr}}&amp;port={{.MTProtoPort}}&amp;secret={{if .RandomPadding}}dd{{else}}ee{{end}}...</span><button class="btn" data-size="xs" data-variant="ghost" type="button" disabled>{{icon "Copy" 12}}</button></div></div>
         <div class="row row-end row-tight"><button class="btn" data-variant="ghost" type="reset">Reset</button><button class="btn" data-variant="primary" type="submit">{{icon "Check" 12}} Save changes</button></div>
         </form>
       </div>

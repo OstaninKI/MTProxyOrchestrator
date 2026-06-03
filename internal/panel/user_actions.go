@@ -178,7 +178,7 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 	if serverAddr == "" {
 		serverAddr = s.settingsConfig().ServerIP
 	}
-	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.PanelPath, tok)
+	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.bridgeRandomPadding(), s.PanelPath, tok)
 }
 
 // handleUserRotateAll re-issues secrets for every enabled user in a single
@@ -645,10 +645,11 @@ func (s *Server) handleUserShareLink(w http.ResponseWriter, r *http.Request) {
 		serverAddr = s.settingsConfig().ServerIP
 	}
 	link := ProxyLink{
-		Server:    serverAddr,
-		Port:      s.bridgeMTProtoPort(),
-		SecretHex: target.SecretHex,
-		MaskHost:  s.bridgeMaskHost(),
+		Server:        serverAddr,
+		Port:          s.bridgeMTProtoPort(),
+		SecretHex:     target.SecretHex,
+		MaskHost:      s.bridgeMaskHost(),
+		RandomPadding: s.bridgeRandomPadding(),
 	}
 	url := link.TelegramURL()
 	audit.Log(s.DB, s.sessionAdminID(r), "user.link_reveal", target.Label, "", clientIP(r)) //nolint:errcheck
@@ -689,10 +690,11 @@ func (s *Server) handleUserShareQR(w http.ResponseWriter, r *http.Request) {
 		serverAddr = s.settingsConfig().ServerIP
 	}
 	link := ProxyLink{
-		Server:    serverAddr,
-		Port:      s.bridgeMTProtoPort(),
-		SecretHex: target.SecretHex,
-		MaskHost:  s.bridgeMaskHost(),
+		Server:        serverAddr,
+		Port:          s.bridgeMTProtoPort(),
+		SecretHex:     target.SecretHex,
+		MaskHost:      s.bridgeMaskHost(),
+		RandomPadding: s.bridgeRandomPadding(),
 	}
 	png, err := link.QRPNG(256)
 	if err != nil {
@@ -727,11 +729,15 @@ func (s *Server) reloadTeleproxy() error {
 		return err
 	}
 	cfg := teleproxy.Config{
-		Port:       s.bridgeMTProtoPort(),
-		MaskHost:   s.bridgeTeleproxyDomain(),
-		StatsPort:  s.bridgeStatsPort(),
-		SOCKS5Addr: s.bridgeSOCKS5Addr(),
-		Users:      entries,
+		Port:         s.bridgeMTProtoPort(),
+		MaskHost:     s.bridgeMaskHost(),
+		TLSBackend:   s.bridgeTLSBackend(),
+		WildcardMask: s.bridgeWildcardMask(),
+		StatsPort:    s.bridgeStatsPort(),
+		SOCKS5Addr:   s.bridgeSOCKS5Addr(),
+		MSSClamp:     s.bridgeMSSClamp(),
+		JA4Log:       s.bridgeJA4Log(),
+		Users:        entries,
 	}
 	data := cfg.Render()
 	return WriteAndReloadHook(s.bridgePaths().TeleproxyTOML, data)

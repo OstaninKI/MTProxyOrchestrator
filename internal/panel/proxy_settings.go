@@ -14,6 +14,11 @@ import (
 // Setting key constants for the settings table.
 const (
 	settingMaskHost            = "mask_host"
+	settingTLSBackend          = "tls_backend"
+	settingWildcardMask        = "wildcard_mask"
+	settingMSSClamp            = "mss_clamp"
+	settingRandomPadding       = "random_padding"
+	settingJA4Log              = "ja4_log"
 	settingMTProtoPort         = "mtproto_port"
 	settingServerIP            = "server_ip"
 	settingPanelPath           = "panel_path"
@@ -85,12 +90,17 @@ func (s *Server) handleSettingsProxyGet(w http.ResponseWriter, r *http.Request) 
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	proxySettingsPage(w, proxySettingsData{
-		CSRFField:   CSRFField(),
-		CSRFToken:   tok,
-		MaskHost:    s.bridgeMaskHost(),
-		MTProtoPort: s.bridgeMTProtoPort(),
-		ServerAddr:  s.settingsConfig().ServerIP,
-		PanelPath:   s.PanelPath,
+		CSRFField:     CSRFField(),
+		CSRFToken:     tok,
+		MaskHost:      s.bridgeMaskHost(),
+		TLSBackend:    s.bridgeTLSBackend(),
+		WildcardMask:  s.bridgeWildcardMask(),
+		MSSClamp:      s.bridgeMSSClamp(),
+		RandomPadding: s.bridgeRandomPadding(),
+		JA4Log:        s.bridgeJA4Log(),
+		MTProtoPort:   s.bridgeMTProtoPort(),
+		ServerAddr:    s.settingsConfig().ServerIP,
+		PanelPath:     s.PanelPath,
 	})
 }
 
@@ -103,23 +113,40 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 	}
 
 	maskHost := strings.TrimSpace(r.FormValue("mask_host"))
+	tlsBackend := strings.TrimSpace(r.FormValue("tls_backend"))
+	wildcardMask := strings.TrimSpace(r.FormValue("wildcard_mask"))
+	mssClamp := r.FormValue("mss_clamp") == "1"
+	randomPadding := r.FormValue("random_padding") == "1"
+	ja4Log := r.FormValue("ja4_log") == "1"
 	portStr := strings.TrimSpace(r.FormValue("mtproto_port"))
 	serverAddr := strings.TrimSpace(r.FormValue("server_addr"))
 
 	// Validate mask_host.
 	if maskHost == "" {
-		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "mask host is required")
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, s.bridgeMTProtoPort(), serverAddr, "mask host is required")
 		return
 	}
 	if !isValidMaskHost(maskHost) {
-		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "mask host must be a valid hostname")
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, s.bridgeMTProtoPort(), serverAddr, "mask host must be a valid hostname")
+		return
+	}
+	if tlsBackend != "" && !isValidTLSBackend(tlsBackend) {
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, s.bridgeMTProtoPort(), serverAddr, "TLS backend must be host:port or unix:/path")
+		return
+	}
+	if wildcardMask != "" && !isValidWildcardMask(wildcardMask) {
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, s.bridgeMTProtoPort(), serverAddr, "wildcard mask must look like *.example.com")
+		return
+	}
+	if wildcardMask != "" && tlsBackend == "" {
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, s.bridgeMTProtoPort(), serverAddr, "wildcard mask requires an explicit TLS backend")
 		return
 	}
 
 	// Validate port.
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
-		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, s.bridgeMTProtoPort(), serverAddr, "port must be between 1 and 65535")
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, s.bridgeMTProtoPort(), serverAddr, "port must be between 1 and 65535")
 		return
 	}
 
@@ -127,6 +154,18 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 	if err := s.DB.SetSetting(settingMaskHost, maskHost); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+	for key, value := range map[string]string{
+		settingTLSBackend:    tlsBackend,
+		settingWildcardMask:  wildcardMask,
+		settingMSSClamp:      boolSetting(mssClamp),
+		settingRandomPadding: boolSetting(randomPadding),
+		settingJA4Log:        boolSetting(ja4Log),
+	} {
+		if err := s.DB.SetSetting(key, value); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 	if err := s.DB.SetSetting(settingMTProtoPort, portStr); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -137,18 +176,24 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Update runtime config.
-	if s.BridgeCfg != nil {
-		s.BridgeCfg.MaskHost = maskHost
-		s.BridgeCfg.MTProtoPort = port
+	// Update runtime config before reload so saved values are rendered immediately.
+	if s.BridgeCfg == nil {
+		s.BridgeCfg = &BridgeConfig{}
 	}
+	s.BridgeCfg.MaskHost = maskHost
+	s.BridgeCfg.TLSBackend = tlsBackend
+	s.BridgeCfg.WildcardMask = wildcardMask
+	s.BridgeCfg.MSSClamp = mssClamp
+	s.BridgeCfg.RandomPadding = randomPadding
+	s.BridgeCfg.JA4Log = ja4Log
+	s.BridgeCfg.MTProtoPort = port
 	if s.SettingsCfg != nil {
 		s.SettingsCfg.ServerIP = serverAddr
 	}
 
 	// Reload Teleproxy.
 	if err := s.reloadTeleproxy(); err != nil {
-		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, port, serverAddr, "failed to reload teleproxy")
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, port, serverAddr, "failed to reload teleproxy")
 		return
 	}
 
@@ -158,14 +203,26 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	proxySettingsPage(w, proxySettingsData{
-		CSRFField:   CSRFField(),
-		CSRFToken:   tok,
-		MaskHost:    maskHost,
-		MTProtoPort: port,
-		ServerAddr:  serverAddr,
-		Success:     "Proxy settings saved.",
-		PanelPath:   s.PanelPath,
+		CSRFField:     CSRFField(),
+		CSRFToken:     tok,
+		MaskHost:      maskHost,
+		TLSBackend:    tlsBackend,
+		WildcardMask:  wildcardMask,
+		MSSClamp:      mssClamp,
+		RandomPadding: randomPadding,
+		JA4Log:        ja4Log,
+		MTProtoPort:   port,
+		ServerAddr:    serverAddr,
+		Success:       "Proxy settings saved.",
+		PanelPath:     s.PanelPath,
 	})
+}
+
+func boolSetting(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 
 // handleSettingsSessionRevoke revokes a session by its ID.
@@ -511,20 +568,70 @@ func isValidMaskHost(host string) bool {
 	return true
 }
 
+func isValidWildcardMask(host string) bool {
+	if !strings.HasPrefix(host, "*.") {
+		return false
+	}
+	return isValidMaskHost(strings.TrimPrefix(host, "*."))
+}
+
+func isValidTLSBackend(backend string) bool {
+	if strings.HasPrefix(backend, "unix:") {
+		path := strings.TrimPrefix(backend, "unix:")
+		return strings.HasPrefix(path, "/") && !strings.ContainsAny(path, "\r\n\"")
+	}
+	if strings.ContainsAny(backend, "\r\n\"") {
+		return false
+	}
+	host, port, ok := strings.Cut(backend, ":")
+	if !ok || host == "" || port == "" {
+		return false
+	}
+	if _, err := strconv.Atoi(port); err != nil {
+		return false
+	}
+	if isValidMaskHost(host) {
+		return true
+	}
+	return isValidIPv4(host)
+}
+
+func isValidIPv4(host string) bool {
+	parts := strings.Split(host, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 || n > 255 {
+			return false
+		}
+	}
+	return true
+}
+
 // --- render error helpers ---
 
-func (s *Server) renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, maskHost string, port int, serverAddr, errMsg string) {
+func (s *Server) renderProxySettingsError(w http.ResponseWriter, r *http.Request, secure bool, panelPath, maskHost, tlsBackend, wildcardMask string, mssClamp, randomPadding, ja4Log bool, port int, serverAddr, errMsg string) {
 	tok, _ := NewCSRFToken()
 	SetCSRFCookie(w, tok, secure, panelPath)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	proxySettingsPage(w, proxySettingsData{
-		CSRFField:   CSRFField(),
-		CSRFToken:   tok,
-		MaskHost:    maskHost,
-		MTProtoPort: port,
-		ServerAddr:  serverAddr,
-		Error:       errMsg,
-		PanelPath:   panelPath,
+		CSRFField:     CSRFField(),
+		CSRFToken:     tok,
+		MaskHost:      maskHost,
+		TLSBackend:    tlsBackend,
+		WildcardMask:  wildcardMask,
+		MSSClamp:      mssClamp,
+		RandomPadding: randomPadding,
+		JA4Log:        ja4Log,
+		MTProtoPort:   port,
+		ServerAddr:    serverAddr,
+		Error:         errMsg,
+		PanelPath:     panelPath,
 	})
 }
 

@@ -45,6 +45,11 @@ func TestReadRuntimeSettingsReadsAllKeys(t *testing.T) {
 		t.Fatalf("db.Open: %v", err)
 	}
 	d.SetSetting("mask_host", "www.google.com")
+	d.SetSetting("tls_backend", "127.0.0.1:9443")
+	d.SetSetting("wildcard_mask", "*.example.com")
+	d.SetSetting("mss_clamp", "false")
+	d.SetSetting("random_padding", "false")
+	d.SetSetting("ja4_log", "true")
 	d.SetSetting("mtproto_port", "8443")
 	d.SetSetting("panel_path", "/p-a8f3k2x9/")
 	d.SetSetting("log_level", "debug")
@@ -56,6 +61,21 @@ func TestReadRuntimeSettingsReadsAllKeys(t *testing.T) {
 	}
 	if rs.MaskHost != "www.google.com" {
 		t.Errorf("MaskHost = %q, want %q", rs.MaskHost, "www.google.com")
+	}
+	if rs.TLSBackend != "127.0.0.1:9443" {
+		t.Errorf("TLSBackend = %q, want %q", rs.TLSBackend, "127.0.0.1:9443")
+	}
+	if rs.WildcardMask != "*.example.com" {
+		t.Errorf("WildcardMask = %q, want %q", rs.WildcardMask, "*.example.com")
+	}
+	if rs.MSSClamp == nil || *rs.MSSClamp {
+		t.Errorf("MSSClamp = %v, want false", rs.MSSClamp)
+	}
+	if rs.RandomPadding == nil || *rs.RandomPadding {
+		t.Errorf("RandomPadding = %v, want false", rs.RandomPadding)
+	}
+	if rs.JA4Log == nil || !*rs.JA4Log {
+		t.Errorf("JA4Log = %v, want true", rs.JA4Log)
 	}
 	if rs.MTProtoPort != 8443 {
 		t.Errorf("MTProtoPort = %d, want 8443", rs.MTProtoPort)
@@ -72,16 +92,36 @@ func TestMergeIntoOverridesNonZero(t *testing.T) {
 	cfg := config.Default()
 
 	rs := config.RuntimeSettings{
-		MaskHost:    "www.google.com",
-		MTProtoPort: 8443,
-		PanelPath:   "/p-a8f3k2x9/",
-		LogLevel:    "warn",
+		MaskHost:      "www.google.com",
+		TLSBackend:    "127.0.0.1:9443",
+		WildcardMask:  "*.example.com",
+		MSSClamp:      boolPtr(false),
+		RandomPadding: boolPtr(false),
+		JA4Log:        boolPtr(false),
+		MTProtoPort:   8443,
+		PanelPath:     "/p-a8f3k2x9/",
+		LogLevel:      "warn",
 	}
 
 	merged := rs.MergeInto(cfg)
 
 	if merged.MaskHost != "www.google.com" {
 		t.Errorf("MaskHost = %q, want %q", merged.MaskHost, "www.google.com")
+	}
+	if merged.TLSBackend != "127.0.0.1:9443" {
+		t.Errorf("TLSBackend = %q, want %q", merged.TLSBackend, "127.0.0.1:9443")
+	}
+	if merged.WildcardMask != "*.example.com" {
+		t.Errorf("WildcardMask = %q, want %q", merged.WildcardMask, "*.example.com")
+	}
+	if merged.MSSClamp {
+		t.Error("MSSClamp = true, want false")
+	}
+	if merged.RandomPadding {
+		t.Error("RandomPadding = true, want false")
+	}
+	if merged.JA4Log {
+		t.Error("JA4Log = true, want false")
 	}
 	if merged.MTProtoPort != 8443 {
 		t.Errorf("MTProtoPort = %d, want 8443", merged.MTProtoPort)
@@ -93,6 +133,8 @@ func TestMergeIntoOverridesNonZero(t *testing.T) {
 		t.Errorf("LogLevel = %q, want %q", merged.LogLevel, "warn")
 	}
 }
+
+func boolPtr(v bool) *bool { return &v }
 
 func TestMergeIntoPreservesZero(t *testing.T) {
 	cfg := config.Default()

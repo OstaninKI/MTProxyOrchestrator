@@ -37,6 +37,10 @@ type EnableConfig struct {
 	TeleproxyUsers []teleproxy.UserEntry
 	MTProtoPort    int
 	MaskHost       string
+	TLSBackend     string
+	WildcardMask   string
+	MSSClamp       bool
+	JA4Log         bool
 	StatsPort      int
 	Strategy       string
 	SingboxURL     string
@@ -49,6 +53,10 @@ type DisableConfig struct {
 	TeleproxyUsers []teleproxy.UserEntry
 	MTProtoPort    int
 	MaskHost       string
+	TLSBackend     string
+	WildcardMask   string
+	MSSClamp       bool
+	JA4Log         bool
 	StatsPort      int
 }
 
@@ -133,11 +141,15 @@ func (s *BridgeService) Enable(cfg EnableConfig) error {
 
 	// 5. Re-render teleproxy.toml with SOCKS5 upstream.
 	tpCfg := teleproxy.Config{
-		Port:       cfg.MTProtoPort,
-		MaskHost:   cfg.MaskHost,
-		StatsPort:  cfg.StatsPort,
-		SOCKS5Addr: fmt.Sprintf("%s:%d", singboxSOCKSAddr, singboxSOCKSPort),
-		Users:      cfg.TeleproxyUsers,
+		Port:         cfg.MTProtoPort,
+		MaskHost:     cfg.MaskHost,
+		TLSBackend:   cfg.TLSBackend,
+		WildcardMask: cfg.WildcardMask,
+		StatsPort:    cfg.StatsPort,
+		SOCKS5Addr:   fmt.Sprintf("%s:%d", singboxSOCKSAddr, singboxSOCKSPort),
+		MSSClamp:     cfg.MSSClamp,
+		JA4Log:       cfg.JA4Log,
+		Users:        cfg.TeleproxyUsers,
 	}
 	if err := s.Exec.WriteFile(cfg.Paths.TeleproxyTOML, tpCfg.Render(), 0o600); err != nil {
 		return s.rollback(cfg, fmt.Errorf("bridge enable: write teleproxy.toml: %w", err), nodeSnapshot)
@@ -191,10 +203,14 @@ func (s *BridgeService) Disable(cfg DisableConfig) error {
 	}
 
 	tpCfg := teleproxy.Config{
-		Port:      cfg.MTProtoPort,
-		MaskHost:  cfg.MaskHost,
-		StatsPort: cfg.StatsPort,
-		Users:     cfg.TeleproxyUsers,
+		Port:         cfg.MTProtoPort,
+		MaskHost:     cfg.MaskHost,
+		TLSBackend:   cfg.TLSBackend,
+		WildcardMask: cfg.WildcardMask,
+		StatsPort:    cfg.StatsPort,
+		MSSClamp:     cfg.MSSClamp,
+		JA4Log:       cfg.JA4Log,
+		Users:        cfg.TeleproxyUsers,
 	}
 	if err := s.Exec.WriteFile(cfg.Paths.TeleproxyTOML, tpCfg.Render(), 0o600); err != nil {
 		return s.disableRollback(cfg, tpSnap, sbWasActive, fmt.Errorf("bridge disable: write teleproxy.toml: %w", err))
@@ -242,10 +258,14 @@ func (s *BridgeService) rollback(cfg EnableConfig, cause error, nodeSnapshot nod
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("restore nodes: %w", err))
 	}
 	tpCfg := teleproxy.Config{
-		Port:      cfg.MTProtoPort,
-		MaskHost:  cfg.MaskHost,
-		StatsPort: cfg.StatsPort,
-		Users:     cfg.TeleproxyUsers,
+		Port:         cfg.MTProtoPort,
+		MaskHost:     cfg.MaskHost,
+		TLSBackend:   cfg.TLSBackend,
+		WildcardMask: cfg.WildcardMask,
+		StatsPort:    cfg.StatsPort,
+		MSSClamp:     cfg.MSSClamp,
+		JA4Log:       cfg.JA4Log,
+		Users:        cfg.TeleproxyUsers,
 	}
 	if err := s.Exec.WriteFile(cfg.Paths.TeleproxyTOML, tpCfg.Render(), 0o600); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("restore teleproxy.toml: %w", err))

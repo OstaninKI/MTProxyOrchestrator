@@ -11,6 +11,11 @@ type tomlConfig struct {
 	Mode                string  `toml:"mode"`
 	MTProtoPort         int     `toml:"mtproto_port"`
 	MaskHost            string  `toml:"mask_host"`
+	TLSBackend          string  `toml:"tls_backend"`
+	WildcardMask        string  `toml:"wildcard_mask"`
+	MSSClamp            *bool   `toml:"mss_clamp"`
+	RandomPadding       *bool   `toml:"random_padding"`
+	JA4Log              *bool   `toml:"ja4_log"`
 	BridgeStrategy      string  `toml:"bridge_strategy"`
 	LogLevel            string  `toml:"log_level"`
 	TCPKeepaliveSeconds float64 `toml:"tcp_keepalive_seconds"`
@@ -39,6 +44,17 @@ func ReadConfig(path string) (Config, error) {
 	}
 	if tc.MaskHost != "" {
 		cfg.MaskHost = tc.MaskHost
+	}
+	cfg.TLSBackend = tc.TLSBackend
+	cfg.WildcardMask = tc.WildcardMask
+	if tc.MSSClamp != nil {
+		cfg.MSSClamp = *tc.MSSClamp
+	}
+	if tc.RandomPadding != nil {
+		cfg.RandomPadding = *tc.RandomPadding
+	}
+	if tc.JA4Log != nil {
+		cfg.JA4Log = *tc.JA4Log
 	}
 	if tc.BridgeStrategy != "" {
 		cfg.BridgeStrategy = tc.BridgeStrategy

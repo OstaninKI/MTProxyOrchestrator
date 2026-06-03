@@ -8,10 +8,15 @@ import (
 )
 
 type RuntimeSettings struct {
-	MaskHost    string
-	MTProtoPort int
-	PanelPath   string
-	LogLevel    string
+	MaskHost      string
+	TLSBackend    string
+	WildcardMask  string
+	MSSClamp      *bool
+	RandomPadding *bool
+	JA4Log        *bool
+	MTProtoPort   int
+	PanelPath     string
+	LogLevel      string
 }
 
 func ReadRuntimeSettings(dbPath string) (RuntimeSettings, error) {
@@ -26,6 +31,23 @@ func ReadRuntimeSettings(dbPath string) (RuntimeSettings, error) {
 	var maskHost string
 	if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'mask_host'`).Scan(&maskHost); err == nil {
 		rs.MaskHost = maskHost
+	}
+	var tlsBackend string
+	if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'tls_backend'`).Scan(&tlsBackend); err == nil {
+		rs.TLSBackend = tlsBackend
+	}
+	var wildcardMask string
+	if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'wildcard_mask'`).Scan(&wildcardMask); err == nil {
+		rs.WildcardMask = wildcardMask
+	}
+	if v, ok := readBoolSetting(db, "mss_clamp"); ok {
+		rs.MSSClamp = &v
+	}
+	if v, ok := readBoolSetting(db, "random_padding"); ok {
+		rs.RandomPadding = &v
+	}
+	if v, ok := readBoolSetting(db, "ja4_log"); ok {
+		rs.JA4Log = &v
 	}
 
 	var portStr string
@@ -48,9 +70,39 @@ func ReadRuntimeSettings(dbPath string) (RuntimeSettings, error) {
 	return rs, nil
 }
 
+func readBoolSetting(db *sql.DB, key string) (bool, bool) {
+	var raw string
+	if err := db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&raw); err != nil {
+		return false, false
+	}
+	switch raw {
+	case "1", "true", "on", "yes":
+		return true, true
+	case "0", "false", "off", "no":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
 func (rs RuntimeSettings) MergeInto(cfg Config) Config {
 	if rs.MaskHost != "" {
 		cfg.MaskHost = rs.MaskHost
+	}
+	if rs.TLSBackend != "" {
+		cfg.TLSBackend = rs.TLSBackend
+	}
+	if rs.WildcardMask != "" {
+		cfg.WildcardMask = rs.WildcardMask
+	}
+	if rs.MSSClamp != nil {
+		cfg.MSSClamp = *rs.MSSClamp
+	}
+	if rs.RandomPadding != nil {
+		cfg.RandomPadding = *rs.RandomPadding
+	}
+	if rs.JA4Log != nil {
+		cfg.JA4Log = *rs.JA4Log
 	}
 	if rs.MTProtoPort > 0 {
 		cfg.MTProtoPort = rs.MTProtoPort

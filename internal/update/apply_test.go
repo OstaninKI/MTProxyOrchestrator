@@ -10,17 +10,32 @@ import (
 
 // fakeDownloader records calls and optionally fails.
 type fakeDownloader struct {
-	err     error
-	written []byte // content to write to destPath on success
+	err           error
+	written       []byte // content to write to destPath on success
+	downloadCalls int
+	tarGzCalls    []string
 }
 
 func (f *fakeDownloader) Download(url, sha256hex, destPath string) error {
+	f.downloadCalls++
 	if f.err != nil {
 		return f.err
 	}
 	content := f.written
 	if content == nil {
 		content = []byte("new-binary")
+	}
+	return os.WriteFile(destPath, content, 0o755)
+}
+
+func (f *fakeDownloader) DownloadTarGzBinary(url, sha256hex, memberName, destPath string) error {
+	f.tarGzCalls = append(f.tarGzCalls, memberName)
+	if f.err != nil {
+		return f.err
+	}
+	content := f.written
+	if content == nil {
+		content = []byte("new-binary-from-archive")
 	}
 	return os.WriteFile(destPath, content, 0o755)
 }
@@ -131,6 +146,64 @@ func TestApply_CLI_NoServiceRestart(t *testing.T) {
 	if len(svc.restartCalls) != 0 {
 		t.Fatalf("CLI update must not restart any service, got calls: %v", svc.restartCalls)
 	}
+}
+
+func TestApply_SingboxTarGzUsesArchiveExtraction(t *testing.T) {
+	svc := &fakeSVC{}
+	health := &fakeHealth{}
+	dl := &fakeDownloader{}
+	a, dest := setupApplier(t, dl, svc, health, &fakeFileOps{})
+
+	info := UpdateInfo{
+		Component:   ComponentSingbox,
+		DownloadURL: "https://example.test/sing-box-1.13.12-linux-amd64.tar.gz",
+		SHA256:      "abc",
+	}
+	if err := a.Apply(info, dest); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if dl.downloadCalls != 0 {
+		t.Fatalf("sing-box tar.gz update must not use direct binary download, got %d direct calls", dl.downloadCalls)
+	}
+	if len(dl.tarGzCalls) != 1 || dl.tarGzCalls[0] != "sing-box" {
+		t.Fatalf("expected sing-box archive extraction, got calls %v", dl.tarGzCalls)
+	}
+	content, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "new-binary-from-archive" {
+		t.Fatalf("binary not extracted from archive: got %q", content)
+	}
+}
+
+func TestApply_SingboxTarGzRequiresArchiveDownloader(t *testing.T) {
+	svc := &fakeSVC{}
+	health := &fakeHealth{}
+	a, dest := setupApplier(t, directOnlyDownloader{}, svc, health, &fakeFileOps{})
+
+	info := UpdateInfo{
+		Component:   ComponentSingbox,
+		DownloadURL: "https://example.test/sing-box-1.13.12-linux-amd64.tar.gz",
+		SHA256:      "abc",
+	}
+	if err := a.Apply(info, dest); err == nil {
+		t.Fatal("expected error when archive downloader is unavailable")
+	}
+	content, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "old-binary" {
+		t.Fatalf("binary was modified despite missing archive downloader: got %q", content)
+	}
+}
+
+type directOnlyDownloader struct{}
+
+func (directOnlyDownloader) Download(url, sha256hex, destPath string) error {
+	return os.WriteFile(destPath, []byte("should-not-be-used"), 0o755)
 }
 
 func TestApply_SHA256Failure_NoReplacement(t *testing.T) {

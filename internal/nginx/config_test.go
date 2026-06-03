@@ -31,7 +31,7 @@ func TestStubRenderPublicBind(t *testing.T) {
 	}
 }
 
-func TestTLSStubRenderPublicBindWithCertificate(t *testing.T) {
+func TestTLSStubRenderLoopbackBindWithCertificate(t *testing.T) {
 	cfg := nginx.TLSStubConfig{
 		ListenPort: 9443,
 		ServerName: "proxy.example.com",
@@ -41,7 +41,7 @@ func TestTLSStubRenderPublicBindWithCertificate(t *testing.T) {
 	}
 	out := cfg.Render()
 	for _, want := range []string{
-		"listen 0.0.0.0:9443 ssl",
+		"listen 127.0.0.1:9443 ssl",
 		"server_name proxy.example.com",
 		"ssl_certificate     /etc/tgproxy/certs/proxy.example.com/cert.pem",
 		"ssl_certificate_key /etc/tgproxy/certs/proxy.example.com/key.pem",

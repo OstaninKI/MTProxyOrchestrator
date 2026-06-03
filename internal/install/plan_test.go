@@ -211,7 +211,7 @@ func TestSinglePlanWritesTLSStubBackendWhenTLSConfigPresent(t *testing.T) {
 		}
 		body := string(s.Content)
 		for _, want := range []string{
-			"listen 0.0.0.0:9443 ssl",
+			"listen 127.0.0.1:9443 ssl",
 			"server_name proxy.example.com",
 			"ssl_certificate     " + cfg.PanelCertPath,
 			"root /var/www/tgproxy-stub",
@@ -241,7 +241,7 @@ func TestSinglePlanUsesPanelDomainAsTeleproxyFallbackWhenTLSConfigPresent(t *tes
 	var teleproxyUsesLocalFallback, panelUnitUsesClientMask bool
 	for _, s := range plan.Steps {
 		if s.Kind == install.StepWriteFile && s.Target == paths.TeleproxyTOML {
-			teleproxyUsesLocalFallback = strings.Contains(string(s.Content), `domain = "proxy.example.com:9443"`)
+			teleproxyUsesLocalFallback = strings.Contains(string(s.Content), `domain = [{ name = "proxy.example.com", backend = "127.0.0.1:9443" }]`)
 		}
 		if s.Kind == install.StepWriteFile && s.Target == paths.PanelService {
 			panelUnitUsesClientMask = strings.Contains(string(s.Content), "--mask-host proxy.example.com")

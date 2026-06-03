@@ -1,6 +1,7 @@
 package panel_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -32,8 +33,41 @@ func TestTelegramURLContainsServer(t *testing.T) {
 
 func TestTelegramURLSecretFakeTLSPrefix(t *testing.T) {
 	u := baseLink().TelegramURL()
-	if !strings.Contains(u, "ee") {
+	if !strings.Contains(u, "secret=ee") {
 		t.Errorf("URL secret must include FakeTLS ee prefix, got: %s", u)
+	}
+}
+
+func TestTelegramURLSecretRandomPaddingPrefix(t *testing.T) {
+	link := baseLink()
+	link.RandomPadding = true
+	u := link.TelegramURL()
+	// Obfuscated2 transport: secret = "dd" + SecretHex (no domain, no "ee")
+	expected := "secret=dd" + link.SecretHex
+	if !strings.Contains(u, expected) {
+		t.Errorf("URL secret must be dd+SecretHex for Obfuscated2, got: %s", u)
+	}
+	// Secret must not start with "ddee" (that would be the old broken combined prefix)
+	if strings.Contains(u, "secret=ddee") {
+		t.Errorf("Obfuscated2 secret must not start with 'ddee' (invalid combined prefix), got: %s", u)
+	}
+	// Domain must not appear in the secret
+	if strings.Contains(u, "microsoft") {
+		t.Errorf("Obfuscated2 secret must not contain mask host domain, got: %s", u)
+	}
+}
+
+func TestTelegramURLFakeTLSContainsDomain(t *testing.T) {
+	link := baseLink()
+	// RandomPadding=false (default) → Fake-TLS: "ee" + SecretHex + hex(MaskHost)
+	u := link.TelegramURL()
+	if strings.Contains(u, "secret=dd") {
+		t.Errorf("Fake-TLS URL must not start secret with dd, got: %s", u)
+	}
+	// hex("www.microsoft.com") should be embedded in the secret
+	domainHex := fmt.Sprintf("%x", []byte("www.microsoft.com"))
+	if !strings.Contains(u, domainHex) {
+		t.Errorf("Fake-TLS secret must contain hex-encoded domain %s, got: %s", domainHex, u)
 	}
 }
 

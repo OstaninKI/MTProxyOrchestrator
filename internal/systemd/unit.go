@@ -15,20 +15,25 @@ type TeleproxyUnitConfig struct {
 
 // PanelUnitConfig holds fields for tgproxy-panel.service.
 type PanelUnitConfig struct {
-	BinaryPath  string // /usr/local/bin/tgproxy-panel
-	ConfigPath  string // /etc/tgproxy/config.toml
-	DBPath      string // /etc/tgproxy/panel.db
-	PanelPath   string // /p-random/
-	ListenAddr  string // 127.0.0.1:8443
-	MTProtoPort int    // 443
-	MaskHost    string // www.microsoft.com
-	StatsPort   int    // 9091
-	LogPath     string // /var/log/tgproxy/panel.log
-	ConfigDir   string // /etc/tgproxy
-	LogDir      string // /var/log/tgproxy
-	BinDir      string // /usr/local/bin
-	SystemdDir  string // /etc/systemd/system
-	StubDir     string // /var/www/tgproxy-stub
+	BinaryPath    string // /usr/local/bin/tgproxy-panel
+	ConfigPath    string // /etc/tgproxy/config.toml
+	DBPath        string // /etc/tgproxy/panel.db
+	PanelPath     string // /p-random/
+	ListenAddr    string // 127.0.0.1:8443
+	MTProtoPort   int    // 443
+	MaskHost      string // www.microsoft.com
+	TLSBackend    string // 127.0.0.1:9443 or proxy.example.com:443
+	WildcardMask  string // *.example.com
+	MSSClamp      bool   // Teleproxy ClientHello fragmentation
+	RandomPadding bool   // generated links use ddee... secrets
+	JA4Log        bool   // Teleproxy per-connection JA4 logging
+	StatsPort     int    // 9091
+	LogPath       string // /var/log/tgproxy/panel.log
+	ConfigDir     string // /etc/tgproxy
+	LogDir        string // /var/log/tgproxy
+	BinDir        string // /usr/local/bin
+	SystemdDir    string // /etc/systemd/system
+	StubDir       string // /var/www/tgproxy-stub
 	// Optional ACME fields — when non-empty the panel starts the renewal loop.
 	CertDir   string // /etc/tgproxy/certs
 	Domain    string // proxy.example.com
@@ -89,7 +94,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={{.BinaryPath}} serve --db {{.DBPath}} --path {{.PanelPath}} --listen {{.ListenAddr}} --mtproto-port {{.MTProtoPort}} --mask-host {{.MaskHost}} --stats-port {{.StatsPort}}{{if .StubDir}} --stub-dir {{.StubDir}}{{end}}{{if .CertDir}} --cert-dir {{.CertDir}}{{end}}{{if .Domain}} --domain {{.Domain}}{{end}}{{if .ACMEEmail}} --acme-email {{.ACMEEmail}}{{end}}
+ExecStart={{.BinaryPath}} serve --db {{.DBPath}} --path {{.PanelPath}} --listen {{.ListenAddr}} --mtproto-port {{.MTProtoPort}} --mask-host {{.MaskHost}}{{if .TLSBackend}} --tls-backend {{.TLSBackend}}{{end}}{{if .WildcardMask}} --wildcard-mask {{.WildcardMask}}{{end}} --mss-clamp={{.MSSClamp}} --random-padding={{.RandomPadding}} --ja4-log={{.JA4Log}} --stats-port {{.StatsPort}}{{if .StubDir}} --stub-dir {{.StubDir}}{{end}}{{if .CertDir}} --cert-dir {{.CertDir}}{{end}}{{if .Domain}} --domain {{.Domain}}{{end}}{{if .ACMEEmail}} --acme-email {{.ACMEEmail}}{{end}}
 StandardOutput=append:{{.LogPath}}
 StandardError=append:{{.LogPath}}
 Restart=on-failure

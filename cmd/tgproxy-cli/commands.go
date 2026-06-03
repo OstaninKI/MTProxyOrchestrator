@@ -1,10 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
+	"regexp"
 	"text/tabwriter"
 	"time"
 
@@ -445,11 +446,27 @@ func currentRuntimeMode(paths config.InstallPaths) config.Mode {
 }
 
 func installedVersion(binPath string) string {
-	out, err := exec.Command(binPath, "--version").Output()
-	if err != nil {
+	for _, args := range [][]string{{"version"}, {"--version"}, {"-v"}} {
+		cmd := exec.Command(binPath, args...)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+		_ = cmd.Run() // some forms exit non-zero but still print the version
+		if v := extractVersion(buf.String()); v != "unknown" {
+			return v
+		}
+	}
+	return "unknown"
+}
+
+var versionPattern = regexp.MustCompile(`v?([0-9]+(?:\.[0-9]+){2,3}(?:-f[0-9]+)?)`)
+
+func extractVersion(output string) string {
+	match := versionPattern.FindStringSubmatch(output)
+	if len(match) < 2 {
 		return "unknown"
 	}
-	return strings.TrimSpace(string(out))
+	return match[1]
 }
 
 func componentDestPath(paths config.InstallPaths, comp update.Component) string {

@@ -21,6 +21,12 @@ type Downloader interface {
 	Download(url, sha256hex, destPath string) error
 }
 
+// TarGzDownloader extracts a single binary from a verified tar.gz archive.
+// sing-box upstream publishes Linux builds as tar.gz assets, not raw binaries.
+type TarGzDownloader interface {
+	DownloadTarGzBinary(url, sha256hex, memberName, destPath string) error
+}
+
 // ServiceController restarts a named systemd service.
 type ServiceController interface {
 	Restart(serviceName string) error
@@ -105,7 +111,7 @@ func (a *Applier) Apply(info UpdateInfo, destPath string) error {
 	tmpPath := filepath.Join(tmpDir, fmt.Sprintf("tgproxy-update-%s.tmp", info.Component))
 	defer a.FileOps.Remove(tmpPath)
 
-	if err := a.Downloader.Download(info.DownloadURL, info.SHA256, tmpPath); err != nil {
+	if err := a.downloadCandidate(info, tmpPath); err != nil {
 		return fmt.Errorf("update %s: download/verify: %w", info.Component, err)
 	}
 
@@ -163,6 +169,17 @@ func (a *Applier) Apply(info UpdateInfo, destPath string) error {
 		a.FileOps.Remove(backupPath)
 	}
 	return nil
+}
+
+func (a *Applier) downloadCandidate(info UpdateInfo, tmpPath string) error {
+	if info.Component == ComponentSingbox && strings.HasSuffix(strings.ToLower(info.DownloadURL), ".tar.gz") {
+		archiveDownloader, ok := a.Downloader.(TarGzDownloader)
+		if !ok {
+			return fmt.Errorf("tar.gz extraction is required for sing-box update")
+		}
+		return archiveDownloader.DownloadTarGzBinary(info.DownloadURL, info.SHA256, "sing-box", tmpPath)
+	}
+	return a.Downloader.Download(info.DownloadURL, info.SHA256, tmpPath)
 }
 
 // rollback restores the backup binary to destPath, sets 0755, and restarts

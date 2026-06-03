@@ -2,7 +2,11 @@ port = 443
 stats_port = 9091
 http_stats = true
 direct = true
+mss_clamp = true
 domain = "www.microsoft.com"
+
+[stats]
+ja4_log = true
 
 [[secret]]
 key = "aabbccddeeff00112233445566778899"

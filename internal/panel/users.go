@@ -453,7 +453,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	if serverAddr == "" {
 		serverAddr = s.settingsConfig().ServerIP
 	}
-	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.PanelPath, tok)
+	userCreatedPage(w, label, secret.Hex(), serverAddr, s.bridgeMTProtoPort(), s.bridgeMaskHost(), s.bridgeRandomPadding(), s.PanelPath, tok)
 }
 
 // sessionAdminID returns the admin ID from the current session, or 0.

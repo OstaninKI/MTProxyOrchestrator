@@ -263,6 +263,91 @@ func TestProxySettingsSavesToDB(t *testing.T) {
 	}
 }
 
+func TestProxySettingsSavesDPISettingsAndReloadsTeleproxy(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	var rendered string
+	orig := panel.WriteAndReloadHook
+	panel.WriteAndReloadHook = func(path string, data []byte) error {
+		rendered = string(data)
+		return nil
+	}
+	defer func() { panel.WriteAndReloadHook = orig }()
+
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	form := url.Values{
+		"_csrf":          {"tok"},
+		"mask_host":      {"proxy.example.com"},
+		"tls_backend":    {"127.0.0.1:9443"},
+		"wildcard_mask":  {"*.example.com"},
+		"mss_clamp":      {"1"},
+		"random_padding": {"1"},
+		"ja4_log":        {"1"},
+		"mtproto_port":   {"443"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/settings/proxy", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookie)
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "tok"})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body: %s", w.Code, w.Body.String())
+	}
+	for key, want := range map[string]string{
+		"tls_backend":    "127.0.0.1:9443",
+		"wildcard_mask":  "*.example.com",
+		"mss_clamp":      "true",
+		"random_padding": "true",
+		"ja4_log":        "true",
+	} {
+		if got := srv.DB.GetSetting(key, ""); got != want {
+			t.Fatalf("%s in DB = %q, want %q", key, got, want)
+		}
+	}
+	for _, want := range []string{
+		`mss_clamp = true`,
+		`domain = [{ name = "*.example.com", backend = "127.0.0.1:9443" }]`,
+		`[stats]`,
+		`ja4_log = true`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered teleproxy config missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestProxySettingsRejectsWildcardWithoutBackend(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	h := srv.Handler()
+	sessionCookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	form := url.Values{
+		"_csrf":         {"tok"},
+		"mask_host":     {"proxy.example.com"},
+		"wildcard_mask": {"*.example.com"},
+		"mtproto_port":  {"443"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/settings/proxy", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookie)
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "tok"})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 with error page, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "wildcard mask requires") {
+		t.Fatalf("want wildcard/backend error, got: %s", w.Body.String())
+	}
+	if got := srv.DB.GetSetting("wildcard_mask", ""); got != "" {
+		t.Fatalf("invalid wildcard mask must not be saved, got %q", got)
+	}
+}
+
 func TestAdminPasswordChangeRejectsTooShort(t *testing.T) {
 	srv := newTestServer(t, "/p-example/")
 	seedAdmin(t, srv.DB)

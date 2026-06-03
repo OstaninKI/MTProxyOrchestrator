@@ -174,22 +174,27 @@ type bridgeData struct {
 
 func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, binaries LocalBinaries, creds GeneratedCreds, bridgeMode *bridgeData) (Plan, error) {
 	effectiveMaskHost := cfg.MaskHost
-	teleproxyDomain := cfg.MaskHost
+	tlsBackend := cfg.TLSBackend
 	hasTLSStubBackend := cfg.PanelDomain != "" && cfg.PanelCertPath != "" && cfg.PanelKeyPath != ""
 	if hasTLSStubBackend {
 		effectiveMaskHost = cfg.PanelDomain
-		teleproxyDomain = fmt.Sprintf("%s:%d", cfg.PanelDomain, stubTLSBackendPort)
+		tlsBackend = fmt.Sprintf("127.0.0.1:%d", stubTLSBackendPort)
 		cfg.MaskHost = effectiveMaskHost
+		cfg.TLSBackend = tlsBackend
 	}
 	socks5Addr := ""
 	if bridgeMode != nil {
 		socks5Addr = bridgeSOCKS5Addr
 	}
 	tpCfg := teleproxy.Config{
-		Port:       cfg.MTProtoPort,
-		MaskHost:   teleproxyDomain,
-		StatsPort:  9091,
-		SOCKS5Addr: socks5Addr,
+		Port:         cfg.MTProtoPort,
+		MaskHost:     effectiveMaskHost,
+		TLSBackend:   tlsBackend,
+		WildcardMask: cfg.WildcardMask,
+		StatsPort:    9091,
+		SOCKS5Addr:   socks5Addr,
+		MSSClamp:     cfg.MSSClamp,
+		JA4Log:       cfg.JA4Log,
 		Users: []teleproxy.UserEntry{
 			{Label: creds.FirstUser.Label, Secret: creds.FirstUser.Secret.Hex()},
 		},
@@ -240,23 +245,28 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 	}
 
 	panelUnit := systemd.PanelUnitConfig{
-		BinaryPath:  paths.PanelBin,
-		ConfigPath:  paths.ConfigFile,
-		DBPath:      paths.PanelDB,
-		PanelPath:   creds.PanelPath,
-		ListenAddr:  fmt.Sprintf("127.0.0.1:%d", PanelBackendPort),
-		MTProtoPort: cfg.MTProtoPort,
-		MaskHost:    effectiveMaskHost,
-		StatsPort:   9091,
-		LogPath:     paths.PanelLog,
-		ConfigDir:   paths.ConfigDir,
-		LogDir:      paths.LogDir,
-		BinDir:      paths.BinDir,
-		SystemdDir:  paths.SystemdDir,
-		StubDir:     paths.StubDir,
-		CertDir:     paths.CertDir,
-		Domain:      cfg.PanelDomain,
-		ACMEEmail:   cfg.ACMEEmail,
+		BinaryPath:    paths.PanelBin,
+		ConfigPath:    paths.ConfigFile,
+		DBPath:        paths.PanelDB,
+		PanelPath:     creds.PanelPath,
+		ListenAddr:    fmt.Sprintf("127.0.0.1:%d", PanelBackendPort),
+		MTProtoPort:   cfg.MTProtoPort,
+		MaskHost:      effectiveMaskHost,
+		TLSBackend:    tlsBackend,
+		WildcardMask:  cfg.WildcardMask,
+		MSSClamp:      cfg.MSSClamp,
+		RandomPadding: cfg.RandomPadding,
+		JA4Log:        cfg.JA4Log,
+		StatsPort:     9091,
+		LogPath:       paths.PanelLog,
+		ConfigDir:     paths.ConfigDir,
+		LogDir:        paths.LogDir,
+		BinDir:        paths.BinDir,
+		SystemdDir:    paths.SystemdDir,
+		StubDir:       paths.StubDir,
+		CertDir:       paths.CertDir,
+		Domain:        cfg.PanelDomain,
+		ACMEEmail:     cfg.ACMEEmail,
 	}
 
 	steps := []Step{
@@ -432,6 +442,11 @@ func renderRootConfig(cfg config.Config) []byte {
 	return []byte(fmt.Sprintf(`mode = %q
 mtproto_port = %d
 mask_host = %q
+tls_backend = %q
+wildcard_mask = %q
+mss_clamp = %t
+random_padding = %t
+ja4_log = %t
 bridge_strategy = %q
 log_level = %q
 tcp_keepalive_seconds = %.0f
@@ -443,5 +458,5 @@ acme_email = %q
 
 # [telegram_bot]
 # token = ""
-`, cfg.Mode, cfg.MTProtoPort, cfg.MaskHost, cfg.BridgeStrategy, cfg.LogLevel, cfg.TCPKeepalive.Seconds(), cfg.PanelPath, cfg.PanelDomain, cfg.PanelCertPath, cfg.PanelKeyPath, cfg.ACMEEmail))
+`, cfg.Mode, cfg.MTProtoPort, cfg.MaskHost, cfg.TLSBackend, cfg.WildcardMask, cfg.MSSClamp, cfg.RandomPadding, cfg.JA4Log, cfg.BridgeStrategy, cfg.LogLevel, cfg.TCPKeepalive.Seconds(), cfg.PanelPath, cfg.PanelDomain, cfg.PanelCertPath, cfg.PanelKeyPath, cfg.ACMEEmail))
 }
