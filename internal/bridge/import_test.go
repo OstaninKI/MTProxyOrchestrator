@@ -82,6 +82,28 @@ func TestImportVLESSNoFlow(t *testing.T) {
 	}
 }
 
+func TestImportVLESSFingerprintFromURL(t *testing.T) {
+	raw := "vless://uuid@10.0.0.1:443?security=reality&sni=s.example&pbk=pk&sid=abc&fp=firefox"
+	n, err := bridge.ImportVLESS(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n.Fingerprint != "firefox" {
+		t.Errorf("want fingerprint=firefox parsed from fp=, got %q", n.Fingerprint)
+	}
+}
+
+func TestImportVLESSFingerprintDefaultsChrome(t *testing.T) {
+	// validVLESS has no fp= parameter; Reality requires uTLS, so default to chrome.
+	n, err := bridge.ImportVLESS(validVLESS)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n.Fingerprint != "chrome" {
+		t.Errorf("want fingerprint default chrome when fp= absent, got %q", n.Fingerprint)
+	}
+}
+
 var invalidURLs = []struct {
 	name   string
 	raw    string

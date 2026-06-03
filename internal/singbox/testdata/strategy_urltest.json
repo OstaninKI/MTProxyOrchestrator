@@ -19,7 +19,11 @@
           "public_key": "AAAA=",
           "short_id": "aa"
         },
-        "server_name": "a.example.com"
+        "server_name": "a.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
       },
       "type": "vless",
       "uuid": "aaaaaaaa-0000-0000-0000-000000000001"
@@ -35,7 +39,11 @@
           "public_key": "BBBB=",
           "short_id": "bb"
         },
-        "server_name": "b.example.com"
+        "server_name": "b.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
       },
       "type": "vless",
       "uuid": "bbbbbbbb-0000-0000-0000-000000000002"

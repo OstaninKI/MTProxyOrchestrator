@@ -39,6 +39,9 @@ type Outbound struct {
 	TLSServer string // SNI
 	PublicKey string
 	ShortID   string
+	// Fingerprint is the uTLS ClientHello fingerprint for Reality (e.g. "chrome").
+	// Required by the sing-box Reality client; empty renders as "chrome".
+	Fingerprint string
 	// Multi-protocol fields
 	Password          string // Trojan, Hysteria2, TUIC, SS
 	Method            string // Shadowsocks cipher
@@ -250,6 +253,12 @@ func buildOutbound(o Outbound) map[string]any {
 		}
 	default:
 		// OutboundVLESSReality and unknown types fall through to VLESS rendering.
+		// sing-box's Reality client is built on uTLS and requires it to be enabled,
+		// so always emit a utls block; default the fingerprint to "chrome".
+		fingerprint := o.Fingerprint
+		if fingerprint == "" {
+			fingerprint = "chrome"
+		}
 		ob := map[string]any{
 			"type":        "vless",
 			"tag":         o.Tag,
@@ -259,6 +268,10 @@ func buildOutbound(o Outbound) map[string]any {
 			"tls": map[string]any{
 				"enabled":     true,
 				"server_name": o.TLSServer,
+				"utls": map[string]any{
+					"enabled":     true,
+					"fingerprint": fingerprint,
+				},
 				"reality": map[string]any{
 					"enabled":    true,
 					"public_key": o.PublicKey,

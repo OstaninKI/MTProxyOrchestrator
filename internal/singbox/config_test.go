@@ -12,6 +12,65 @@ import (
 
 const updateGolden = false
 
+// TestVLESSRealityRendersUTLS guards the requirement that the sing-box Reality
+// client is built on uTLS: every VLESS Reality outbound must carry a utls block
+// with a fingerprint, otherwise sing-box refuses the connection.
+func TestVLESSRealityRendersUTLS(t *testing.T) {
+	t.Run("default fingerprint chrome", func(t *testing.T) {
+		cfg := baseCfg()
+		cfg.Outbounds = []singbox.Outbound{testNode} // Fingerprint unset
+		out, err := cfg.Render()
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		utls, ok := decodeFirstOutboundTLS(t, out)["utls"].(map[string]any)
+		if !ok {
+			t.Fatalf("VLESS Reality outbound missing utls block: %s", out)
+		}
+		if utls["enabled"] != true {
+			t.Errorf("utls.enabled = %v, want true", utls["enabled"])
+		}
+		if utls["fingerprint"] != "chrome" {
+			t.Errorf("utls.fingerprint = %v, want chrome (default)", utls["fingerprint"])
+		}
+	})
+
+	t.Run("explicit fingerprint preserved", func(t *testing.T) {
+		node := testNode
+		node.Fingerprint = "firefox"
+		cfg := baseCfg()
+		cfg.Outbounds = []singbox.Outbound{node}
+		out, err := cfg.Render()
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		utls, _ := decodeFirstOutboundTLS(t, out)["utls"].(map[string]any)
+		if utls == nil || utls["fingerprint"] != "firefox" {
+			t.Errorf("utls.fingerprint = %v, want firefox", utls["fingerprint"])
+		}
+	})
+}
+
+// decodeFirstOutboundTLS returns the "tls" object of the first outbound in a
+// rendered sing-box config.
+func decodeFirstOutboundTLS(t *testing.T, rendered []byte) map[string]any {
+	t.Helper()
+	var doc struct {
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	if err := json.Unmarshal(rendered, &doc); err != nil {
+		t.Fatalf("unmarshal rendered config: %v", err)
+	}
+	if len(doc.Outbounds) == 0 {
+		t.Fatalf("no outbounds in rendered config")
+	}
+	tls, ok := doc.Outbounds[0]["tls"].(map[string]any)
+	if !ok {
+		t.Fatalf("first outbound has no tls object: %v", doc.Outbounds[0])
+	}
+	return tls
+}
+
 var testNode = singbox.Outbound{
 	Type:      singbox.OutboundVLESSReality,
 	Tag:       "node-1",

@@ -114,6 +114,7 @@ func ApplyDevMode(srv *Server) {
 	srv.DevMode = true
 	srv.Secure = false
 	srv.SingboxActive = func() bool { return false }
+	srv.SingboxInstalled = func() bool { return true }
 	srv.BridgeExec = noopBridgeExecutor{}
 
 	// Package-level hook overrides — replace real OS operations with no-ops.

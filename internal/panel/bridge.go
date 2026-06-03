@@ -117,7 +117,7 @@ func (s *Server) handleBridgeEnable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	audit.Log(s.DB, s.sessionAdminID(r), "bridge.enable", node.Tag, "", clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "bridge", http.StatusSeeOther)
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
 // handleBridgeDisable stops sing-box and returns Teleproxy to Single mode.
@@ -127,10 +127,19 @@ func (s *Server) handleBridgeDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.disableBridgeMode(); err != nil {
+		http.Error(w, "bridge disable failed", http.StatusInternalServerError)
+		return
+	}
+
+	audit.Log(s.DB, s.sessionAdminID(r), "bridge.disable", "", "", clientIP(r)) //nolint:errcheck
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
+}
+
+func (s *Server) disableBridgeMode() error {
 	users, err := UserRepo{DB: s.DB}.List()
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("list users: %w", err)
 	}
 	var entries []teleproxy.UserEntry
 	for _, u := range users {
@@ -156,12 +165,9 @@ func (s *Server) handleBridgeDisable(w http.ResponseWriter, r *http.Request) {
 		StatsPort:      s.bridgeStatsPort(),
 	}
 	if err := svc.Disable(disableCfg); err != nil {
-		http.Error(w, "bridge disable failed", http.StatusInternalServerError)
-		return
+		return err
 	}
-
-	audit.Log(s.DB, s.sessionAdminID(r), "bridge.disable", "", "", clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "bridge", http.StatusSeeOther)
+	return nil
 }
 
 // bridgePaths returns InstallPaths from Server.BridgeCfg if set, else DefaultPaths.
@@ -316,6 +322,32 @@ func (s *Server) singboxIsActive() bool {
 		return s.SingboxActive()
 	}
 	return systemctlRun("is-active", "sing-box.service") == nil
+}
+
+// singboxInstalled reports whether the sing-box binary is present on disk.
+// Uses the injected SingboxInstalled func if set (for tests), otherwise stats
+// the configured binary path.
+func (s *Server) singboxInstalled() bool {
+	if s.SingboxInstalled != nil {
+		return s.SingboxInstalled()
+	}
+	info, err := os.Stat(s.bridgePaths().SingboxBin)
+	return err == nil && !info.IsDir()
+}
+
+// ensureSingboxInstalled downloads and SHA256-verifies the sing-box binary when
+// it is not already present. This lets an operator add a Bridge node even when
+// the system was installed in Single mode (sing-box is only installed on demand).
+// It is a no-op when the binary already exists. Enabling and starting the
+// sing-box service remains the responsibility of the Bridge enable flow.
+func (s *Server) ensureSingboxInstalled() error {
+	if s.singboxInstalled() {
+		return nil
+	}
+	if err := s.bridgeExec().Download(singboxDownloadURL(), singboxDownloadSHA256(), s.bridgePaths().SingboxBin); err != nil {
+		return fmt.Errorf("download sing-box: %w", err)
+	}
+	return nil
 }
 
 // bridgeExec returns the bridge executor to use for OS operations.
@@ -813,6 +845,12 @@ func (s *Server) handleBridgeAddNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Install sing-box on demand if the system was set up in Single mode.
+	if err := s.ensureSingboxInstalled(); err != nil {
+		http.Error(w, "could not install sing-box: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	nodePath := s.nodePath()
 	nl, err := bridge.Load(nodePath)
 	if err != nil {
@@ -837,7 +875,7 @@ func (s *Server) handleBridgeAddNode(w http.ResponseWriter, r *http.Request) {
 
 	// Log tag and type only — never password, uuid, or key material.
 	audit.Log(s.DB, s.sessionAdminID(r), "node.add", node.Tag, string(node.Type), clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "../bridge", http.StatusSeeOther)
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
 // handleBridgeAddNodeManual adds a node by directly supplying individual fields
@@ -860,6 +898,7 @@ func (s *Server) handleBridgeAddNodeManual(w http.ResponseWriter, r *http.Reques
 	flow := r.FormValue("flow")
 	method := r.FormValue("method")
 	congestionControl := r.FormValue("congestion_control")
+	fingerprint := r.FormValue("fingerprint")
 
 	if tag == "" || host == "" || portStr == "" {
 		http.Error(w, "tag, host, and port are required", http.StatusBadRequest)
@@ -879,6 +918,9 @@ func (s *Server) handleBridgeAddNodeManual(w http.ResponseWriter, r *http.Reques
 		if uuid == "" || sni == "" || publicKey == "" {
 			http.Error(w, "VLESS Reality requires uuid, sni, and public_key", http.StatusBadRequest)
 			return
+		}
+		if fingerprint == "" {
+			fingerprint = "chrome"
 		}
 	case "trojan":
 		nodeType = bridge.NodeTypeTrojan
@@ -923,9 +965,16 @@ func (s *Server) handleBridgeAddNodeManual(w http.ResponseWriter, r *http.Reques
 		PublicKey:         publicKey,
 		ShortID:           shortID,
 		Flow:              flow,
+		Fingerprint:       fingerprint,
 		Method:            method,
 		CongestionControl: congestionControl,
 		Enabled:           true,
+	}
+
+	// Install sing-box on demand if the system was set up in Single mode.
+	if err := s.ensureSingboxInstalled(); err != nil {
+		http.Error(w, "could not install sing-box: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	nodePath := s.nodePath()
@@ -950,7 +999,7 @@ func (s *Server) handleBridgeAddNodeManual(w http.ResponseWriter, r *http.Reques
 
 	// Log tag and protocol only — no credential fields.
 	audit.Log(s.DB, s.sessionAdminID(r), "node.add", tag, string(nodeType), clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "../bridge", http.StatusSeeOther)
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
 // handleBridgeEditNodeForm renders the edit form for an existing node.
@@ -1013,6 +1062,7 @@ func (s *Server) handleBridgeEditNode(w http.ResponseWriter, r *http.Request) {
 	flow := r.FormValue("flow")
 	method := r.FormValue("method")
 	congestionControl := r.FormValue("congestion_control")
+	fingerprint := r.FormValue("fingerprint")
 
 	if tag == "" {
 		http.Error(w, "tag is required", http.StatusBadRequest)
@@ -1046,6 +1096,12 @@ func (s *Server) handleBridgeEditNode(w http.ResponseWriter, r *http.Request) {
 			nl.Nodes[i].Flow = flow
 			nl.Nodes[i].Method = method
 			nl.Nodes[i].CongestionControl = congestionControl
+			if nl.Nodes[i].Type == bridge.NodeTypeVLESSReality {
+				if fingerprint == "" {
+					fingerprint = "chrome"
+				}
+				nl.Nodes[i].Fingerprint = fingerprint
+			}
 			found = true
 			break
 		}
@@ -1062,7 +1118,7 @@ func (s *Server) handleBridgeEditNode(w http.ResponseWriter, r *http.Request) {
 
 	// Log only safe metadata — no credential fields.
 	audit.Log(s.DB, s.sessionAdminID(r), "node.edit", tag, "", clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "../../bridge", http.StatusSeeOther)
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
 // handleBridgeToggleNode enables or disables a node and re-renders sing-box if active.
@@ -1107,7 +1163,7 @@ func (s *Server) handleBridgeToggleNode(w http.ResponseWriter, r *http.Request) 
 	}
 
 	audit.Log(s.DB, s.sessionAdminID(r), "node.toggle", tag, "", clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "../../bridge", http.StatusSeeOther)
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
 // handleBridgeDeleteNode removes a node from the list and re-renders sing-box if active.
@@ -1130,40 +1186,48 @@ func (s *Server) handleBridgeDeleteNode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Guard: prevent deleting the last active node while Bridge mode is enabled.
-	if s.singboxIsActive() {
-		remaining := 0
-		for _, n := range nl.Nodes {
-			if n.ID != id && n.Enabled {
-				remaining++
-			}
-		}
-		if remaining == 0 {
-			http.Error(w, "cannot delete the last active node while Bridge mode is enabled", http.StatusConflict)
-			return
-		}
-	}
-
 	previous := cloneNodeList(nl)
 
 	var tag string
+	found := false
 	filtered := nl.Nodes[:0]
 	for _, n := range nl.Nodes {
 		if n.ID == id {
 			tag = n.Tag
+			found = true
 			continue // remove this node
 		}
 		filtered = append(filtered, n)
 	}
+	if !found {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	nl.Nodes = filtered
 
-	if err := saveNodeListWithRerenderRollback(s, previous, nl); err != nil {
-		http.Error(w, "node deleted but sing-box config could not be re-rendered: "+err.Error(), http.StatusInternalServerError)
-		return
+	if s.singboxIsActive() && len(nl.Active()) == 0 {
+		if err := nl.Save(nodePath); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if err := s.disableBridgeMode(); err != nil {
+			if restoreErr := previous.Save(nodePath); restoreErr != nil {
+				http.Error(w, "node deleted but Bridge could not switch to Single mode: "+err.Error()+" (rollback failed: "+restoreErr.Error()+")", http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, "node deleted but Bridge could not switch to Single mode: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		audit.Log(s.DB, s.sessionAdminID(r), "bridge.disable", "last-node-deleted", "", clientIP(r)) //nolint:errcheck
+	} else {
+		if err := saveNodeListWithRerenderRollback(s, previous, nl); err != nil {
+			http.Error(w, "node deleted but sing-box config could not be re-rendered: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	audit.Log(s.DB, s.sessionAdminID(r), "node.delete", tag, "", clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "../../bridge", http.StatusSeeOther)
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
 // handleBridgePingNode runs a latency test for a single node and redirects back
@@ -1222,7 +1286,7 @@ func (s *Server) handleBridgePingNode(w http.ResponseWriter, r *http.Request) {
 
 	// Log only the tag — not the error details which might echo host/port.
 	audit.Log(s.DB, s.sessionAdminID(r), "node.ping", found.Tag, "", clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "../../bridge", http.StatusSeeOther)
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
 // handleBridgeSetStrategy saves the routing strategy and re-renders sing-box config
@@ -1269,7 +1333,7 @@ func (s *Server) handleBridgeSetStrategy(w http.ResponseWriter, r *http.Request)
 	}
 
 	audit.Log(s.DB, s.sessionAdminID(r), "bridge.strategy", strategy, "", clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, "../bridge", http.StatusSeeOther)
+	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
 }
 
 // rerenderSingboxIfActive re-renders and writes sing-box.json when Bridge is active.
@@ -1302,6 +1366,7 @@ func nodeListToOutbounds(nodes []bridge.Node) []singbox.Outbound {
 			TLSServer:         n.SNI,
 			PublicKey:         n.PublicKey,
 			ShortID:           n.ShortID,
+			Fingerprint:       n.Fingerprint,
 			Password:          n.Password,
 			Method:            n.Method,
 			CongestionControl: n.CongestionControl,

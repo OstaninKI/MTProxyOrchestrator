@@ -2,6 +2,7 @@ package panel
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +16,8 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 )
+
+const pe4enk0VLESSURL = "vless://0498a3ad-01c8-4cfe-8317-8793b5e9dfad@v2.pe4enk0.com:443?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=TBuzyFsSS8dSzrL2O7lOyeDvBrcucEpSmipfYY5tMB0&security=reality&sid=992a508f30&sni=www.nvidia.com&spx=%2F8b34eZuZnsTqweM&type=tcp#v2.pe4enk0.com-mtpr"
 
 func newBridgeTestServer(t *testing.T, nodePath string) *Server {
 	t.Helper()
@@ -71,6 +74,117 @@ func withRouteID(req *http.Request, id string) *http.Request {
 	routeCtx := chi.NewRouteContext()
 	routeCtx.URLParams.Add("id", id)
 	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+}
+
+func TestHandleBridgeEnableExactVLESSURLSwitchesSingleToBridge(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	teleproxyPath := filepath.Join(dir, "teleproxy.toml")
+	if err := os.WriteFile(teleproxyPath, []byte("port = 443\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := newBridgeTestServer(t, nodePath)
+	srv.BridgeCfg.Paths.TeleproxyTOML = teleproxyPath
+	srv.BridgeCfg.Paths.SingboxService = filepath.Join(dir, "sing-box.service")
+	srv.BridgeCfg.Paths.SingboxBin = filepath.Join(dir, "sing-box")
+	exec := newBridgeEnableExec()
+	srv.BridgeExec = exec
+	sessionCookie := addAuthSession(t, srv)
+
+	form := url.Values{CSRFField(): {"token"}, "vless_url": {pe4enk0VLESSURL}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/enable", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeEnable(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303, body: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/p-example/bridge" {
+		t.Fatalf("Location = %q, want /p-example/bridge", got)
+	}
+
+	nl := readNodeList(t, nodePath)
+	if len(nl.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1: %+v", len(nl.Nodes), nl.Nodes)
+	}
+	n := nl.Nodes[0]
+	if n.Tag != "v2.pe4enk0.com-mtpr" || n.Host != "v2.pe4enk0.com" || n.Port != 443 {
+		t.Fatalf("parsed node metadata wrong: %+v", n)
+	}
+	if n.UUID != "0498a3ad-01c8-4cfe-8317-8793b5e9dfad" || n.Flow != "xtls-rprx-vision" || n.Fingerprint != "chrome" {
+		t.Fatalf("parsed VLESS fields wrong: %+v", n)
+	}
+	if n.SNI != "www.nvidia.com" || n.PublicKey != "TBuzyFsSS8dSzrL2O7lOyeDvBrcucEpSmipfYY5tMB0" || n.ShortID != "992a508f30" {
+		t.Fatalf("parsed Reality fields wrong: %+v", n)
+	}
+
+	tp := string(exec.writes[teleproxyPath])
+	if !strings.Contains(tp, `socks5 = "127.0.0.1:1080"`) {
+		t.Fatalf("Teleproxy was not switched to Bridge SOCKS5 mode:\n%s", tp)
+	}
+
+	var rendered struct {
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	if err := json.Unmarshal(exec.writes[srv.BridgeCfg.Paths.SingboxJSON], &rendered); err != nil {
+		t.Fatalf("decode sing-box config: %v", err)
+	}
+	if len(rendered.Outbounds) == 0 {
+		t.Fatal("sing-box config has no outbounds")
+	}
+	out := rendered.Outbounds[0]
+	if out["type"] != "vless" || out["server"] != "v2.pe4enk0.com" || out["uuid"] != "0498a3ad-01c8-4cfe-8317-8793b5e9dfad" {
+		t.Fatalf("sing-box VLESS outbound wrong: %+v", out)
+	}
+	tlsBlock, ok := out["tls"].(map[string]any)
+	if !ok {
+		t.Fatalf("sing-box VLESS outbound missing tls: %+v", out)
+	}
+	utlsBlock, ok := tlsBlock["utls"].(map[string]any)
+	if !ok || utlsBlock["fingerprint"] != "chrome" {
+		t.Fatalf("sing-box VLESS outbound missing utls chrome fingerprint: %+v", tlsBlock)
+	}
+	if !exec.services["sing-box.service"] || !exec.services["teleproxy.service"] {
+		t.Fatalf("Bridge services were not active after enable: %+v", exec.services)
+	}
+}
+
+type bridgeEnableExec struct {
+	writes   map[string][]byte
+	services map[string]bool
+}
+
+func newBridgeEnableExec() *bridgeEnableExec {
+	return &bridgeEnableExec{
+		writes:   make(map[string][]byte),
+		services: make(map[string]bool),
+	}
+}
+
+func (e *bridgeEnableExec) WriteFile(path string, data []byte, _ os.FileMode) error {
+	e.writes[path] = append([]byte(nil), data...)
+	return nil
+}
+func (e *bridgeEnableExec) Download(_, _, _ string) error { return nil }
+func (e *bridgeEnableExec) EnableService(_ string) error  { return nil }
+func (e *bridgeEnableExec) StartService(name string) error {
+	e.services[name] = true
+	return nil
+}
+func (e *bridgeEnableExec) StopService(name string) error {
+	e.services[name] = false
+	return nil
+}
+func (e *bridgeEnableExec) DisableService(_ string) error { return nil }
+func (e *bridgeEnableExec) ReloadService(name string) error {
+	e.services[name] = true
+	return nil
+}
+func (e *bridgeEnableExec) ServiceActive(name string) (bool, error) {
+	return e.services[name], nil
 }
 
 func TestHandleBridgeEditNodeRollsBackNodeFileOnRerenderFailure(t *testing.T) {
@@ -217,14 +331,21 @@ type assertErr string
 
 func (e assertErr) Error() string { return string(e) }
 
-func TestDeleteLastActiveBridgeNodeIsRejected(t *testing.T) {
+func TestDeleteLastActiveBridgeNodeDisablesBridgeMode(t *testing.T) {
 	dir := t.TempDir()
 	nodePath := filepath.Join(dir, "outbounds.json")
+	teleproxyPath := filepath.Join(dir, "teleproxy.toml")
 	writeNodeList(t, nodePath, bridge.NodeList{
 		Nodes: []bridge.Node{{ID: 1, Tag: "only-node", Host: "host", Port: 443, Enabled: true}},
 	})
+	if err := os.WriteFile(teleproxyPath, []byte("socks5 = \"127.0.0.1:1080\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	srv := newBridgeTestServer(t, nodePath)
-	srv.SingboxActive = func() bool { return true } // Stub sing-box as active
+	srv.BridgeCfg.Paths.TeleproxyTOML = teleproxyPath
+	srv.SingboxActive = func() bool { return true }
+	exec := &bridgeDeleteLastExec{}
+	srv.BridgeExec = exec
 	sessionCookie := addAuthSession(t, srv)
 
 	form := url.Values{CSRFField(): {"token"}}
@@ -236,15 +357,59 @@ func TestDeleteLastActiveBridgeNodeIsRejected(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	srv.handleBridgeDeleteNode(rec, req)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409", rec.Code)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303, body: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/p-example/bridge" {
+		t.Fatalf("Location = %q, want /p-example/bridge", got)
 	}
 
-	// Verify the node was NOT deleted.
 	got := readNodeList(t, nodePath)
-	if len(got.Nodes) != 1 || got.Nodes[0].ID != 1 {
-		t.Fatalf("node was deleted despite being the last active: %+v", got.Nodes)
+	if len(got.Nodes) != 0 {
+		t.Fatalf("last node was not deleted: %+v", got.Nodes)
 	}
+	if !exec.stoppedSingbox || !exec.disabledSingbox || !exec.reloadedTeleproxy {
+		t.Fatalf("bridge was not disabled, exec state: %+v", exec)
+	}
+	if strings.Contains(string(exec.teleproxyWrite), "socks5") || strings.Contains(string(exec.teleproxyWrite), "127.0.0.1:1080") {
+		t.Fatalf("teleproxy config still routes through sing-box after deleting last node:\n%s", exec.teleproxyWrite)
+	}
+}
+
+type bridgeDeleteLastExec struct {
+	teleproxyWrite    []byte
+	stoppedSingbox    bool
+	disabledSingbox   bool
+	reloadedTeleproxy bool
+}
+
+func (e *bridgeDeleteLastExec) WriteFile(_ string, data []byte, _ os.FileMode) error {
+	e.teleproxyWrite = append([]byte(nil), data...)
+	return nil
+}
+func (e *bridgeDeleteLastExec) Download(_, _, _ string) error { return nil }
+func (e *bridgeDeleteLastExec) EnableService(_ string) error  { return nil }
+func (e *bridgeDeleteLastExec) StartService(_ string) error   { return nil }
+func (e *bridgeDeleteLastExec) StopService(name string) error {
+	if name == "sing-box.service" {
+		e.stoppedSingbox = true
+	}
+	return nil
+}
+func (e *bridgeDeleteLastExec) DisableService(name string) error {
+	if name == "sing-box.service" {
+		e.disabledSingbox = true
+	}
+	return nil
+}
+func (e *bridgeDeleteLastExec) ReloadService(name string) error {
+	if name == "teleproxy.service" {
+		e.reloadedTeleproxy = true
+	}
+	return nil
+}
+func (e *bridgeDeleteLastExec) ServiceActive(name string) (bool, error) {
+	return name == "teleproxy.service", nil
 }
 
 func TestDeleteLastActiveBridgeNodeAllowedWhenSingboxInactive(t *testing.T) {

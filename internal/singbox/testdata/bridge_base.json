@@ -20,7 +20,11 @@
           "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           "short_id": "aabbccdd"
         },
-        "server_name": "www.example.com"
+        "server_name": "www.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
       },
       "type": "vless",
       "uuid": "12345678-1234-1234-1234-123456789012"

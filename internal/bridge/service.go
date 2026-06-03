@@ -296,6 +296,7 @@ func nodeToOutbound(n Node) singbox.Outbound {
 		Flow:              n.Flow,
 		PublicKey:         n.PublicKey,
 		ShortID:           n.ShortID,
+		Fingerprint:       n.Fingerprint,
 		Password:          n.Password,
 		Method:            n.Method,
 		CongestionControl: n.CongestionControl,

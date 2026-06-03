@@ -32,6 +32,9 @@ type Node struct {
 	SNI       string   `json:"sni,omitempty"`
 	PublicKey string   `json:"public_key,omitempty"`
 	ShortID   string   `json:"short_id,omitempty"`
+	// Fingerprint is the uTLS ClientHello fingerprint for VLESS Reality (e.g. "chrome").
+	// Reality clients in sing-box are built on uTLS and require it; empty renders as "chrome".
+	Fingerprint string `json:"fingerprint,omitempty"`
 	// Multi-protocol fields
 	Password          string     `json:"password,omitempty"`           // Trojan, SS, Hysteria2, TUIC
 	Method            string     `json:"method,omitempty"`             // Shadowsocks cipher method

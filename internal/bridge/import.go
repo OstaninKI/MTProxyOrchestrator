@@ -68,6 +68,13 @@ func ImportVLESS(rawURL string) (Node, error) {
 
 	flow := q.Get("flow")
 
+	// uTLS fingerprint (fp=) is required by the sing-box Reality client.
+	// Default to "chrome" when the share URL omits it.
+	fp := q.Get("fp")
+	if fp == "" {
+		fp = "chrome"
+	}
+
 	tag := u.Fragment
 	if tag == "" {
 		tag = fmt.Sprintf("%s:%d", host, port)
@@ -77,16 +84,17 @@ func ImportVLESS(rawURL string) (Node, error) {
 	}
 
 	n := Node{
-		Type:      NodeTypeVLESSReality,
-		Tag:       tag,
-		Host:      host,
-		Port:      port,
-		UUID:      uuid,
-		Flow:      flow,
-		SNI:       sni,
-		PublicKey: pbk,
-		ShortID:   sid,
-		Enabled:   true,
+		Type:        NodeTypeVLESSReality,
+		Tag:         tag,
+		Host:        host,
+		Port:        port,
+		UUID:        uuid,
+		Flow:        flow,
+		SNI:         sni,
+		PublicKey:   pbk,
+		ShortID:     sid,
+		Fingerprint: fp,
+		Enabled:     true,
 	}
 
 	if err := n.Validate(); err != nil {

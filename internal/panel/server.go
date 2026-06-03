@@ -21,6 +21,9 @@ type Server struct {
 	BridgeCfg     *BridgeConfig   // nil → use DefaultPaths and default ports
 	SettingsCfg   *SettingsConfig // nil → empty stub/cert config
 	SingboxActive func() bool     // lets tests stub the sing-box running check; nil = use real systemd
+	// SingboxInstalled lets tests stub the sing-box binary presence check.
+	// nil = real os.Stat on bridgePaths().SingboxBin.
+	SingboxInstalled func() bool
 	// BridgeExec is the executor for bridge OS operations.
 	// nil means use realBridgeExecutor{} (production default).
 	BridgeExec bridge.Executor
