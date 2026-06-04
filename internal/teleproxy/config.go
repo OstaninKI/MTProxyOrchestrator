@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"text/template"
 )
 
@@ -54,6 +55,20 @@ func (c Config) DomainName() string {
 	return c.MaskHost
 }
 
+// SOCKS5URL returns the SOCKS5 upstream value for the teleproxy `socks5`
+// directive. Teleproxy requires a scheme; callers may pass a bare host:port,
+// so the socks5:// scheme is added when absent. An already-schemed value
+// (socks5:// or socks5h://) is returned unchanged. Empty input yields "".
+func (c Config) SOCKS5URL() string {
+	if c.SOCKS5Addr == "" {
+		return ""
+	}
+	if strings.HasPrefix(c.SOCKS5Addr, "socks5://") || strings.HasPrefix(c.SOCKS5Addr, "socks5h://") {
+		return c.SOCKS5Addr
+	}
+	return "socks5://" + c.SOCKS5Addr
+}
+
 // Render produces a deterministic teleproxy.toml byte slice.
 // Precondition: all UserEntry.Label values must have passed secrets.ValidateUserLabel,
 // and MaskHost/SOCKS5Addr must not contain quotes or newlines. Render trusts its caller.
@@ -79,7 +94,7 @@ domain = [{ name = "{{.DomainName}}", backend = "{{.TLSBackend}}" }]
 domain = "{{.DomainName}}"
 {{- end}}
 {{- if .SOCKS5Addr}}
-socks5 = "{{.SOCKS5Addr}}"
+socks5 = "{{.SOCKS5URL}}"
 {{- end}}
 {{- if .JA4Log}}
 

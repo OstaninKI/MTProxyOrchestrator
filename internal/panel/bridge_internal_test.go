@@ -122,7 +122,7 @@ func TestHandleBridgeEnableExactVLESSURLSwitchesSingleToBridge(t *testing.T) {
 	}
 
 	tp := string(exec.writes[teleproxyPath])
-	if !strings.Contains(tp, `socks5 = "127.0.0.1:1080"`) {
+	if !strings.Contains(tp, `socks5 = "socks5://127.0.0.1:1080"`) {
 		t.Fatalf("Teleproxy was not switched to Bridge SOCKS5 mode:\n%s", tp)
 	}
 
@@ -217,7 +217,7 @@ func TestHandleBridgeAddNodeExactVLESSURLSwitchesSingleToBridge(t *testing.T) {
 	}
 
 	tp := string(exec.writes[teleproxyPath])
-	if !strings.Contains(tp, `socks5 = "127.0.0.1:1080"`) {
+	if !strings.Contains(tp, `socks5 = "socks5://127.0.0.1:1080"`) {
 		t.Fatalf("add-node did not switch Teleproxy to Bridge SOCKS5 mode:\n%s", tp)
 	}
 	if !exec.services["sing-box.service"] || !exec.services["teleproxy.service"] {

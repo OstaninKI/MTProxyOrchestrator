@@ -288,7 +288,7 @@ func TestReconcileBridgeTomlContainsSOCKS5(t *testing.T) {
 	callReconcileExpectNginxError(t, opts)
 
 	content := readFile(t, paths.TeleproxyTOML)
-	if !strings.Contains(content, `socks5 = "127.0.0.1:1080"`) {
+	if !strings.Contains(content, `socks5 = "socks5://127.0.0.1:1080"`) {
 		t.Errorf("teleproxy.toml missing socks5 address in bridge mode, got:\n%s", content)
 	}
 }

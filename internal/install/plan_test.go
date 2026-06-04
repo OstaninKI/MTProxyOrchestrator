@@ -110,7 +110,7 @@ func TestBridgePlanAddsSingboxAndRoutesTeleproxyThroughSOCKS5(t *testing.T) {
 		case s.Kind == install.StepStartService && s.Target == "sing-box":
 			gotSingboxStart = true
 		case s.Kind == install.StepWriteFile && s.Target == paths.TeleproxyTOML:
-			gotTeleproxySOCKS = strings.Contains(string(s.Content), `socks5 = "127.0.0.1:1080"`)
+			gotTeleproxySOCKS = strings.Contains(string(s.Content), `socks5 = "socks5://127.0.0.1:1080"`)
 		}
 	}
 	for name, ok := range map[string]bool{

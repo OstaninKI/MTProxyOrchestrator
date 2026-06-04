@@ -114,6 +114,57 @@ func TestRenderCanDisableJA4Log(t *testing.T) {
 	}
 }
 
+func TestSOCKS5URLNormalization(t *testing.T) {
+	tests := []struct {
+		name          string
+		socks5Addr    string
+		wantRendered  string
+		notWantString string
+	}{
+		{
+			name:         "bare host:port gets socks5:// prefix",
+			socks5Addr:   "127.0.0.1:1080",
+			wantRendered: `socks5 = "socks5://127.0.0.1:1080"`,
+		},
+		{
+			name:         "already-schemed socks5:// not double-prefixed",
+			socks5Addr:   "socks5://127.0.0.1:2080",
+			wantRendered: `socks5 = "socks5://127.0.0.1:2080"`,
+			// Make sure we don't have double prefix
+			notWantString: "socks5://socks5://",
+		},
+		{
+			name:         "socks5h:// scheme unchanged",
+			socks5Addr:   "socks5h://user:pass@proxy.example.com:9050",
+			wantRendered: `socks5 = "socks5h://user:pass@proxy.example.com:9050"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := singleCfg()
+			cfg.SOCKS5Addr = tt.socks5Addr
+			got := cfg.Render()
+
+			if !bytes.Contains(got, []byte(tt.wantRendered)) {
+				t.Errorf("output missing expected %q:\n%s", tt.wantRendered, got)
+			}
+			if tt.notWantString != "" && bytes.Contains(got, []byte(tt.notWantString)) {
+				t.Errorf("output should not contain %q but it does:\n%s", tt.notWantString, got)
+			}
+		})
+	}
+}
+
+func TestSOCKS5EmptyAddr(t *testing.T) {
+	cfg := singleCfg()
+	cfg.SOCKS5Addr = ""
+	got := cfg.Render()
+	if bytes.Contains(got, []byte("socks5")) {
+		t.Error("output with empty SOCKS5Addr must not contain socks5 directive")
+	}
+}
+
 func checkGolden(t *testing.T, name string, got []byte) {
 	t.Helper()
 	path := filepath.Join("testdata", name)

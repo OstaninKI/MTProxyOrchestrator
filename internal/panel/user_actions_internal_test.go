@@ -221,7 +221,7 @@ func TestReloadTeleproxyBridgeModePreservesSocks5(t *testing.T) {
 	}
 
 	got := string(applied)
-	const wantSOCKS5 = `socks5 = "127.0.0.1:1080"`
+	const wantSOCKS5 = `socks5 = "socks5://127.0.0.1:1080"`
 	if !strings.Contains(got, wantSOCKS5) {
 		t.Fatalf("Bridge mode: applied config missing SOCKS5 upstream.\ngot:\n%s", got)
 	}
@@ -277,7 +277,7 @@ func TestUserCreateBridgeModePreservesSocks5(t *testing.T) {
 		t.Fatalf("create user status = %d, want 200", rec.Code)
 	}
 	got := string(applied)
-	const wantSOCKS5 = `socks5 = "127.0.0.1:1080"`
+	const wantSOCKS5 = `socks5 = "socks5://127.0.0.1:1080"`
 	if !strings.Contains(got, wantSOCKS5) {
 		t.Fatalf("Bridge mode: create user did not preserve SOCKS5 upstream.\ngot:\n%s", got)
 	}
@@ -347,7 +347,7 @@ func TestUserToggleBridgeModePreservesSocks5(t *testing.T) {
 		t.Fatalf("toggle status = %d, want 303", rec.Code)
 	}
 	got := string(applied)
-	const wantSOCKS5 = `socks5 = "127.0.0.1:1080"`
+	const wantSOCKS5 = `socks5 = "socks5://127.0.0.1:1080"`
 	if !strings.Contains(got, wantSOCKS5) {
 		t.Fatalf("Bridge mode: toggle did not preserve SOCKS5 upstream.\ngot:\n%s", got)
 	}
@@ -429,7 +429,7 @@ func TestUserDeleteBridgeModePreservesSocks5(t *testing.T) {
 		t.Fatalf("delete status = %d, want 303", rec.Code)
 	}
 	got := string(applied)
-	const wantSOCKS5 = `socks5 = "127.0.0.1:1080"`
+	const wantSOCKS5 = `socks5 = "socks5://127.0.0.1:1080"`
 	if !strings.Contains(got, wantSOCKS5) {
 		t.Fatalf("Bridge mode: delete did not preserve SOCKS5 upstream.\ngot:\n%s", got)
 	}
@@ -511,7 +511,7 @@ func TestUserRotateBridgeModePreservesSocks5(t *testing.T) {
 		t.Fatalf("rotate status = %d, want 200", rec.Code)
 	}
 	got := string(applied)
-	const wantSOCKS5 = `socks5 = "127.0.0.1:1080"`
+	const wantSOCKS5 = `socks5 = "socks5://127.0.0.1:1080"`
 	if !strings.Contains(got, wantSOCKS5) {
 		t.Fatalf("Bridge mode: rotate did not preserve SOCKS5 upstream.\ngot:\n%s", got)
 	}
