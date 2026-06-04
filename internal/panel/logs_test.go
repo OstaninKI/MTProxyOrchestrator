@@ -13,8 +13,8 @@ func TestLogsPageUsesLocalShellAssets(t *testing.T) {
 	html := buf.String()
 
 	for _, want := range []string{
-		`href="/p-example/assets/panel.css"`,
-		`src="/p-example/assets/panel.js"`,
+		`href="/p-example/assets/panel.css`,
+		`src="/p-example/assets/panel.js`,
 		`class="app"`,
 		`class="topbar"`,
 		`class="page-head"`,

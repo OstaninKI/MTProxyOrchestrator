@@ -19,8 +19,10 @@ var logsTmpl = template.Must(template.New("logs").Funcs(baseLayoutFuncs).Parse(`
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Logs</title>
-<link rel="stylesheet" href="{{.BasePath}}/assets/panel.css">
-<script defer src="{{.BasePath}}/assets/panel.js"></script>
+<link rel="preload" href="{{.BasePath}}/assets/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{{.BasePath}}/assets/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{.BasePath}}/assets/panel.css{{assetv "panel.css"}}">
+<script defer src="{{.BasePath}}/assets/panel.js{{assetv "panel.js"}}"></script>
 </head>
 <body>
 <div class="app" data-logs-page data-panel-path="{{.BasePath}}">

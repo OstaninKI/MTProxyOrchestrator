@@ -44,11 +44,13 @@ const baseLayout = `{{define "page_title"}}MTProto Orchestrator{{end}}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{template "page_title" .}}</title>
-<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css">
+<link rel="preload" href="{{.PanelPath}}assets/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{{.PanelPath}}assets/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css{{assetv "panel.css"}}">
 <meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
 <script defer src="{{.PanelPath}}assets/vendor/htmx-2.0.10.min.js"></script>
 <script defer src="{{.PanelPath}}assets/vendor/htmx-ext-sse-2.2.4.js"></script>
-<script defer src="{{.PanelPath}}assets/panel.js"></script>
+<script defer src="{{.PanelPath}}assets/panel.js{{assetv "panel.js"}}"></script>
 {{block "head" .}}{{end}}
 </head>
 <body>
@@ -67,6 +69,7 @@ var baseLayoutFuncs = template.FuncMap{
 	"csrfToken":    layoutCSRFToken,
 	"navIsCurrent": layoutNavIsCurrent,
 	"icon":         layoutIcon,
+	"assetv":       assetVersion,
 }
 
 func layoutTemplate(name, content string, funcMap template.FuncMap) *template.Template {

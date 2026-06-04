@@ -18,6 +18,7 @@ var dashboardFragmentFuncs = template.FuncMap{
 	"csrfToken":    layoutCSRFToken,
 	"navIsCurrent": layoutNavIsCurrent,
 	"icon":         layoutIcon,
+	"assetv":       assetVersion,
 	"formatBytes": func(n int64) string {
 		if n < 0 {
 			return "0 B"

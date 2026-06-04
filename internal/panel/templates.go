@@ -5,13 +5,15 @@ import (
 	"io"
 )
 
-var loginTmpl = template.Must(template.New("login").Parse(`<!DOCTYPE html>
+var loginTmpl = template.Must(template.New("login").Funcs(template.FuncMap{"assetv": assetVersion}).Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Login</title>
-<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css">
+<link rel="preload" href="{{.PanelPath}}assets/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{{.PanelPath}}assets/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css{{assetv "panel.css"}}">
 </head>
 <body class="login-page">
 <div class="app login-app">
@@ -40,11 +42,13 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Dashboard</title>
-<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css">
+<link rel="preload" href="{{.PanelPath}}assets/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{{.PanelPath}}assets/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css{{assetv "panel.css"}}">
 <meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
 <script defer src="{{.PanelPath}}assets/vendor/htmx-2.0.10.min.js"></script>
 <script defer src="{{.PanelPath}}assets/vendor/htmx-ext-sse-2.2.4.js"></script>
-<script defer src="{{.PanelPath}}assets/panel.js"></script>
+<script defer src="{{.PanelPath}}assets/panel.js{{assetv "panel.js"}}"></script>
 </head>
 <body>
 <div class="app">

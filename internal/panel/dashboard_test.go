@@ -45,11 +45,11 @@ func TestDashboardUsesLocalAssets(t *testing.T) {
 	html := buf.String()
 
 	for _, want := range []string{
-		`href="/p-example/assets/panel.css"`,
+		`href="/p-example/assets/panel.css`,
 		`<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>`,
 		`src="/p-example/assets/vendor/htmx-2.0.10.min.js"`,
 		`src="/p-example/assets/vendor/htmx-ext-sse-2.2.4.js"`,
-		`src="/p-example/assets/panel.js"`,
+		`src="/p-example/assets/panel.js`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard HTML missing %q:\n%s", want, html)
@@ -168,10 +168,10 @@ func TestDashboardRouteNormalizesPanelPathWithoutTrailingSlash(t *testing.T) {
 	}
 	html := rec.Body.String()
 	for _, want := range []string{
-		`href="/p-example/assets/panel.css"`,
+		`href="/p-example/assets/panel.css`,
 		`src="/p-example/assets/vendor/htmx-2.0.10.min.js"`,
 		`src="/p-example/assets/vendor/htmx-ext-sse-2.2.4.js"`,
-		`src="/p-example/assets/panel.js"`,
+		`src="/p-example/assets/panel.js`,
 		`sse-connect="/p-example/dashboard/events?period=24h"`,
 		`hx-get="/p-example/dashboard/fragments/health?period=24h"`,
 		`action="/p-example/logout"`,

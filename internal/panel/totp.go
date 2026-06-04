@@ -599,13 +599,15 @@ type totpRecoveryData struct {
 	PanelPath     string
 }
 
-var totpVerifyTmpl = template.Must(template.New("totp_verify").Parse(`<!DOCTYPE html>
+var totpVerifyTmpl = template.Must(template.New("totp_verify").Funcs(template.FuncMap{"assetv": assetVersion}).Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Two-factor verification</title>
-<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css">
+<link rel="preload" href="{{.PanelPath}}assets/fonts/geist/Geist-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{{.PanelPath}}assets/fonts/geist/Geist-Medium.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{.PanelPath}}assets/panel.css{{assetv "panel.css"}}">
 </head>
 <body class="login-page">
 <div class="app login-app">

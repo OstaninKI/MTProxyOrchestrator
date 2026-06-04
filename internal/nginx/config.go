@@ -144,6 +144,13 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';" always;
 
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 256;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+
     location / {
         proxy_pass http://{{.BackendAddr}};
         proxy_http_version 1.1;

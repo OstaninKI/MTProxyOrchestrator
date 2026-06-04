@@ -113,7 +113,7 @@ func TestLoginPageUsesLocalCSSWithoutInlineStyle(t *testing.T) {
 	}
 
 	html := w.Body.String()
-	if !strings.Contains(html, `href="/p-example/assets/panel.css"`) {
+	if !strings.Contains(html, `href="/p-example/assets/panel.css`) {
 		t.Fatalf("login page should load local CSS asset, got:\n%s", html)
 	}
 	for _, want := range []string{
@@ -156,7 +156,7 @@ func TestPanelPathWithoutTrailingSlashServesLoginAssets(t *testing.T) {
 		t.Fatalf("GET /p-example/login: want 200, got %d", w.Code)
 	}
 	html := w.Body.String()
-	if !strings.Contains(html, `href="/p-example/assets/panel.css"`) {
+	if !strings.Contains(html, `href="/p-example/assets/panel.css`) {
 		t.Fatalf("login page missing normalized CSS path:\n%s", html)
 	}
 	if strings.Contains(html, "/p-exampleassets/") {
@@ -181,8 +181,8 @@ func TestLogsPageUsesPanelAssetScriptAndLegacyCSP(t *testing.T) {
 
 	html := w.Body.String()
 	for _, want := range []string{
-		`href="/p-example/assets/panel.css"`,
-		`src="/p-example/assets/panel.js"`,
+		`href="/p-example/assets/panel.css`,
+		`src="/p-example/assets/panel.js`,
 		`data-logs-page`,
 		`data-panel-path="/p-example"`,
 		`data-logs-role="download"`,

@@ -122,7 +122,7 @@ func TestTOTPVerifyPageUsesSharedLoginShellWithoutInlineStyle(t *testing.T) {
 
 	body := w.Body.String()
 	for _, want := range []string{
-		`href="/p-example/assets/panel.css"`,
+		`href="/p-example/assets/panel.css`,
 		`class="login-page"`,
 		`class="app login-app"`,
 		`class="login-shell"`,
