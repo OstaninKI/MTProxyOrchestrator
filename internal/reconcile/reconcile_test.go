@@ -154,8 +154,8 @@ func TestReconcileRendersTeleproxyUnit(t *testing.T) {
 	if !strings.Contains(content, "--config "+paths.TeleproxyTOML) {
 		t.Errorf("teleproxy unit missing --config flag with path %q", paths.TeleproxyTOML)
 	}
-	if !strings.Contains(content, "StandardOutput=append:"+paths.TeleproxyLog) {
-		t.Errorf("teleproxy unit missing StandardOutput with log path %q", paths.TeleproxyLog)
+	if !strings.Contains(content, "StandardOutput=journal") {
+		t.Errorf("teleproxy unit missing StandardOutput=journal")
 	}
 }
 
@@ -244,8 +244,8 @@ func TestReconcileWritesSingboxInBridgeMode(t *testing.T) {
 	if !strings.Contains(content, "--config "+paths.SingboxJSON) {
 		t.Errorf("sing-box unit missing --config flag with path %q", paths.SingboxJSON)
 	}
-	if !strings.Contains(content, "StandardOutput=append:"+paths.SingboxLog) {
-		t.Errorf("sing-box unit missing StandardOutput with log path %q", paths.SingboxLog)
+	if !strings.Contains(content, "StandardOutput=journal") {
+		t.Errorf("sing-box unit missing StandardOutput=journal")
 	}
 }
 

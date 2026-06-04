@@ -63,8 +63,8 @@ After=network.target
 [Service]
 Type=simple
 ExecStart={{.BinaryPath}} --config {{.ConfigPath}}
-StandardOutput=append:{{.LogPath}}
-StandardError=append:{{.LogPath}}
+StandardOutput=journal
+StandardError=journal
 Restart=on-failure
 RestartSec=5
 
@@ -95,8 +95,8 @@ After=network.target
 [Service]
 Type=simple
 ExecStart={{.BinaryPath}} serve --db {{.DBPath}} --path {{.PanelPath}} --listen {{.ListenAddr}} --mtproto-port {{.MTProtoPort}} --mask-host {{.MaskHost}}{{if .TLSBackend}} --tls-backend {{.TLSBackend}}{{end}}{{if .WildcardMask}} --wildcard-mask {{.WildcardMask}}{{end}} --mss-clamp={{.MSSClamp}} --random-padding={{.RandomPadding}} --ja4-log={{.JA4Log}} --stats-port {{.StatsPort}}{{if .StubDir}} --stub-dir {{.StubDir}}{{end}}{{if .CertDir}} --cert-dir {{.CertDir}}{{end}}{{if .Domain}} --domain {{.Domain}}{{end}}{{if .ACMEEmail}} --acme-email {{.ACMEEmail}}{{end}}
-StandardOutput=append:{{.LogPath}}
-StandardError=append:{{.LogPath}}
+StandardOutput=journal
+StandardError=journal
 Restart=on-failure
 RestartSec=5
 
@@ -141,8 +141,8 @@ Before=teleproxy.service
 [Service]
 Type=simple
 ExecStart={{.BinaryPath}} run --config {{.ConfigPath}}
-StandardOutput=append:{{.LogPath}}
-StandardError=append:{{.LogPath}}
+StandardOutput=journal
+StandardError=journal
 Restart=on-failure
 RestartSec=5
 

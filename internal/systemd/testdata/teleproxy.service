@@ -5,8 +5,8 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/teleproxy --config /etc/tgproxy/teleproxy.toml
-StandardOutput=append:/var/log/tgproxy/teleproxy.log
-StandardError=append:/var/log/tgproxy/teleproxy.log
+StandardOutput=journal
+StandardError=journal
 Restart=on-failure
 RestartSec=5
 

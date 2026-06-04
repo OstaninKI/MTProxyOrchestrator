@@ -123,7 +123,12 @@ var acmeChallengeTmpl = template.Must(template.New("nginx-acme-challenge").Parse
 }
 `))
 
-var panelProxyTmpl = template.Must(template.New("nginx-panel-proxy").Parse(`server {
+var panelProxyTmpl = template.Must(template.New("nginx-panel-proxy").Parse(`map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
     listen 0.0.0.0:{{.ListenPort}} ssl;
     server_name {{.Domain}};
     server_tokens off;
@@ -141,10 +146,14 @@ var panelProxyTmpl = template.Must(template.New("nginx-panel-proxy").Parse(`serv
 
     location / {
         proxy_pass http://{{.BackendAddr}};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 3600s;
     }
 }
 `))
