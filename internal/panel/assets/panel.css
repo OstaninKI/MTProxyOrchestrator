@@ -1091,7 +1091,7 @@ th {
   background: rgba(255,255,255,.03);
 }
 tr:last-child td { border-bottom: 0; }
-.badge { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 9px; border: 1px solid var(--border); font-size: .78rem; }
+.badge { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 0 9px; border: 1px solid var(--border); font-size: .78rem; white-space: nowrap; }
 .ok { color: var(--good); background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.24); }
 .down, .bad { color: var(--bad); background: rgba(248,81,73,.1); border-color: rgba(248,81,73,.24); }
 .warn { color: var(--warn); }

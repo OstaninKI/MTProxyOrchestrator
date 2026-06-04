@@ -363,6 +363,86 @@ func TestCollectDashboardDataLoadsBridgeNodes(t *testing.T) {
 	}
 }
 
+func TestParseTeleproxyVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{
+			name: "full usage banner",
+			out: "usage: teleproxy [options] [relay-config]\n" +
+				"       teleproxy generate-secret [domain]\n" +
+				"teleproxy-4.15.0 compiled at Jan  1 2026 12:00:00 by gcc 13.2.0\n" +
+				"\tMTProto proxy for Telegram\n",
+			want: "4.15.0",
+		},
+		{
+			name: "banner only",
+			out:  "teleproxy-4.15.0 compiled at ...",
+			want: "4.15.0",
+		},
+		{
+			name: "version at end of line without trailing space",
+			out:  "teleproxy-2.0.1",
+			want: "2.0.1",
+		},
+		{
+			name: "no banner",
+			out:  "command not found",
+			want: "",
+		},
+		{
+			name: "empty",
+			out:  "",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseTeleproxyVersion(tt.out); got != tt.want {
+				t.Errorf("parseTeleproxyVersion(%q) = %q, want %q", tt.out, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSingboxVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{
+			name: "multi-line version output",
+			out:  "sing-box version 1.13.12\n\nEnvironment: go1.22 linux/amd64\nTags: with_quic\n",
+			want: "1.13.12",
+		},
+		{
+			name: "single line",
+			out:  "sing-box version 1.13.12",
+			want: "1.13.12",
+		},
+		{
+			name: "bare version",
+			out:  "1.13.12",
+			want: "1.13.12",
+		},
+		{
+			name: "empty",
+			out:  "",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseSingboxVersion(tt.out); got != tt.want {
+				t.Errorf("parseSingboxVersion(%q) = %q, want %q", tt.out, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCollectComponentVersionsUnknownForMissingBinaries(t *testing.T) {
 	components := collectComponentVersions()
 

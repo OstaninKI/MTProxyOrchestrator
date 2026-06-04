@@ -61,16 +61,21 @@ type SystemSnapshot struct {
 func collectComponentVersions() []ComponentVersion {
 	paths := config.DefaultPaths()
 
+	// teleproxy has no --version flag; it is a C fork of Telegram's MTProxy
+	// and only prints its version banner ("teleproxy-X.Y.Z compiled at ...")
+	// from usage(), which exits with a non-zero status. Run `--help` and parse
+	// the banner from the output regardless of the exit code.
 	teleproxyVersion := "unknown"
-	if out, err := exec.Command(paths.TeleproxyBin, "--version").CombinedOutput(); err == nil {
-		teleproxyVersion = strings.TrimSpace(string(out))
+	if out, _ := exec.Command(paths.TeleproxyBin, "--help").CombinedOutput(); len(out) > 0 {
+		if v := parseTeleproxyVersion(string(out)); v != "" {
+			teleproxyVersion = v
+		}
 	}
 
 	singboxVersion := "unknown"
 	if out, err := exec.Command(paths.SingboxBin, "version").CombinedOutput(); err == nil {
-		lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
-		if len(lines) > 0 {
-			singboxVersion = strings.TrimSpace(lines[0])
+		if v := parseSingboxVersion(string(out)); v != "" {
+			singboxVersion = v
 		}
 	}
 
@@ -80,6 +85,42 @@ func collectComponentVersions() []ComponentVersion {
 		{Name: "teleproxy", Version: teleproxyVersion},
 		{Name: "sing-box", Version: singboxVersion},
 	}
+}
+
+// parseTeleproxyVersion extracts the semantic version from teleproxy's banner.
+// The banner line looks like "teleproxy-4.15.0 compiled at Jan 1 2026 ...";
+// it returns "4.15.0", or "" if no banner is found.
+func parseTeleproxyVersion(out string) string {
+	const prefix = "teleproxy-"
+	for _, line := range strings.Split(out, "\n") {
+		i := strings.Index(line, prefix)
+		if i < 0 {
+			continue
+		}
+		rest := line[i+len(prefix):]
+		if sp := strings.IndexByte(rest, ' '); sp >= 0 {
+			rest = rest[:sp]
+		}
+		if v := strings.TrimSpace(rest); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// parseSingboxVersion extracts the version number from sing-box's `version`
+// output. The first line looks like "sing-box version 1.13.12"; it returns
+// "1.13.12", or "" if the output is empty.
+func parseSingboxVersion(out string) string {
+	line := strings.TrimSpace(out)
+	if nl := strings.IndexByte(line, '\n'); nl >= 0 {
+		line = line[:nl]
+	}
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[len(fields)-1]
 }
 
 // isBridgeMode returns true when Bridge mode is active, determined by the
