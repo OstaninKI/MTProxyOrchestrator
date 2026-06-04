@@ -48,8 +48,17 @@ func Reconcile(opts Options) error {
 		cfg.TLSBackend = tlsBackend
 	}
 
+	effectiveMode := cfg.Mode // already merged: DB bridge_mode wins if set in DB
+	if rt.Mode == "" {
+		// DB has no explicit bridge_mode: preserve live state across reconcile
+		// (legacy installs and the very update that ships this fix).
+		if detected, derr := teleproxy.DetectMode(opts.Paths.TeleproxyTOML); derr == nil {
+			effectiveMode = detected
+		}
+	}
+
 	socks5Addr := ""
-	if cfg.Mode == config.ModeBridge {
+	if effectiveMode == config.ModeBridge {
 		socks5Addr = bridgeSOCKS5Addr
 	}
 
@@ -116,7 +125,7 @@ func Reconcile(opts Options) error {
 		return fmt.Errorf("write panel unit: %w", err)
 	}
 
-	if cfg.Mode == config.ModeBridge {
+	if effectiveMode == config.ModeBridge {
 		sbUnit := systemd.SingboxUnitConfig{
 			BinaryPath: opts.Paths.SingboxBin,
 			ConfigPath: opts.Paths.SingboxJSON,

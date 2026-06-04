@@ -373,6 +373,77 @@ type assertErr string
 
 func (e assertErr) Error() string { return string(e) }
 
+func TestHandleBridgeEnablePersistsBridgeModeInDB(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	teleproxyPath := filepath.Join(dir, "teleproxy.toml")
+	if err := os.WriteFile(teleproxyPath, []byte("port = 443\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := newBridgeTestServer(t, nodePath)
+	srv.BridgeCfg.Paths.TeleproxyTOML = teleproxyPath
+	srv.BridgeCfg.Paths.SingboxService = filepath.Join(dir, "sing-box.service")
+	srv.BridgeCfg.Paths.SingboxBin = filepath.Join(dir, "sing-box")
+	exec := newBridgeEnableExec()
+	srv.BridgeExec = exec
+	sessionCookie := addAuthSession(t, srv)
+
+	form := url.Values{CSRFField(): {"token"}, "vless_url": {pe4enk0VLESSURL}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/enable", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeEnable(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303, body: %s", rec.Code, rec.Body.String())
+	}
+
+	got := srv.DB.GetSetting("bridge_mode", "")
+	if got != "bridge" {
+		t.Errorf("bridge_mode DB setting = %q, want \"bridge\" after enable", got)
+	}
+}
+
+func TestHandleBridgeDisablePersistsSingleModeInDB(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	teleproxyPath := filepath.Join(dir, "teleproxy.toml")
+	if err := os.WriteFile(teleproxyPath, []byte("socks5 = \"socks5://127.0.0.1:1080\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := newBridgeTestServer(t, nodePath)
+	srv.BridgeCfg.Paths.TeleproxyTOML = teleproxyPath
+	srv.BridgeCfg.Paths.SingboxService = filepath.Join(dir, "sing-box.service")
+	srv.BridgeCfg.Paths.SingboxBin = filepath.Join(dir, "sing-box")
+	exec := newBridgeEnableExec()
+	srv.BridgeExec = exec
+	sessionCookie := addAuthSession(t, srv)
+
+	// Pre-set bridge_mode=bridge in DB to simulate active bridge.
+	if err := srv.DB.SetSetting("bridge_mode", "bridge"); err != nil {
+		t.Fatalf("set bridge_mode: %v", err)
+	}
+
+	form := url.Values{CSRFField(): {"token"}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/disable", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeDisable(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303, body: %s", rec.Code, rec.Body.String())
+	}
+
+	got := srv.DB.GetSetting("bridge_mode", "")
+	if got != "single" {
+		t.Errorf("bridge_mode DB setting = %q, want \"single\" after disable", got)
+	}
+}
+
 func TestDeleteLastActiveBridgeNodeDisablesBridgeMode(t *testing.T) {
 	dir := t.TempDir()
 	nodePath := filepath.Join(dir, "outbounds.json")

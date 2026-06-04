@@ -115,6 +115,7 @@ func (s *Server) handleBridgeEnable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bridge enable failed", http.StatusInternalServerError)
 		return
 	}
+	s.DB.SetSetting(settingBridgeMode, string(config.ModeBridge)) //nolint:errcheck
 
 	audit.Log(s.DB, s.sessionAdminID(r), "bridge.enable", node.Tag, "", clientIP(r)) //nolint:errcheck
 	http.Redirect(w, r, s.PanelPath+"bridge", http.StatusSeeOther)
@@ -171,7 +172,11 @@ func (s *Server) enableBridgeModeWithNode(node bridge.Node) error {
 		enableCfg.SingboxURL = ""
 		enableCfg.SingboxSHA256 = ""
 	}
-	return svc.Enable(enableCfg)
+	if err := svc.Enable(enableCfg); err != nil {
+		return err
+	}
+	s.DB.SetSetting(settingBridgeMode, string(config.ModeBridge)) //nolint:errcheck
+	return nil
 }
 
 func (s *Server) disableBridgeMode() error {
@@ -205,6 +210,7 @@ func (s *Server) disableBridgeMode() error {
 	if err := svc.Disable(disableCfg); err != nil {
 		return err
 	}
+	s.DB.SetSetting(settingBridgeMode, string(config.ModeSingle)) //nolint:errcheck
 	return nil
 }
 

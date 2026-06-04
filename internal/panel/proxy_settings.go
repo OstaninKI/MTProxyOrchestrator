@@ -26,6 +26,7 @@ const (
 	settingRetentionMinuteDays = "retention_minutes_days"
 	settingRetentionHourlyDays = "retention_hourly_days"
 	settingCertRenewDays       = "cert_renew_days"
+	settingBridgeMode          = "bridge_mode"
 )
 
 // loadAdminSessions loads active admin sessions from the DB.

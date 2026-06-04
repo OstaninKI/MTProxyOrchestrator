@@ -348,6 +348,75 @@ domain = "stale.example.com"
 	}
 }
 
+func TestReconcileDBBridgeModeOverridesSingleConfig(t *testing.T) {
+	_, paths := setupReconcileEnv(t, "single")
+
+	// Set bridge_mode in the DB even though config.toml says single.
+	d := createPanelDB(t, paths.PanelDB)
+	insertSetting(t, d, "bridge_mode", "bridge")
+
+	opts := reconcile.Options{
+		ConfigFile: paths.ConfigFile,
+		PanelDB:    paths.PanelDB,
+		Paths:      paths,
+	}
+	callReconcileExpectNginxError(t, opts)
+
+	content := readFile(t, paths.TeleproxyTOML)
+	if !strings.Contains(content, `socks5 = "socks5://127.0.0.1:1080"`) {
+		t.Errorf("teleproxy.toml must contain socks5 when DB bridge_mode=bridge overrides single config, got:\n%s", content)
+	}
+	if !fileExists(paths.SingboxService) {
+		t.Error("sing-box.service must be written when DB bridge_mode=bridge overrides single config")
+	}
+}
+
+func TestReconcilePreservesLiveBridgeWhenDBUnset(t *testing.T) {
+	_, paths := setupReconcileEnv(t, "single")
+
+	// Pre-write an existing teleproxy.toml that has socks5 (live bridge state).
+	bridgeToml := `port = 443
+domain = "www.microsoft.com"
+socks5 = "socks5://127.0.0.1:1080"
+`
+	if err := os.WriteFile(paths.TeleproxyTOML, []byte(bridgeToml), 0o600); err != nil {
+		t.Fatalf("pre-write bridge teleproxy.toml: %v", err)
+	}
+
+	// DB has no bridge_mode setting (empty DB).
+	opts := reconcile.Options{
+		ConfigFile: paths.ConfigFile,
+		PanelDB:    paths.PanelDB,
+		Paths:      paths,
+	}
+	callReconcileExpectNginxError(t, opts)
+
+	content := readFile(t, paths.TeleproxyTOML)
+	if !strings.Contains(content, `socks5 = "socks5://127.0.0.1:1080"`) {
+		t.Errorf("reconcile must preserve live bridge state (socks5) when DB bridge_mode is unset, got:\n%s", content)
+	}
+}
+
+func TestReconcileDBSingleModeOverridesDetect(t *testing.T) {
+	_, paths := setupReconcileEnv(t, "bridge")
+
+	// Set bridge_mode=single in DB even though config.toml says bridge.
+	d := createPanelDB(t, paths.PanelDB)
+	insertSetting(t, d, "bridge_mode", "single")
+
+	opts := reconcile.Options{
+		ConfigFile: paths.ConfigFile,
+		PanelDB:    paths.PanelDB,
+		Paths:      paths,
+	}
+	callReconcileExpectNginxError(t, opts)
+
+	content := readFile(t, paths.TeleproxyTOML)
+	if strings.Contains(content, `socks5`) {
+		t.Errorf("teleproxy.toml must NOT contain socks5 when DB bridge_mode=single overrides bridge config, got:\n%s", content)
+	}
+}
+
 func TestReconcileDBSettingsOverrideConfig(t *testing.T) {
 	_, paths := setupReconcileEnv(t, "single")
 

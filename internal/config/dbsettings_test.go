@@ -154,6 +154,55 @@ func TestMergeIntoPreservesZero(t *testing.T) {
 	}
 }
 
+func TestReadRuntimeSettingsReadsBridgeMode(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	d, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	d.SetSetting("bridge_mode", "bridge")
+	d.Close()
+
+	rs, err := config.ReadRuntimeSettings(dbPath)
+	if err != nil {
+		t.Fatalf("ReadRuntimeSettings: %v", err)
+	}
+	if rs.Mode != "bridge" {
+		t.Errorf("Mode = %q, want %q", rs.Mode, "bridge")
+	}
+}
+
+func TestMergeIntoBridgeModeOverridesConfig(t *testing.T) {
+	cfg := config.Default() // Mode = "single" by default
+
+	rs := config.RuntimeSettings{
+		Mode: "bridge",
+	}
+
+	merged := rs.MergeInto(cfg)
+
+	if merged.Mode != config.ModeBridge {
+		t.Errorf("Mode = %q, want %q", merged.Mode, config.ModeBridge)
+	}
+}
+
+func TestMergeIntoEmptyModePreservesConfig(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mode = config.ModeBridge
+
+	rs := config.RuntimeSettings{
+		Mode: "",
+	}
+
+	merged := rs.MergeInto(cfg)
+
+	if merged.Mode != config.ModeBridge {
+		t.Errorf("Mode = %q, want %q (empty RuntimeSettings.Mode should not overwrite)", merged.Mode, config.ModeBridge)
+	}
+}
+
 func TestReadRuntimeSettingsMissingDB(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "nonexistent", "missing.db")
 

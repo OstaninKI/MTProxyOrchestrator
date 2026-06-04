@@ -17,6 +17,7 @@ type RuntimeSettings struct {
 	MTProtoPort   int
 	PanelPath     string
 	LogLevel      string
+	Mode          string // "bridge" or "single"; empty means not set in DB
 }
 
 func ReadRuntimeSettings(dbPath string) (RuntimeSettings, error) {
@@ -67,6 +68,11 @@ func ReadRuntimeSettings(dbPath string) (RuntimeSettings, error) {
 		rs.LogLevel = logLevel
 	}
 
+	var bridgeMode string
+	if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'bridge_mode'`).Scan(&bridgeMode); err == nil {
+		rs.Mode = bridgeMode
+	}
+
 	return rs, nil
 }
 
@@ -112,6 +118,9 @@ func (rs RuntimeSettings) MergeInto(cfg Config) Config {
 	}
 	if rs.LogLevel != "" {
 		cfg.LogLevel = rs.LogLevel
+	}
+	if rs.Mode != "" {
+		cfg.Mode = Mode(rs.Mode)
 	}
 	return cfg
 }
