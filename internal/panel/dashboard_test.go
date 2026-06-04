@@ -407,9 +407,11 @@ func TestDashboardSingleModeRendersServicesSection(t *testing.T) {
 	}
 }
 
-// TestDashboardBridgeModeRendersBridgeSteps verifies that Bridge mode
-// (IsBridge = true) renders the chain steps table and not the Services table.
-func TestDashboardBridgeModeRendersBridgeSteps(t *testing.T) {
+// TestDashboardBridgeModeHidesStepTable verifies that Bridge mode
+// (IsBridge = true) keeps the Chain Health heading but no longer renders the
+// per-step service table inside the System card (removed as redundant; the
+// Services & Components panel is the canonical place for service status).
+func TestDashboardBridgeModeHidesStepTable(t *testing.T) {
 	data := DashboardData{
 		IsBridge: true,
 		BridgeSteps: []health.BridgeStepStatus{
@@ -431,11 +433,12 @@ func TestDashboardBridgeModeRendersBridgeSteps(t *testing.T) {
 	if !strings.Contains(html, "Chain Health") {
 		t.Error("Bridge mode dashboard should contain 'Chain Health' heading")
 	}
-	if !strings.Contains(html, "sing-box.service") {
-		t.Error("Bridge mode dashboard should list sing-box.service step")
+	// The per-step status table must no longer be rendered in the System card.
+	if strings.Contains(html, "socks5-inbound") {
+		t.Error("Bridge mode dashboard should no longer render the per-step status table")
 	}
-	if !strings.Contains(html, "telegram-chain") {
-		t.Error("Bridge mode dashboard should list telegram-chain step")
+	if strings.Contains(html, "telegram-chain") {
+		t.Error("Bridge mode dashboard should no longer render the per-step status table")
 	}
 	// Services table heading must not appear (it belongs to Single mode only).
 	if strings.Contains(html, "<h2>Services</h2>") {
@@ -760,8 +763,13 @@ func TestDashboardHealthFragmentRendersBridgeMode(t *testing.T) {
 	dashboardHealthFragment(&buf, data)
 	html := buf.String()
 
-	if !strings.Contains(html, "Bridge Mode") || !strings.Contains(html, "sing-box.service") {
+	if !strings.Contains(html, "Bridge Mode") {
 		t.Fatalf("bridge health fragment missing bridge state:\n%s", html)
+	}
+	// The per-step service table was removed from the System card; service
+	// status now lives only in the Services & Components panel.
+	if strings.Contains(html, "sing-box.service") {
+		t.Fatalf("bridge health fragment must no longer render the per-step table:\n%s", html)
 	}
 }
 

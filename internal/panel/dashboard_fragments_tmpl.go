@@ -271,13 +271,6 @@ const dashboardFragments = `
     <div class="resource-meta"><span>Uptime</span><span class="mono">{{.System.Uptime}}</span></div>
     <div class="resource-meta"><span>Kernel</span><span class="mono">{{.System.Kernel}}</span></div>
     <div class="resource-meta"><span>Mode</span><span class="mono">{{if .IsBridge}}Bridge Mode{{else}}Services{{end}}</span></div>
-    {{if .IsBridge}}
-    <div class="divider"></div>
-    <div class="table-wrap table-wrap--plain"><table class="tbl tbl--compact">
-      <thead><tr><th>Step</th><th>Status</th></tr></thead>
-      <tbody>{{range .BridgeSteps}}<tr><td>{{.Name}}</td><td>{{if .OK}}<span class="badge" data-tone="success"><span class="dot"></span>ok</span>{{else}}<span class="badge" data-tone="danger"><span class="dot"></span>down</span>{{end}}</td></tr>{{end}}</tbody>
-    </table></div>
-    {{end}}
   </div>
 </section>
 {{end}}
