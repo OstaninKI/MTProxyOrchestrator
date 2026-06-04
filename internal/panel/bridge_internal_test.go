@@ -516,3 +516,50 @@ func TestDeleteLastActiveBridgeNodeAllowedWhenMultipleActive(t *testing.T) {
 		t.Fatalf("deletion failed when there are multiple nodes: %+v", got.Nodes)
 	}
 }
+
+func TestHandleBridgeToggleLastNodeDisablesBridge(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	teleproxyPath := filepath.Join(dir, "teleproxy.toml")
+	writeNodeList(t, nodePath, bridge.NodeList{
+		Nodes: []bridge.Node{{ID: 1, Tag: "only-node", Host: "host", Port: 443, Enabled: true}},
+	})
+	if err := os.WriteFile(teleproxyPath, []byte("socks5 = \"127.0.0.1:1080\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := newBridgeTestServer(t, nodePath)
+	srv.BridgeCfg.Paths.TeleproxyTOML = teleproxyPath
+	srv.SingboxActive = func() bool { return true }
+	exec := &bridgeDeleteLastExec{}
+	srv.BridgeExec = exec
+	sessionCookie := addAuthSession(t, srv)
+
+	form := url.Values{CSRFField(): {"token"}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/nodes/1/toggle", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	req = withRouteID(req, "1")
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeToggleNode(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303, body: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/p-example/bridge" {
+		t.Fatalf("Location = %q, want /p-example/bridge", got)
+	}
+
+	// Node should still exist on disk but be disabled.
+	got := readNodeList(t, nodePath)
+	if len(got.Nodes) != 1 || got.Nodes[0].Enabled {
+		t.Fatalf("node list after toggle = %+v, want 1 disabled node", got.Nodes)
+	}
+	// Bridge should have been disabled: sing-box stopped/disabled, teleproxy reloaded in Single mode.
+	if !exec.stoppedSingbox || !exec.disabledSingbox || !exec.reloadedTeleproxy {
+		t.Fatalf("bridge was not disabled after toggling last active node, exec state: %+v", exec)
+	}
+	if strings.Contains(string(exec.teleproxyWrite), "socks5") {
+		t.Fatalf("teleproxy config still routes through sing-box after toggling off last node:\n%s", exec.teleproxyWrite)
+	}
+}

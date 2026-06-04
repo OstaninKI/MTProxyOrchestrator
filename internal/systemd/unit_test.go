@@ -168,6 +168,18 @@ func TestPanelUnitHardening(t *testing.T) {
 	}
 }
 
+func TestSingboxUnitOrderedBeforeTeleproxy(t *testing.T) {
+	cfg := systemd.SingboxUnitConfig{
+		BinaryPath: "/usr/local/bin/sing-box",
+		ConfigPath: "/etc/tgproxy/sing-box.json",
+		LogPath:    "/var/log/tgproxy/sing-box.log",
+	}
+	got := cfg.Render()
+	if !bytes.Contains(got, []byte("Before=teleproxy.service")) {
+		t.Error("sing-box unit missing Before=teleproxy.service in [Unit] section; teleproxy must start after sing-box on reboot")
+	}
+}
+
 func TestSingboxUnitHardening(t *testing.T) {
 	cfg := systemd.SingboxUnitConfig{
 		BinaryPath: "/usr/local/bin/sing-box",

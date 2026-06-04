@@ -136,6 +136,7 @@ func (c SingboxUnitConfig) Render() []byte {
 var singboxUnitTmpl = template.Must(template.New("sing-box.service").Parse(`[Unit]
 Description=sing-box outbound router
 After=network.target
+Before=teleproxy.service
 
 [Service]
 Type=simple

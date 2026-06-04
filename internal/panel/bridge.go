@@ -1217,9 +1217,25 @@ func (s *Server) handleBridgeToggleNode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := saveNodeListWithRerenderRollback(s, previous, nl); err != nil {
-		http.Error(w, "node toggled but sing-box config could not be re-rendered: "+err.Error(), http.StatusInternalServerError)
-		return
+	if s.singboxIsActive() && len(nl.Active()) == 0 {
+		if err := nl.Save(nodePath); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if err := s.disableBridgeMode(); err != nil {
+			if restoreErr := previous.Save(nodePath); restoreErr != nil {
+				http.Error(w, "node toggled but Bridge could not switch to Single mode: "+err.Error()+" (rollback failed: "+restoreErr.Error()+")", http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, "node toggled but Bridge could not switch to Single mode: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		audit.Log(s.DB, s.sessionAdminID(r), "bridge.disable", "last-node-disabled", "", clientIP(r)) //nolint:errcheck
+	} else {
+		if err := saveNodeListWithRerenderRollback(s, previous, nl); err != nil {
+			http.Error(w, "node toggled but sing-box config could not be re-rendered: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	audit.Log(s.DB, s.sessionAdminID(r), "node.toggle", tag, "", clientIP(r)) //nolint:errcheck
