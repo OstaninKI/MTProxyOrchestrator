@@ -10,6 +10,7 @@ type InstallPaths struct {
 	StubDir         string
 	CertDir         string // /etc/tgproxy/certs
 	NginxSnippetDir string // /etc/nginx/snippets
+	NginxConfFile   string // /etc/nginx/nginx.conf (distro-owned main config)
 
 	// Config files
 	ConfigFile    string
@@ -47,6 +48,7 @@ func DefaultPaths() InstallPaths {
 		StubDir:         "/var/www/tgproxy-stub",
 		CertDir:         "/etc/tgproxy/certs",
 		NginxSnippetDir: "/etc/nginx/snippets",
+		NginxConfFile:   "/etc/nginx/nginx.conf",
 
 		ConfigFile:    "/etc/tgproxy/config.toml",
 		TeleproxyTOML: "/etc/tgproxy/teleproxy.toml",

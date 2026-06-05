@@ -48,6 +48,7 @@ func TestDefaultPaths(t *testing.T) {
 		StubDir:         "/var/www/tgproxy-stub",
 		CertDir:         "/etc/tgproxy/certs",
 		NginxSnippetDir: "/etc/nginx/snippets",
+		NginxConfFile:   "/etc/nginx/nginx.conf",
 
 		ConfigFile:    "/etc/tgproxy/config.toml",
 		TeleproxyTOML: "/etc/tgproxy/teleproxy.toml",

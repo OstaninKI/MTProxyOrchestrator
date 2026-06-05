@@ -23,6 +23,7 @@ func setupReconcileEnv(t *testing.T, mode string) (string, config.InstallPaths) 
 		StubDir:         filepath.Join(tmp, "var", "www", "tgproxy-stub"),
 		CertDir:         filepath.Join(tmp, "etc", "tgproxy", "certs"),
 		NginxSnippetDir: filepath.Join(tmp, "etc", "nginx", "snippets"),
+		NginxConfFile:   filepath.Join(tmp, "etc", "nginx", "nginx.conf"),
 
 		ConfigFile:    filepath.Join(tmp, "etc", "tgproxy", "config.toml"),
 		TeleproxyTOML: filepath.Join(tmp, "etc", "tgproxy", "teleproxy.toml"),

@@ -142,9 +142,9 @@ func Reconcile(opts Options) error {
 	// nginx.conf. These directives live in events{} and the main context, which
 	// no sites-enabled/ or conf.d/ drop-in can reach, so we patch the main file
 	// in place. The patch is idempotent and only raises values below our floor.
-	if mainConf, readErr := os.ReadFile("/etc/nginx/nginx.conf"); readErr == nil {
+	if mainConf, readErr := os.ReadFile(opts.Paths.NginxConfFile); readErr == nil {
 		patched := nginx.PatchMainConf(mainConf)
-		changed, err := writeFileIfChanged("/etc/nginx/nginx.conf", patched, 0o644)
+		changed, err := writeFileIfChanged(opts.Paths.NginxConfFile, patched, 0o644)
 		if err != nil {
 			return fmt.Errorf("patch nginx.conf: %w", err)
 		}
