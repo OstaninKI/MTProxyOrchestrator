@@ -33,6 +33,7 @@ func init() {
 	rootCmd.AddCommand(backupCmd)
 	rootCmd.AddCommand(restoreCmd)
 	rootCmd.AddCommand(restartCmd)
+	rootCmd.AddCommand(reconcileCmd)
 
 	resetTOTPCmd.Flags().BoolVar(&resetTOTPYes, "yes", false, "skip confirmation prompt")
 
@@ -129,8 +130,10 @@ var updateCmd = &cobra.Command{
 		}
 
 		if len(updates) == 0 {
+			// No binary updates available, but still reconcile below: template
+			// and config changes can ship without a version bump and must be
+			// written to disk regardless.
 			fmt.Fprintln(cmd.OutOrStdout(), "All components are up to date.")
-			return nil
 		}
 
 		for _, u := range updates {
@@ -166,6 +169,29 @@ var updateCmd = &cobra.Command{
 			fmt.Fprintln(cmd.OutOrStdout(), "Configs reconciled.")
 		}
 
+		return nil
+	},
+}
+
+// reconcileCmd regenerates all on-disk configs and systemd units from the
+// installed binaries' templates and reloads the affected services. Unlike
+// updateCmd, it runs regardless of whether a new release is available, so
+// template/config changes shipped in a binary can be applied without a version
+// bump (e.g. nginx WebSocket proxying or journald log routing).
+var reconcileCmd = &cobra.Command{
+	Use:   "reconcile",
+	Short: "Regenerate configs and systemd units from templates and reload services",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		paths := defaultPaths()
+		opts := reconcile.Options{
+			ConfigFile: paths.ConfigFile,
+			PanelDB:    paths.PanelDB,
+			Paths:      paths,
+		}
+		if err := reconcile.Reconcile(opts); err != nil {
+			return fmt.Errorf("reconcile: %w", err)
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "Configs reconciled.")
 		return nil
 	},
 }
