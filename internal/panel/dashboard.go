@@ -52,6 +52,8 @@ type DashboardData struct {
 type SystemSnapshot struct {
 	MemoryPercent float64
 	DiskPercent   float64
+	MemoryTotal   int64 // total RAM in bytes, 0 when unknown
+	DiskTotal     int64 // total disk capacity of "/" in bytes, 0 when unknown
 	LoadAvg       string
 	Uptime        string
 	Kernel        string
@@ -188,6 +190,8 @@ func collectSystemSnapshot() SystemSnapshot {
 		if total > 0 && available >= 0 {
 			used := total - available
 			snapshot.MemoryPercent = percent(float64(used), float64(total))
+			// /proc/meminfo reports kibibytes; convert to bytes.
+			snapshot.MemoryTotal = total * 1024
 		}
 	}
 
@@ -197,6 +201,7 @@ func collectSystemSnapshot() SystemSnapshot {
 		free := float64(stat.Bavail) * float64(stat.Bsize)
 		used := total - free
 		snapshot.DiskPercent = percent(used, total)
+		snapshot.DiskTotal = int64(total)
 	}
 
 	return snapshot

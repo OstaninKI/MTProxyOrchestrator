@@ -250,8 +250,8 @@ const dashboardFragments = `
   hx-swap="outerHTML">
   <div class="card-head">
     <div class="col card-title-stack">
-      <h3>{{if .IsBridge}}Bridge Mode — Chain Health{{else}}System{{end}}</h3>
-      <span class="sub">{{if .IsBridge}}{{.HealthLabel}}{{else}}Live resource utilization{{end}}</span>
+      <h3>System</h3>
+      <span class="sub">Live resource utilization</span>
     </div>
   </div>
   <div class="card-body">
@@ -259,13 +259,13 @@ const dashboardFragments = `
       <span class="resource-icon">{{icon "Activity" 14}}</span>
       <span class="resource-label">Memory</span>
       <progress class="bar" data-tone="{{usageTone .System.MemoryPercent}}" value="{{barValue .System.MemoryPercent}}" max="100"></progress>
-      <span class="mono tnum resource-value">{{formatPercent .System.MemoryPercent}}</span>
+      <span class="mono tnum resource-value">{{formatPercent .System.MemoryPercent}}{{if gt .System.MemoryTotal 0}} / {{formatBytes .System.MemoryTotal}}{{end}}</span>
     </div>
     <div class="resource-row">
       <span class="resource-icon">{{icon "Server" 14}}</span>
       <span class="resource-label">Disk</span>
       <progress class="bar" data-tone="{{usageTone .System.DiskPercent}}" value="{{barValue .System.DiskPercent}}" max="100"></progress>
-      <span class="mono tnum resource-value">{{formatPercent .System.DiskPercent}}</span>
+      <span class="mono tnum resource-value">{{formatPercent .System.DiskPercent}}{{if gt .System.DiskTotal 0}} / {{formatBytes .System.DiskTotal}}{{end}}</span>
     </div>
     <div class="divider"></div>
     <div class="resource-meta"><span>Load avg</span><span class="mono">{{.System.LoadAvg}}</span></div>

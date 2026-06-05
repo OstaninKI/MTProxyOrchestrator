@@ -487,10 +487,11 @@ func TestDashboardSingleModeRendersServicesSection(t *testing.T) {
 	}
 }
 
-// TestDashboardBridgeModeHidesStepTable verifies that Bridge mode
-// (IsBridge = true) keeps the Chain Health heading but no longer renders the
-// per-step service table inside the System card (removed as redundant; the
-// Services & Components panel is the canonical place for service status).
+// TestDashboardBridgeModeHidesStepTable verifies that in Bridge mode
+// (IsBridge = true) the System card keeps its "System" heading (it reports the
+// local host's resources, not the bridge chain) and does not render the
+// per-step service table inside it (removed as redundant; the Services &
+// Components panel is the canonical place for service status).
 func TestDashboardBridgeModeHidesStepTable(t *testing.T) {
 	data := DashboardData{
 		IsBridge: true,
@@ -507,11 +508,13 @@ func TestDashboardBridgeModeHidesStepTable(t *testing.T) {
 	dashboardPage(&buf, data)
 	html := buf.String()
 
-	if !strings.Contains(html, "Bridge Mode") {
-		t.Error("Bridge mode dashboard should contain 'Bridge Mode' heading")
+	// The System card title must stay "System" and must not be reframed as the
+	// bridge chain health — the card body shows local host resources.
+	if !strings.Contains(html, "<h3>System</h3>") {
+		t.Error("Bridge mode dashboard should keep the 'System' card heading")
 	}
-	if !strings.Contains(html, "Chain Health") {
-		t.Error("Bridge mode dashboard should contain 'Chain Health' heading")
+	if strings.Contains(html, "Chain Health") {
+		t.Error("Bridge mode dashboard should not reframe the System card as 'Chain Health'")
 	}
 	// The per-step status table must no longer be rendered in the System card.
 	if strings.Contains(html, "socks5-inbound") {
@@ -523,6 +526,53 @@ func TestDashboardBridgeModeHidesStepTable(t *testing.T) {
 	// Services table heading must not appear (it belongs to Single mode only).
 	if strings.Contains(html, "<h2>Services</h2>") {
 		t.Error("Bridge mode dashboard should not contain Single-mode Services table")
+	}
+}
+
+// TestDashboardSystemShowsAbsoluteTotals verifies that the Memory and Disk
+// resource rows render the absolute total capacity next to the percentage
+// (e.g. "67% / 16 GB"), so the percentage has a visible reference point.
+func TestDashboardSystemShowsAbsoluteTotals(t *testing.T) {
+	data := DashboardData{
+		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
+		System: SystemSnapshot{
+			MemoryPercent: 67,
+			MemoryTotal:   16 * 1024 * 1024 * 1024, // 16 GiB
+			DiskPercent:   42,
+			DiskTotal:     100 * 1024 * 1024 * 1024, // 100 GiB
+		},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	if !strings.Contains(html, "67% / 16 GB") {
+		t.Error("Memory row should show percentage and absolute total, e.g. '67% / 16 GB'")
+	}
+	if !strings.Contains(html, "42% / 100 GB") {
+		t.Error("Disk row should show percentage and absolute total, e.g. '42% / 100 GB'")
+	}
+}
+
+// TestDashboardSystemOmitsTotalWhenUnknown verifies that when the host stats are
+// unavailable (totals are zero) the rows fall back to the plain percentage label
+// without a trailing slash.
+func TestDashboardSystemOmitsTotalWhenUnknown(t *testing.T) {
+	data := DashboardData{
+		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
+		System: SystemSnapshot{
+			MemoryPercent: -1,
+			DiskPercent:   -1,
+		},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	if strings.Contains(html, "unknown / ") {
+		t.Error("rows should not render a trailing slash when totals are unknown")
 	}
 }
 
