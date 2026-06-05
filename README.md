@@ -125,6 +125,7 @@ tgproxy-cli install
 tgproxy-cli install --unattended
 tgproxy-cli status
 tgproxy-cli update
+tgproxy-cli reconcile
 tgproxy-cli reset-admin-password
 tgproxy-cli reset-totp
 tgproxy-cli backup --dest /path/to/backup.enc --passphrase 'secret'

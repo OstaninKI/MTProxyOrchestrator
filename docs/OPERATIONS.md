@@ -298,7 +298,7 @@ Current behavior:
 - checks GitHub Releases immediately for `tgproxy-cli`, `tgproxy-panel` (OstaninKI/MTProxyOrchestrator), `teleproxy` (teleproxy/teleproxy), and `sing-box` (SagerNet/sing-box)
 - verifies SHA256 before replacing any binary; sing-box is distributed as a tar.gz archive and its binary is extracted after the archive is verified
 - detects the installed version of `teleproxy` and `sing-box` by running the binary and parsing the semver from its version output (tries the `version` subcommand and `--version`)
-- reconciles all config templates (systemd units, nginx, teleproxy.toml) with current config.toml and DB settings before restarting
+- reconciles all config templates (systemd units, nginx, teleproxy.toml) with current config.toml and DB settings before restarting — this runs on every `update`, even when no new binaries are available, so template changes shipped without a version bump still reach disk
 - rolls back on restart/health failure
 
 ### Config reconciliation
@@ -316,7 +316,15 @@ The reconciliation step:
 
 All file writes use atomic rename (write to temp, rename) to avoid partial writes.
 
-**Important:** the reconciliation step runs with the **pre-update** (currently installed) CLI binary. This means that when a release changes the config template format or the version-detection logic itself, those new behaviors take effect only on the **next** `update` run, executed by the freshly installed binary. When upgrading across such a release, run `sudo tgproxy-cli update` twice. Alternatively, saving the panel's Proxy Settings re-renders `teleproxy.toml` immediately using the new binary without a second full update pass.
+**Important:** the reconciliation step runs with the **pre-update** (currently installed) CLI binary. This means that when a release changes the config template format or the version-detection logic itself, those new behaviors take effect only on the **next** reconciliation, executed by the freshly installed binary. When upgrading across such a release, run `sudo tgproxy-cli reconcile` once after the update completes — it regenerates every config with the new binary's templates. (Running `sudo tgproxy-cli update` a second time achieves the same, and saving the panel's Proxy Settings re-renders `teleproxy.toml` immediately.)
+
+### Standalone reconcile
+
+```bash
+sudo tgproxy-cli reconcile
+```
+
+`reconcile` regenerates all generated configs (systemd units, nginx, teleproxy.toml, and sing-box.service in Bridge mode) from the installed binaries' templates and reloads the affected services — without checking GitHub or replacing any binary. Use it to apply template/config changes that ship without a version bump, for example after manually swapping in a new `tgproxy-panel` binary. It performs the same steps as the reconciliation phase of `update` (see above).
 
 ### SHA256 verification
 
