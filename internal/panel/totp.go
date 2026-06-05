@@ -643,13 +643,8 @@ var totpSettingsTmpl = layoutTemplate("totp_settings", `{{define "page_title"}}T
     <p class="page-sub">Endpoint, password and system configuration.</p>
   </div>
 </section>
-<section class="page-stack">
-<nav class="seg" aria-label="Two-factor tabs">
-  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Endpoint &amp; Proxy</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/admin-password">Admin password</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/system">System</a>
-  <a class="seg-item active" href="{{.PanelPath}}settings/totp">Two-factor</a>
-</nav>
+<section class="page-stack" id="settings-tabs">
+{{settingsTabs .PanelPath "totp"}}
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 

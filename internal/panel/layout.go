@@ -2,8 +2,10 @@ package panel
 
 import (
 	"fmt"
+	"html"
 	"html/template"
 	"reflect"
+	"strings"
 )
 
 const sharedTopbar = `<header class="topbar">
@@ -70,6 +72,38 @@ var baseLayoutFuncs = template.FuncMap{
 	"navIsCurrent": layoutNavIsCurrent,
 	"icon":         layoutIcon,
 	"assetv":       assetVersion,
+	"settingsTabs": settingsTabsNav,
+}
+
+// settingsTabsNav renders the Settings sub-navigation as a segmented control.
+// The links carry htmx attributes so that switching tabs swaps only the
+// #settings-tabs panel out of the full-page response (hx-select), giving a
+// true in-page tab experience without a full reload, while the plain href
+// keeps the tabs working without JavaScript and preserves deep links.
+func settingsTabsNav(panelPath, active string) template.HTML {
+	tabs := []struct {
+		key   string
+		path  string
+		label string
+	}{
+		{"proxy", "settings/proxy", "Endpoint & Proxy"},
+		{"admin-password", "settings/admin-password", "Admin password"},
+		{"system", "settings/system", "System"},
+		{"totp", "settings/totp", "Two-factor"},
+	}
+	var b strings.Builder
+	b.WriteString(`<nav class="seg" aria-label="Settings tabs">`)
+	for _, t := range tabs {
+		cls := "seg-item"
+		if t.key == active {
+			cls += " active"
+		}
+		href := html.EscapeString(panelPath + t.path)
+		fmt.Fprintf(&b, `<a class="%s" href="%s" hx-get="%s" hx-target="#settings-tabs" hx-select="#settings-tabs" hx-swap="outerHTML" hx-push-url="true">%s</a>`,
+			cls, href, href, html.EscapeString(t.label))
+	}
+	b.WriteString(`</nav>`)
+	return template.HTML(b.String()) //nolint:gosec // panelPath is trusted config; href and label are escaped
 }
 
 func layoutTemplate(name, content string, funcMap template.FuncMap) *template.Template {

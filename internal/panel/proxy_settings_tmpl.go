@@ -59,13 +59,8 @@ const proxySettingsContent = `{{define "page_title"}}Proxy Settings{{end}}
     <p class="page-sub">Endpoint, password and system configuration.</p>
   </div>
 </section>
-<section class="page-stack">
-<nav class="seg" aria-label="Settings tabs">
-  <a class="seg-item active" href="{{.PanelPath}}settings/proxy">Endpoint &amp; Proxy</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/admin-password">Admin password</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/system">System</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/totp">Two-factor</a>
-</nav>
+<section class="page-stack" id="settings-tabs">
+{{settingsTabs .PanelPath "proxy"}}
 
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
@@ -139,13 +134,8 @@ const adminPasswordContent = `{{define "page_title"}}Change Admin Password{{end}
     <p class="page-sub">Endpoint, password and system configuration.</p>
   </div>
 </section>
-<section class="page-stack">
-<nav class="seg" aria-label="Settings tabs">
-  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Endpoint &amp; Proxy</a>
-  <a class="seg-item active" href="{{.PanelPath}}settings/admin-password">Admin password</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/system">System</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/totp">Two-factor</a>
-</nav>
+<section class="page-stack" id="settings-tabs">
+{{settingsTabs .PanelPath "admin-password"}}
 
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
@@ -204,13 +194,8 @@ const systemSettingsContent = `{{define "page_title"}}System Settings{{end}}
     <p class="page-sub">Endpoint, password and system configuration.</p>
   </div>
 </section>
-<section class="page-stack">
-<nav class="seg" aria-label="Settings tabs">
-  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Endpoint &amp; Proxy</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/admin-password">Admin password</a>
-  <a class="seg-item active" href="{{.PanelPath}}settings/system">System</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/totp">Two-factor</a>
-</nav>
+<section class="page-stack" id="settings-tabs">
+{{settingsTabs .PanelPath "system"}}
 
 {{if .Success}}<p class="success">{{.Success}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}

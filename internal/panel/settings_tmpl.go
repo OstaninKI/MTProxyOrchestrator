@@ -60,8 +60,6 @@ const settingsStubListContent = `{{define "page_title"}}Stub Templates{{end}}
 <nav class="seg" aria-label="Stub template tabs">
   <a class="seg-item active" href="{{.PanelPath}}settings/stubs">Template library</a>
   <a class="seg-item" href="{{.PanelPath}}settings/stubs/remote">Remote templates</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/certificates">Certificates</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Proxy</a>
 </nav>
 
 {{if .ApplySuccess}}<p class="success">Template "{{.ApplySuccess}}" applied successfully.</p>{{end}}
@@ -168,8 +166,6 @@ const settingsStubRemoteContent = `{{define "page_title"}}Remote Templates{{end}
 <nav class="seg" aria-label="Remote template tabs">
   <a class="seg-item" href="{{.PanelPath}}settings/stubs">Template library</a>
   <a class="seg-item active" href="{{.PanelPath}}settings/stubs/remote">Remote templates</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/certificates">Certificates</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Proxy</a>
 </nav>
 
 {{if .ApplySuccess}}<p class="success">Template "{{.ApplySuccess}}" downloaded and applied successfully.</p>{{end}}
@@ -243,12 +239,6 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
   </div>
 </section>
 <section class="page-stack">
-<nav class="seg" aria-label="Certificate tabs">
-  <a class="seg-item" href="{{.PanelPath}}settings/stubs">Stubs</a>
-  <a class="seg-item active" href="{{.PanelPath}}settings/certificates">Certificates</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/proxy">Proxy</a>
-  <a class="seg-item" href="{{.PanelPath}}settings/system">System</a>
-</nav>
 
 {{if .Notice}}<div class="flash">{{.Notice}}</div>{{end}}
 
