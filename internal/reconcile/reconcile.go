@@ -249,8 +249,12 @@ func Reconcile(opts Options) error {
 	}
 
 	if nginxChanged || stubMigrated {
-		if err := mgr.ReloadNginx(); err != nil {
-			return fmt.Errorf("reload nginx: %w", err)
+		// Restart (not reload): a SIGHUP reload lets old workers keep serving
+		// reused browser connections with the previous config, so proxy-behavior
+		// changes (e.g. WebSocket upgrade support) would not take effect until a
+		// client reconnects. RestartNginx validates the config before restarting.
+		if err := mgr.RestartNginx(); err != nil {
+			return fmt.Errorf("restart nginx: %w", err)
 		}
 	}
 

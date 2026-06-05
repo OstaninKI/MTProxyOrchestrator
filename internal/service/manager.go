@@ -105,14 +105,25 @@ func (m *Manager) DaemonReload() error {
 	return nil
 }
 
-func (m *Manager) ReloadNginx() error {
+// RestartNginx validates the nginx configuration and then restarts the service.
+//
+// A plain reload (SIGHUP) is not enough when a config change alters proxy
+// behavior (e.g. adding WebSocket upgrade handling): nginx keeps old worker
+// processes alive to drain in-flight client connections, and browsers reuse
+// their keepalive / HTTP-2 connection, so they keep hitting an old worker that
+// still runs the previous config until they happen to reconnect. A restart
+// forces every connection onto a worker with the new config.
+//
+// The config is validated with `nginx -t` first: if it is invalid we return an
+// error and leave the running nginx untouched, rather than restarting into a
+// broken config and taking nginx down.
+func (m *Manager) RestartNginx() error {
 	ctx, cancel := context.WithTimeout(context.Background(), systemctlTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "systemctl", "reload", "nginx")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl reload nginx: %s: %w", out, err)
+	if out, err := exec.CommandContext(ctx, "nginx", "-t").CombinedOutput(); err != nil {
+		return fmt.Errorf("nginx -t: %s: %w", out, err)
 	}
-	return nil
+	return m.Restart("nginx")
 }
 
 func systemctlIsActive(service string) (string, error) {
