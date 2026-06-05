@@ -316,6 +316,23 @@ The reconciliation step:
 
 All file writes use atomic rename (write to temp, rename) to avoid partial writes.
 
+### nginx worker_connections tuning
+
+The distro default `/etc/nginx/nginx.conf` ships with `worker_connections 768;` in the `events{}` block and no `worker_rlimit_nofile`. Under load — the public panel reverse proxy plus WebSocket log streaming — nginx exhausts that ceiling and floods `error.log` with:
+
+```
+[alert] ... 768 worker_connections are not enough
+```
+
+`worker_connections` is only valid in `events{}` and `worker_rlimit_nofile` only in the main context — neither can be set from a `sites-enabled/` or `conf.d/` drop-in (both are included inside `http{}`). So both install and reconcile patch the distro-owned `/etc/nginx/nginx.conf` in place (`internal/nginx.PatchMainConf`). The patch is idempotent and non-destructive:
+
+- raises `worker_connections` to `4096` only when the current value is below it; an operator-set higher value is left untouched, and the directive is inserted into `events{}` if missing;
+- raises `worker_rlimit_nofile` to `16384` only when below it, inserting it after `worker_processes` if missing.
+
+Managed lines are tagged with a `# managed by tgproxy` marker. Because the patch only raises values below the floor, re-running it is a no-op: `nginx.conf` is not rewritten (both install and reconcile skip the write when the patched output is byte-identical). On reconcile this also means the patch triggers no nginx reload of its own; `install` always reloads nginx as part of provisioning regardless.
+
+If you need different limits, set higher values manually in `/etc/nginx/nginx.conf` (the patch will not lower them) and run `sudo nginx -t && sudo systemctl reload nginx`.
+
 **Important:** the reconciliation step runs with the **pre-update** (currently installed) CLI binary. This means that when a release changes the config template format or the version-detection logic itself, those new behaviors take effect only on the **next** reconciliation, executed by the freshly installed binary. When upgrading across such a release, run `sudo tgproxy-cli reconcile` once after the update completes — it regenerates every config with the new binary's templates. (Running `sudo tgproxy-cli update` a second time achieves the same, and saving the panel's Proxy Settings re-renders `teleproxy.toml` immediately.)
 
 ### Standalone reconcile

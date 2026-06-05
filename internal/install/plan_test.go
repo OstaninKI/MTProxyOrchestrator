@@ -785,6 +785,32 @@ func TestSinglePlanDisablesDefaultSiteBeforeEnablingStub(t *testing.T) {
 	}
 }
 
+func TestSinglePlanPatchesNginxConfBeforeReload(t *testing.T) {
+	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	patchIdx, reloadIdx := -1, -1
+	for i, s := range plan.Steps {
+		if s.Kind == install.StepPatchNginxConf && s.Target == "/etc/nginx/nginx.conf" {
+			patchIdx = i
+		}
+		if s.Kind == install.StepReloadService && s.Target == "nginx" && reloadIdx < 0 {
+			reloadIdx = i
+		}
+	}
+	if patchIdx < 0 {
+		t.Fatal("plan must include StepPatchNginxConf for /etc/nginx/nginx.conf")
+	}
+	if reloadIdx < 0 {
+		t.Fatal("plan must include a nginx reload")
+	}
+	if patchIdx > reloadIdx {
+		t.Fatalf("nginx.conf must be patched (step %d) before nginx is reloaded (step %d)", patchIdx, reloadIdx)
+	}
+}
+
 func TestSinglePlanNoACMESnippetWithoutEmail(t *testing.T) {
 	plan, err := install.BuildSinglePlan(config.Default(), config.DefaultPaths(), 8443, testLocalBinaries())
 	if err != nil {

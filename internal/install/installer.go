@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/nginx"
 )
 
 // Executor applies one Step to the host.
@@ -27,6 +29,7 @@ type Executor interface {
 	ReloadService(name string) error
 	EnableNginxSite(name string) error
 	DisableNginxSite(name string) error
+	PatchNginxConf(path string) error
 }
 
 // Rollbacker is an optional Executor extension that knows how to undo
@@ -100,6 +103,8 @@ func (i Installer) applyStep(step Step) error {
 		return i.Executor.EnableNginxSite(step.Target)
 	case StepDisableNginxSite:
 		return i.Executor.DisableNginxSite(step.Target)
+	case StepPatchNginxConf:
+		return i.Executor.PatchNginxConf(step.Target)
 	default:
 		return fmt.Errorf("unknown step kind: %s", step.Kind)
 	}
@@ -153,7 +158,9 @@ func (i Installer) rollbackJournal(journal []Step) {
 			err = rb.RemoveService(step.Target)
 		case StepEnableNginxSite:
 			err = rb.RemoveNginxSite(step.Target)
-		case StepAptInstall, StepEnsureSystemUser, StepReloadService, StepDisableNginxSite:
+		case StepAptInstall, StepEnsureSystemUser, StepReloadService, StepDisableNginxSite, StepPatchNginxConf:
+			// PatchNginxConf edits the distro-owned nginx.conf in place; there is
+			// no safe automatic revert, so leave the raised limits on rollback.
 			i.logger().Printf("rollback: skipping %s (no-op)", step.Kind)
 			continue
 		default:
@@ -322,4 +329,22 @@ func (e *SystemExecutor) DisableNginxSite(name string) error {
 		return err
 	}
 	return nil
+}
+
+// PatchNginxConf raises worker_connections / worker_rlimit_nofile in the
+// distro-owned nginx.conf in place. It is idempotent and only raises values
+// below the project floor; a missing file is treated as nothing to patch.
+func (e *SystemExecutor) PatchNginxConf(path string) error {
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	patched := nginx.PatchMainConf(existing)
+	if bytes.Equal(existing, patched) {
+		return nil
+	}
+	return os.WriteFile(path, patched, 0o644)
 }

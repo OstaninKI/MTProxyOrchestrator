@@ -40,6 +40,7 @@ const (
 	StepReloadService    StepKind = "reload-service"
 	StepEnableNginxSite  StepKind = "enable-nginx-site"
 	StepDisableNginxSite StepKind = "disable-nginx-site"
+	StepPatchNginxConf   StepKind = "patch-nginx-conf"
 )
 
 type LocalBinaries struct {
@@ -301,6 +302,7 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 		{Kind: StepWriteFile, Target: "/etc/nginx/sites-available/tgproxy-stub", Content: ngData, Mode: 0o644},
 		{Kind: StepDisableNginxSite, Target: "default"},
 		{Kind: StepEnableNginxSite, Target: "tgproxy-stub"},
+		{Kind: StepPatchNginxConf, Target: "/etc/nginx/nginx.conf"},
 		{Kind: StepReloadService, Target: "nginx"},
 		{Kind: StepWriteFile, Target: paths.StubDir + "/index.html", Content: stub.DefaultStubHTML(), Mode: 0o644},
 		{Kind: StepWriteFile, Target: paths.PanelService, Content: panelUnit.Render(), Mode: 0o644},

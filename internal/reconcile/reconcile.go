@@ -138,6 +138,19 @@ func Reconcile(opts Options) error {
 
 	nginxChanged := false
 
+	// Raise worker_connections / worker_rlimit_nofile in the distro-owned
+	// nginx.conf. These directives live in events{} and the main context, which
+	// no sites-enabled/ or conf.d/ drop-in can reach, so we patch the main file
+	// in place. The patch is idempotent and only raises values below our floor.
+	if mainConf, readErr := os.ReadFile("/etc/nginx/nginx.conf"); readErr == nil {
+		patched := nginx.PatchMainConf(mainConf)
+		changed, err := writeFileIfChanged("/etc/nginx/nginx.conf", patched, 0o644)
+		if err != nil {
+			return fmt.Errorf("patch nginx.conf: %w", err)
+		}
+		nginxChanged = nginxChanged || changed
+	}
+
 	acmeSnippetPath := ""
 	if cfg.ACMEEmail != "" && cfg.PanelDomain != "" {
 		acmeSnippetPath = opts.Paths.NginxSnippetDir + "/acme-challenge.conf"
