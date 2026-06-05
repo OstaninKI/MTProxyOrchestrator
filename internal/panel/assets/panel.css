@@ -3389,13 +3389,20 @@ th.text-right .th-sort { justify-content: flex-end; }
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  z-index: 30;
+  z-index: 1000;
   min-width: 200px;
   padding: 4px;
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: 0 12px 30px rgba(0,0,0,.5);
+}
+/* When open, JS pins the panel with position: fixed so it escapes the
+   table container's overflow clipping (.table-card/.table-wrap). */
+.row-menu[open] > .row-menu-panel {
+  position: fixed;
+  right: auto;
+  top: auto;
 }
 .row-menu-panel form { margin: 0; }
 .row-menu-item {

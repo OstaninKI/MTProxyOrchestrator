@@ -344,6 +344,17 @@
       });
     }
 
+    function positionRowMenu(menu) {
+      const summary = menu.querySelector("summary");
+      const panel = menu.querySelector(".row-menu-panel");
+      if (!summary || !panel) return;
+      const rect = summary.getBoundingClientRect();
+      let left = rect.right - panel.offsetWidth;
+      if (left < 8) left = 8;
+      panel.style.top = rect.bottom + 4 + "px";
+      panel.style.left = left + "px";
+    }
+
     function asNumber(value) {
       const n = Number.parseInt(value || "0", 10);
       return Number.isNaN(n) ? 0 : n;
@@ -526,18 +537,20 @@
     }
     rowCheckboxes().forEach((box) => box.addEventListener("change", updateSelection));
     rowMenus.forEach((menu) => {
-      const summary = menu.querySelector("summary");
-      if (summary) {
-        summary.addEventListener("click", () => {
-          if (!menu.open) closeRowMenus(menu);
-        });
-      }
+      menu.addEventListener("toggle", () => {
+        if (menu.open) {
+          closeRowMenus(menu);
+          positionRowMenu(menu);
+        }
+      });
     });
     document.addEventListener("click", (event) => {
       rowMenus.forEach((menu) => {
         if (menu.open && !menu.contains(event.target)) menu.removeAttribute("open");
       });
     });
+    window.addEventListener("resize", () => closeRowMenus());
+    window.addEventListener("scroll", () => closeRowMenus(), true);
     openCreateButton.addEventListener("click", openCreateModal);
     closeCreateButton.addEventListener("click", closeCreateModal);
     createModal.addEventListener("click", (event) => {
