@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -152,6 +153,18 @@ func (s *Server) scrapeLiveConnections() []metrics.Sample {
 	if err != nil {
 		return nil
 	}
+	// Scrape returns samples in map (non-deterministic) order, which makes the
+	// dashboard list reshuffle on every refresh. Sort into a stable order:
+	// active users (open connections) first, idle users last, and by user label
+	// within each group.
+	sort.SliceStable(samples, func(i, j int) bool {
+		a, b := samples[i], samples[j]
+		ai, bi := a.Connections > 0, b.Connections > 0
+		if ai != bi {
+			return ai // active before inactive
+		}
+		return a.UserLabel < b.UserLabel
+	})
 	return samples
 }
 
