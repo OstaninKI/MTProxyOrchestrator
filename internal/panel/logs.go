@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,19 +17,39 @@ import (
 
 var wsUpgrader = websocket.Upgrader{
 	HandshakeTimeout: 10 * time.Second,
-	// CheckOrigin validates that the request origin matches the Host header.
+	// CheckOrigin validates that the request origin matches the request Host.
 	// This prevents cross-site WebSocket hijacking.
 	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			// Non-browser clients (curl, etc.) send no Origin; allow them.
-			return true
-		}
-		// Strip scheme from origin and compare to Host.
-		origin = strings.TrimPrefix(origin, "https://")
-		origin = strings.TrimPrefix(origin, "http://")
-		return origin == r.Host
+		return wsOriginAllowed(r.Header.Get("Origin"), r.Host)
 	},
+}
+
+// wsOriginAllowed reports whether a browser WebSocket Origin is allowed for a
+// request with the given Host. An empty origin (non-browser clients such as
+// curl) is allowed.
+//
+// The comparison ignores the port: behind nginx the forwarded Host carries no
+// port (proxy_set_header Host $host), while the browser's Origin includes the
+// public port whenever the panel is served on a non-standard port (e.g. :8443).
+// Comparing only the hostname still rejects a different origin domain, which is
+// what matters for cross-site hijacking.
+func wsOriginAllowed(origin, host string) bool {
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(stripPort(u.Host), stripPort(host))
+}
+
+// stripPort returns hostport without its trailing :port, if present.
+func stripPort(hostport string) string {
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		return h
+	}
+	return hostport
 }
 
 // handleLogsPage serves the logs HTML page (requires auth via middleware).
