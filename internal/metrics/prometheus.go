@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
@@ -18,8 +19,24 @@ const (
 	metricBytesIn           = "teleproxy_secret_bytes_received_total"
 	metricBytesOut          = "teleproxy_secret_bytes_sent_total"
 	metricConnections       = "teleproxy_secret_connections"
+	metricConnectionLimit   = "teleproxy_secret_connection_limit"
+	metricUniqueIPs         = "teleproxy_secret_unique_ips"
+	metricMaxIPs            = "teleproxy_secret_max_ips"
+	metricSecretRejected    = "teleproxy_secret_connections_rejected_total"
+	metricRejectedQuota     = "teleproxy_secret_rejected_quota_total"
+	metricRejectedIPs       = "teleproxy_secret_rejected_ips_total"
+	metricRejectedExpired   = "teleproxy_secret_rejected_expired_total"
+	metricAcceptedTotal     = "teleproxy_ext_connections_created_total"
+	metricFailedLRUTotal    = "teleproxy_connections_failed_lru_total"
+	metricFailedFloodTotal  = "teleproxy_connections_failed_flood_total"
+	metricIPACLRejected     = "teleproxy_ip_acl_rejected_total"
+	metricSOCKS5Attempted   = "teleproxy_socks5_connects_attempted_total"
+	metricSOCKS5Succeeded   = "teleproxy_socks5_connects_succeeded_total"
+	metricSOCKS5Failed      = "teleproxy_socks5_connects_failed_total"
+	metricJA4Seen           = "teleproxy_ja4_seen"
 	labelKeyLegacy          = "label"
 	labelKeySecret          = "secret"
+	labelKeyJA4Hash         = "hash"
 	defaultHTTPTimeout      = 10 * time.Second
 )
 
@@ -28,10 +45,39 @@ const MaxResponseBytes = 1024 * 1024
 
 // Sample holds one point-in-time measurement for a single user.
 type Sample struct {
-	UserLabel   string
-	BytesIn     int64
-	BytesOut    int64
-	Connections int64
+	UserLabel           string
+	BytesIn             int64
+	BytesOut            int64
+	Connections         int64
+	ConnectionLimit     int64
+	UniqueIPs           int64
+	MaxIPs              int64
+	RejectedConnections int64
+	RejectedQuota       int64
+	RejectedIPs         int64
+	RejectedExpired     int64
+}
+
+// UpstreamCounters holds Teleproxy upstream proxy counters from one scrape.
+type UpstreamCounters struct {
+	Attempted int64
+	Succeeded int64
+	Failed    int64
+}
+
+// JA4Counter holds one observed ClientHello JA4 fingerprint bucket.
+type JA4Counter struct {
+	Hash  string
+	Count int64
+}
+
+// Snapshot holds all Teleproxy metrics parsed from one scrape.
+type Snapshot struct {
+	Samples                  []Sample
+	AcceptedConnectionsTotal int64
+	RejectedConnectionsTotal int64
+	SOCKS5                   UpstreamCounters
+	JA4                      []JA4Counter
 }
 
 // HTTPClient lets tests inject a fake HTTP client.
@@ -56,36 +102,55 @@ func DefaultScraper(statsAddr string) Scraper {
 // Scrape fetches /metrics and returns per-user samples.
 // Returns an empty slice (not error) when no metrics are present.
 func (s Scraper) Scrape() ([]Sample, error) {
+	snapshot, err := s.ScrapeSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Samples, nil
+}
+
+// ScrapeSnapshot fetches /metrics and returns all dashboard-ready metrics.
+func (s Scraper) ScrapeSnapshot() (Snapshot, error) {
 	resp, err := s.Client.Get(s.StatsAddr + "/metrics")
 	if err != nil {
-		return nil, fmt.Errorf("metrics scrape: %w", err)
+		return Snapshot{}, fmt.Errorf("metrics scrape: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("metrics scrape: unexpected status %d", resp.StatusCode)
+		return Snapshot{}, fmt.Errorf("metrics scrape: unexpected status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("metrics read: %w", err)
+		return Snapshot{}, fmt.Errorf("metrics read: %w", err)
 	}
 	if len(body) > MaxResponseBytes {
-		return nil, fmt.Errorf("metrics response too large")
+		return Snapshot{}, fmt.Errorf("metrics response too large")
 	}
 
-	samples, err := parseMetrics(bytes.NewReader(body))
+	snapshot, err := parseMetricSnapshot(bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("metrics parse: %w", err)
+		return Snapshot{}, fmt.Errorf("metrics parse: %w", err)
 	}
-	return samples, nil
+	return snapshot, nil
 }
 
 // parseMetrics decodes Prometheus text format from r and returns per-user samples.
 func parseMetrics(r io.Reader) ([]Sample, error) {
+	snapshot, err := parseMetricSnapshot(r)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Samples, nil
+}
+
+// parseMetricSnapshot decodes Prometheus text format from r.
+func parseMetricSnapshot(r io.Reader) (Snapshot, error) {
 	dec := expfmt.NewDecoder(r, expfmt.NewFormat(expfmt.TypeTextPlain))
 
 	byUser := make(map[string]*Sample)
+	var snapshot Snapshot
 
 	getOrCreate := func(lbl string) *Sample {
 		if s, ok := byUser[lbl]; ok {
@@ -110,6 +175,29 @@ func parseMetrics(r io.Reader) ([]Sample, error) {
 
 		// Process all metrics in this family.
 		for _, m := range mf.Metric {
+			switch name {
+			case metricAcceptedTotal:
+				snapshot.AcceptedConnectionsTotal = metricValue(m)
+				continue
+			case metricFailedLRUTotal, metricFailedFloodTotal, metricIPACLRejected:
+				snapshot.RejectedConnectionsTotal += metricValue(m)
+				continue
+			case metricSOCKS5Attempted:
+				snapshot.SOCKS5.Attempted = metricValue(m)
+				continue
+			case metricSOCKS5Succeeded:
+				snapshot.SOCKS5.Succeeded = metricValue(m)
+				continue
+			case metricSOCKS5Failed:
+				snapshot.SOCKS5.Failed = metricValue(m)
+				continue
+			case metricJA4Seen:
+				if hash := metricLabel(m, labelKeyJA4Hash); hash != "" {
+					snapshot.JA4 = append(snapshot.JA4, JA4Counter{Hash: hash, Count: metricValue(m)})
+				}
+				continue
+			}
+
 			userLabel := ""
 			for _, lp := range m.Label {
 				switch lp.GetName() {
@@ -128,40 +216,61 @@ func parseMetrics(r io.Reader) ([]Sample, error) {
 
 			switch name {
 			case metricBytesIn, metricBytesInLegacy:
-				if m.Counter != nil {
-					s.BytesIn = int64(m.Counter.GetValue())
-				} else if m.Gauge != nil {
-					s.BytesIn = int64(m.Gauge.GetValue())
-				} else if m.Untyped != nil {
-					s.BytesIn = int64(m.Untyped.GetValue())
-				}
+				s.BytesIn = metricValue(m)
 			case metricBytesOut, metricBytesOutLegacy:
-				if m.Counter != nil {
-					s.BytesOut = int64(m.Counter.GetValue())
-				} else if m.Gauge != nil {
-					s.BytesOut = int64(m.Gauge.GetValue())
-				} else if m.Untyped != nil {
-					s.BytesOut = int64(m.Untyped.GetValue())
-				}
+				s.BytesOut = metricValue(m)
 			case metricConnections, metricConnectionsLegacy:
-				if m.Gauge != nil {
-					s.Connections = int64(m.Gauge.GetValue())
-				} else if m.Counter != nil {
-					s.Connections = int64(m.Counter.GetValue())
-				} else if m.Untyped != nil {
-					s.Connections = int64(m.Untyped.GetValue())
-				}
+				s.Connections = metricValue(m)
+			case metricConnectionLimit:
+				s.ConnectionLimit = metricValue(m)
+			case metricUniqueIPs:
+				s.UniqueIPs = metricValue(m)
+			case metricMaxIPs:
+				s.MaxIPs = metricValue(m)
+			case metricSecretRejected:
+				s.RejectedConnections = metricValue(m)
+			case metricRejectedQuota:
+				s.RejectedQuota = metricValue(m)
+			case metricRejectedIPs:
+				s.RejectedIPs = metricValue(m)
+			case metricRejectedExpired:
+				s.RejectedExpired = metricValue(m)
 			}
 		}
-	}
-
-	if len(byUser) == 0 {
-		return nil, nil
 	}
 
 	out := make([]Sample, 0, len(byUser))
 	for _, s := range byUser {
 		out = append(out, *s)
 	}
-	return out, nil
+	snapshot.Samples = out
+	sort.Slice(snapshot.JA4, func(i, j int) bool {
+		if snapshot.JA4[i].Count == snapshot.JA4[j].Count {
+			return snapshot.JA4[i].Hash < snapshot.JA4[j].Hash
+		}
+		return snapshot.JA4[i].Count > snapshot.JA4[j].Count
+	})
+	return snapshot, nil
+}
+
+func metricValue(m *dto.Metric) int64 {
+	if m.Counter != nil {
+		return int64(m.Counter.GetValue())
+	}
+	if m.Gauge != nil {
+		return int64(m.Gauge.GetValue())
+	}
+	if m.Untyped != nil {
+		return int64(m.Untyped.GetValue())
+	}
+	return 0
+}
+
+func metricLabel(m *dto.Metric, name string) string {
+	for _, lp := range m.Label {
+		if lp.GetName() == name {
+			return lp.GetValue()
+		}
+	}
+	return ""
 }

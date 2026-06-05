@@ -2040,6 +2040,12 @@ body.login-page {
   stroke: oklch(0.78 0.16 300);
 }
 
+.traffic-chart-line-connections {
+  stroke: oklch(0.78 0.16 145);
+  stroke-width: 1.8;
+  stroke-dasharray: 7 6;
+}
+
 .traffic-table-head {
   display: flex;
   align-items: flex-end;
@@ -2640,6 +2646,20 @@ body.login-page {
 .legend-dot strong { color: var(--text); font-size: 12px; font-weight: 600; }
 .legend-download { background: oklch(0.78 0.16 240); }
 .legend-upload { background: oklch(0.78 0.16 300); }
+.legend-connections { background: oklch(0.78 0.16 145); }
+
+.traffic-toolbar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.traffic-toolbar .legend-dot {
+  white-space: nowrap;
+}
+
+.traffic-toolbar .seg {
+  flex: 0 0 auto;
+}
 
 .area-chart {
   width: 100%;
@@ -3266,6 +3286,10 @@ body.login-page {
   .card-head { padding: 11px 14px; flex-wrap: wrap; gap: 8px; }
   .card-body { padding: 14px; }
   .card-body--flush { padding: 0; }
+  .traffic-toolbar {
+    width: 100%;
+    justify-content: flex-start;
+  }
   .resource-row { grid-template-columns: 22px 68px 1fr 52px; }
 }
 

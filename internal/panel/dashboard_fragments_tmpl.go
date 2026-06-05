@@ -97,6 +97,33 @@ var dashboardFragmentFuncs = template.FuncMap{
 		}
 		return max
 	},
+	"maxTrafficConnections": func(series []metrics.TrafficBucket) int64 {
+		return trafficConnectionsMax(series)
+	},
+	"socks5SuccessPercent": func(c metrics.UpstreamCounters) string {
+		if c.Attempted <= 0 {
+			return "n/a"
+		}
+		return fmt.Sprintf("%.0f%%", (float64(c.Succeeded)/float64(c.Attempted))*100)
+	},
+	"hasSecretLimits": func(sample metrics.Sample) bool {
+		return sample.ConnectionLimit > 0 || sample.UniqueIPs > 0 || sample.MaxIPs > 0
+	},
+	"hasSecretRejections": func(sample metrics.Sample) bool {
+		return sample.RejectedConnections > 0 || sample.RejectedQuota > 0 || sample.RejectedIPs > 0 || sample.RejectedExpired > 0
+	},
+	"previewJA4": func(rows []metrics.JA4Counter, limit int) []metrics.JA4Counter {
+		if limit <= 0 || len(rows) <= limit {
+			return rows
+		}
+		return rows[:limit]
+	},
+	"hasOperationalMetrics": func(snapshot metrics.Snapshot) bool {
+		return snapshot.AcceptedConnectionsTotal > 0 ||
+			snapshot.RejectedConnectionsTotal > 0 ||
+			snapshot.SOCKS5.Attempted > 0 ||
+			len(snapshot.JA4) > 0
+	},
 	"countActiveServices": func(services []health.ServiceState) int {
 		count := 0
 		for _, service := range services {
@@ -287,12 +314,16 @@ const dashboardFragments = `
 <div class="card-body card-body--flush">
 {{if .LiveConnections}}
 <table class="tbl tbl--compact">
-<thead><tr><th>User</th><th>Live</th></tr></thead>
+<thead><tr><th>User</th><th>Live</th><th class="text-right">Upload</th><th class="text-right">Download</th><th>Limits</th><th>Rejected</th></tr></thead>
 <tbody>
 {{range .LiveConnections}}
 <tr>
   <td><span class="connection-user">{{.UserLabel}}</span></td>
   <td><span class="badge" data-tone="success"><span class="dot"></span>{{.Connections}}</span></td>
+  <td class="mono text-right">{{formatBytes .BytesIn}}</td>
+  <td class="mono text-right">{{formatBytes .BytesOut}}</td>
+  <td>{{if hasSecretLimits .}}<span class="mono">{{.Connections}} / {{.ConnectionLimit}}</span>{{if or .UniqueIPs .MaxIPs}} <span class="muted">{{.UniqueIPs}} / {{.MaxIPs}} IPs</span>{{end}}{{else}}<span class="muted">unlimited</span>{{end}}</td>
+  <td>{{if hasSecretRejections .}}<span class="badge" data-tone="warn">{{.RejectedConnections}}</span> <span class="muted">quota {{.RejectedQuota}} · IP {{.RejectedIPs}} · expired {{.RejectedExpired}}</span>{{else}}<span class="muted">none</span>{{end}}</td>
 </tr>
 {{end}}
 </tbody>
@@ -300,6 +331,46 @@ const dashboardFragments = `
 {{else}}
 <div class="empty">No active connections.</div>
 {{end}}
+</div>
+</section>
+{{end}}
+
+{{define "ops"}}
+<section
+  id="dashboard-ops"
+  class="card"
+  hx-get="{{.PanelPath}}dashboard/fragments/ops?period={{.Period}}"
+  hx-trigger="sse:dashboard-ops"
+  hx-swap="outerHTML">
+<div class="card-head"><div class="col card-title-stack"><h3>Connection quality</h3><span class="sub">Accepted traffic, rejected probes, upstream and JA4 signals</span></div></div>
+<div class="card-body">
+  {{if hasOperationalMetrics .Teleproxy}}
+  <div class="ops-inline-metrics">
+    <div class="ops-inline-metric"><span class="k">Accepted</span><span class="v mono">{{.Teleproxy.AcceptedConnectionsTotal}}</span></div>
+    <div class="ops-inline-metric"><span class="k">Rejected</span><span class="v mono">{{.Teleproxy.RejectedConnectionsTotal}}</span></div>
+    <div class="ops-inline-metric"><span class="k">SOCKS5 upstream</span><span class="v mono">{{socks5SuccessPercent .Teleproxy.SOCKS5}}</span></div>
+  </div>
+  <div class="divider"></div>
+  <div class="resource-meta"><span>SOCKS5 attempts</span><span class="mono">{{.Teleproxy.SOCKS5.Attempted}}</span></div>
+  <div class="resource-meta"><span>SOCKS5 succeeded</span><span class="mono">{{.Teleproxy.SOCKS5.Succeeded}}</span></div>
+  <div class="resource-meta"><span>SOCKS5 failed</span><span class="mono">{{.Teleproxy.SOCKS5.Failed}}</span></div>
+  <div class="divider"></div>
+  <div class="resource-meta"><span>Security signals</span><span class="mono">{{len .Teleproxy.JA4}} JA4</span></div>
+  {{if .Teleproxy.JA4}}
+  <div class="node-list">
+  {{range previewJA4 .Teleproxy.JA4 4}}
+    <div class="node-row">
+      <span class="badge" data-tone="accent">{{.Count}}</span>
+      <span class="mono muted muted-sm">{{.Hash}}</span>
+    </div>
+  {{end}}
+  </div>
+  {{else}}
+  <div class="empty">No JA4 fingerprints observed.</div>
+  {{end}}
+  {{else}}
+  <div class="empty">No Teleproxy operational metrics yet.</div>
+  {{end}}
 </div>
 </section>
 {{end}}
@@ -314,9 +385,10 @@ const dashboardFragments = `
 <div class="card-head">
   <div class="col card-title-stack"><h3>Network throughput</h3><span class="sub">Aggregate ingress / egress, selected window</span></div>
   <div class="spacer"></div>
-  <div class="row">
+  <div class="row traffic-toolbar">
     <div class="legend-dot"><span class="legend-download"></span><span>Download</span><strong class="mono">{{formatBytes (sumTrafficOutSeries .TrafficSeries)}}</strong></div>
     <div class="legend-dot"><span class="legend-upload"></span><span>Upload</span><strong class="mono">{{formatBytes (sumTrafficInSeries .TrafficSeries)}}</strong></div>
+    <div class="legend-dot"><span class="legend-connections"></span><span>Connections</span><strong class="mono">{{maxTrafficConnections .TrafficSeries}}</strong></div>
     <div class="seg">
       <a class="seg-item{{if eq .Period "1h"}} active{{end}}" href="?period=1h">1h</a>
       <a class="seg-item{{if eq .Period "24h"}} active{{end}}" href="?period=24h">24h</a>
@@ -430,6 +502,10 @@ func dashboardComponentsFragment(w io.Writer, data DashboardData) {
 	dashboardFragmentsTmpl.ExecuteTemplate(w, "components", data) //nolint:errcheck
 }
 
+func dashboardOpsFragment(w io.Writer, data DashboardData) {
+	dashboardFragmentsTmpl.ExecuteTemplate(w, "ops", data) //nolint:errcheck
+}
+
 func trafficLinePath(series []metrics.TrafficBucket) string {
 	return trafficLinePathBy(series, func(bucket metrics.TrafficBucket) int64 {
 		return bucket.BytesIn + bucket.BytesOut
@@ -501,8 +577,10 @@ func trafficChartSVG(series []metrics.TrafficBucket) template.HTML {
 		botPad:   22,
 	}
 	maxValue := trafficSeriesMax(series)
+	maxConnections := trafficConnectionsMax(series)
 	outPoints := trafficPointsScaled(series, func(bucket metrics.TrafficBucket) int64 { return bucket.BytesOut }, maxValue, dims)
 	inPoints := trafficPointsScaled(series, func(bucket metrics.TrafficBucket) int64 { return bucket.BytesIn }, maxValue, dims)
+	connPoints := trafficPointsScaled(series, func(bucket metrics.TrafficBucket) int64 { return bucket.Connections }, maxConnections, dims)
 	chartWidth := dims.width - dims.leftPad - dims.rightPad
 	chartHeight := dims.height - dims.topPad - dims.botPad
 	baselineY := dims.topPad + chartHeight
@@ -540,6 +618,7 @@ func trafficChartSVG(series []metrics.TrafficBucket) template.HTML {
 	fmt.Fprintf(&b, `<path class="traffic-chart-line traffic-chart-line-out" d="%s"></path>`, trafficLinePathFromPoints(outPoints))
 	fmt.Fprintf(&b, `<path class="traffic-chart-area traffic-chart-area-in" d="%s"></path>`, trafficAreaPathFromPoints(inPoints, baselineY))
 	fmt.Fprintf(&b, `<path class="traffic-chart-line traffic-chart-line-in" d="%s"></path>`, trafficLinePathFromPoints(inPoints))
+	fmt.Fprintf(&b, `<path class="traffic-chart-line traffic-chart-line-connections" d="%s"></path>`, trafficLinePathFromPoints(connPoints))
 	b.WriteString(`</svg>`)
 
 	return template.HTML(b.String())
@@ -581,6 +660,16 @@ func trafficSeriesMax(series []metrics.TrafficBucket) int64 {
 		}
 		if bucket.BytesOut > maxValue {
 			maxValue = bucket.BytesOut
+		}
+	}
+	return maxValue
+}
+
+func trafficConnectionsMax(series []metrics.TrafficBucket) int64 {
+	maxValue := int64(1)
+	for _, bucket := range series {
+		if bucket.Connections > maxValue {
+			maxValue = bucket.Connections
 		}
 	}
 	return maxValue

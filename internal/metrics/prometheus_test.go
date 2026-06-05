@@ -39,6 +39,57 @@ teleproxy_secret_bytes_sent_total{secret="alice"} 300
 teleproxy_secret_bytes_sent_total{secret="bob"} 400
 `
 
+const teleproxyOpsFixtureMetrics = `# HELP teleproxy_ext_connections Current client connections.
+# TYPE teleproxy_ext_connections gauge
+teleproxy_ext_connections 7
+# HELP teleproxy_ext_connections_created_total New client connections.
+# TYPE teleproxy_ext_connections_created_total counter
+teleproxy_ext_connections_created_total 101
+# HELP teleproxy_connections_failed_lru_total LRU failed connections.
+# TYPE teleproxy_connections_failed_lru_total counter
+teleproxy_connections_failed_lru_total 3
+# HELP teleproxy_connections_failed_flood_total Flood failed connections.
+# TYPE teleproxy_connections_failed_flood_total counter
+teleproxy_connections_failed_flood_total 4
+# HELP teleproxy_ip_acl_rejected_total IP ACL rejected connections.
+# TYPE teleproxy_ip_acl_rejected_total counter
+teleproxy_ip_acl_rejected_total 5
+# HELP teleproxy_secret_connection_limit Current connection limit per configured secret.
+# TYPE teleproxy_secret_connection_limit gauge
+teleproxy_secret_connection_limit{secret="alice"} 10
+# HELP teleproxy_secret_unique_ips Current unique IPs per configured secret.
+# TYPE teleproxy_secret_unique_ips gauge
+teleproxy_secret_unique_ips{secret="alice"} 2
+# HELP teleproxy_secret_max_ips Current max IPs per configured secret.
+# TYPE teleproxy_secret_max_ips gauge
+teleproxy_secret_max_ips{secret="alice"} 5
+# HELP teleproxy_secret_connections_rejected_total Rejected connections per secret.
+# TYPE teleproxy_secret_connections_rejected_total counter
+teleproxy_secret_connections_rejected_total{secret="alice"} 9
+# HELP teleproxy_secret_rejected_quota_total Quota rejections per secret.
+# TYPE teleproxy_secret_rejected_quota_total counter
+teleproxy_secret_rejected_quota_total{secret="alice"} 1
+# HELP teleproxy_secret_rejected_ips_total IP limit rejections per secret.
+# TYPE teleproxy_secret_rejected_ips_total counter
+teleproxy_secret_rejected_ips_total{secret="alice"} 2
+# HELP teleproxy_secret_rejected_expired_total Expired secret rejections per secret.
+# TYPE teleproxy_secret_rejected_expired_total counter
+teleproxy_secret_rejected_expired_total{secret="alice"} 3
+# HELP teleproxy_socks5_connects_attempted_total SOCKS5 upstream attempts.
+# TYPE teleproxy_socks5_connects_attempted_total counter
+teleproxy_socks5_connects_attempted_total 20
+# HELP teleproxy_socks5_connects_succeeded_total SOCKS5 upstream successes.
+# TYPE teleproxy_socks5_connects_succeeded_total counter
+teleproxy_socks5_connects_succeeded_total 18
+# HELP teleproxy_socks5_connects_failed_total SOCKS5 upstream failures.
+# TYPE teleproxy_socks5_connects_failed_total counter
+teleproxy_socks5_connects_failed_total 2
+# HELP teleproxy_ja4_seen ClientHello JA4 fingerprints observed.
+# TYPE teleproxy_ja4_seen counter
+teleproxy_ja4_seen{hash="t13d1615h2_46e7e9700bed_45f260be83e2"} 8
+teleproxy_ja4_seen{hash="t13d1516h2_8daaf6152771_b0da82dd1658"} 5
+`
+
 func newScraper(srv *httptest.Server) metrics.Scraper {
 	return metrics.Scraper{
 		Client:    srv.Client(),
@@ -128,6 +179,47 @@ func TestScrapeParsesCurrentTeleproxyMetrics(t *testing.T) {
 	}
 	if alice.Connections != 2 {
 		t.Errorf("alice Connections: want 2, got %d", alice.Connections)
+	}
+}
+
+func TestScrapeSnapshotParsesTeleproxyOperationalMetrics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(teleproxyFixtureMetrics + teleproxyOpsFixtureMetrics)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	snapshot, err := newScraper(srv).ScrapeSnapshot()
+	if err != nil {
+		t.Fatalf("ScrapeSnapshot() error: %v", err)
+	}
+
+	sort.Slice(snapshot.Samples, func(i, j int) bool {
+		return snapshot.Samples[i].UserLabel < snapshot.Samples[j].UserLabel
+	})
+	alice := snapshot.Samples[0]
+	if alice.ConnectionLimit != 10 || alice.UniqueIPs != 2 || alice.MaxIPs != 5 {
+		t.Fatalf("alice limits = conn:%d unique:%d max:%d, want 10/2/5", alice.ConnectionLimit, alice.UniqueIPs, alice.MaxIPs)
+	}
+	if alice.RejectedConnections != 9 || alice.RejectedQuota != 1 || alice.RejectedIPs != 2 || alice.RejectedExpired != 3 {
+		t.Fatalf("alice rejections = total:%d quota:%d ips:%d expired:%d, want 9/1/2/3",
+			alice.RejectedConnections, alice.RejectedQuota, alice.RejectedIPs, alice.RejectedExpired)
+	}
+	if snapshot.AcceptedConnectionsTotal != 101 {
+		t.Fatalf("AcceptedConnectionsTotal = %d, want 101", snapshot.AcceptedConnectionsTotal)
+	}
+	if snapshot.RejectedConnectionsTotal != 12 {
+		t.Fatalf("RejectedConnectionsTotal = %d, want 12", snapshot.RejectedConnectionsTotal)
+	}
+	if snapshot.SOCKS5.Attempted != 20 || snapshot.SOCKS5.Succeeded != 18 || snapshot.SOCKS5.Failed != 2 {
+		t.Fatalf("SOCKS5 counters = %+v, want 20/18/2", snapshot.SOCKS5)
+	}
+	if len(snapshot.JA4) != 2 {
+		t.Fatalf("JA4 count = %d, want 2", len(snapshot.JA4))
+	}
+	if snapshot.JA4[0].Hash != "t13d1615h2_46e7e9700bed_45f260be83e2" || snapshot.JA4[0].Count != 8 {
+		t.Fatalf("top JA4 = %+v, want first fixture hash count 8", snapshot.JA4[0])
 	}
 }
 

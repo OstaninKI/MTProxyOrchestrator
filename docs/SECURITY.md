@@ -89,6 +89,7 @@ Out of scope for v1:
 - Session identifiers must not be written to audit rows.
 - Operator-visible logs are component-scoped (`panel`, `teleproxy`, `sing-box`, `nginx`) and should be treated as potentially sensitive operational data.
 - Teleproxy metric scraping and GitHub update metadata checks use explicit HTTP client timeouts; metric responses are size-capped before parsing.
+- Dashboard Teleproxy observability is available only on authenticated panel routes. JA4 fingerprint hashes, per-secret rejection counters, connection/IP limits, and SOCKS5 upstream counters are operational telemetry and must not be exposed through public unauthenticated endpoints.
 
 ## DPI Resistance
 

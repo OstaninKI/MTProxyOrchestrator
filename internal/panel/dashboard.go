@@ -43,6 +43,7 @@ type DashboardData struct {
 	TopUsers        []metrics.UserTraffic
 	TrafficSeries   []metrics.TrafficBucket
 	LiveConnections []metrics.Sample // latest per-user active connection counts
+	Teleproxy       metrics.Snapshot
 	Components      []ComponentVersion
 	Users           []UserRow
 	BridgeNodes     []bridge.Node
@@ -148,24 +149,30 @@ func (s *Server) statsAddr() string {
 // scrapeLiveConnections fetches current per-user metrics from Teleproxy without
 // persisting them. Returns nil on error (dashboard degrades gracefully).
 func (s *Server) scrapeLiveConnections() []metrics.Sample {
+	return s.scrapeTeleproxySnapshot().Samples
+}
+
+// scrapeTeleproxySnapshot fetches current Teleproxy metrics without persisting
+// them. Returns an empty snapshot on error (dashboard degrades gracefully).
+func (s *Server) scrapeTeleproxySnapshot() metrics.Snapshot {
 	scraper := metrics.DefaultScraper(s.statsAddr())
-	samples, err := scraper.Scrape()
+	snapshot, err := scraper.ScrapeSnapshot()
 	if err != nil {
-		return nil
+		return metrics.Snapshot{}
 	}
 	// Scrape returns samples in map (non-deterministic) order, which makes the
 	// dashboard list reshuffle on every refresh. Sort into a stable order:
 	// active users (open connections) first, idle users last, and by user label
 	// within each group.
-	sort.SliceStable(samples, func(i, j int) bool {
-		a, b := samples[i], samples[j]
+	sort.SliceStable(snapshot.Samples, func(i, j int) bool {
+		a, b := snapshot.Samples[i], snapshot.Samples[j]
 		ai, bi := a.Connections > 0, b.Connections > 0
 		if ai != bi {
 			return ai // active before inactive
 		}
 		return a.UserLabel < b.UserLabel
 	})
-	return samples
+	return snapshot
 }
 
 func collectSystemSnapshot() SystemSnapshot {
@@ -310,6 +317,8 @@ func (s *Server) handleDashboardFragment(w http.ResponseWriter, r *http.Request)
 		dashboardTrafficFragment(w, data)
 	case "components":
 		dashboardComponentsFragment(w, data)
+	case "ops":
+		dashboardOpsFragment(w, data)
 	default:
 		http.NotFound(w, r)
 	}

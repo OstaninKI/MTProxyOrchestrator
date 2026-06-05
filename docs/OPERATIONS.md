@@ -97,6 +97,46 @@ The install path can publish the panel on a public TLS endpoint in two ways:
 
 The panel backend remains plain HTTP on loopback (`127.0.0.1:18080`); nginx terminates public TLS on port `8443` when public panel flags are used.
 
+## Dashboard Observability
+
+The authenticated Dashboard is an operator console for service state, traffic, and Teleproxy runtime signals. It refreshes private fragments through authenticated SSE events and does not expose metric data on unauthenticated routes.
+
+### Data sources
+
+- Host state is read best-effort from local Linux files such as `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, and `statfs("/")`.
+- Service health uses mode-aware checks: Single mode checks Teleproxy, panel, and nginx stub health; Bridge mode checks Teleproxy, sing-box, SOCKS5 inbound, and Telegram chain health.
+- Traffic history is stored in SQLite from Teleproxy cumulative counters and rendered as sampled deltas.
+- Live runtime data is scraped from Teleproxy `/metrics` on the configured loopback stats port. The scraper uses an explicit HTTP timeout and a 1 MiB response cap.
+
+### Dashboard sections
+
+- **Network throughput** shows upload/download history for the selected `1h`, `24h`, `7d`, or `30d` window. The chart also overlays historical active connection counts from the same traffic buckets.
+- **System** shows memory, disk, load average, uptime, kernel, and active runtime mode.
+- **Services & Components** shows installed component versions and mode-aware component status.
+- **Connection quality** shows Teleproxy accepted and rejected connection counters, SOCKS5 upstream attempt/success/failure counters, and the top JA4 ClientHello fingerprints when available.
+- **Top users by traffic** shows sampled upload, download, total traffic, and peak connections for the selected period.
+- **Bridge nodes** shows the configured Bridge node preview, enabled state, and last latency test result.
+- **Active Connections** shows current per-secret connection count, live upload/download counters, Teleproxy connection/IP limits, and per-secret rejection reasons.
+
+### Teleproxy metrics currently consumed
+
+The panel parses the following current Teleproxy metric names:
+
+- per-secret traffic and connections: `teleproxy_secret_bytes_received_total`, `teleproxy_secret_bytes_sent_total`, `teleproxy_secret_connections`
+- per-secret limits and IP usage: `teleproxy_secret_connection_limit`, `teleproxy_secret_unique_ips`, `teleproxy_secret_max_ips`
+- per-secret rejection reasons: `teleproxy_secret_connections_rejected_total`, `teleproxy_secret_rejected_quota_total`, `teleproxy_secret_rejected_ips_total`, `teleproxy_secret_rejected_expired_total`
+- accepted and rejected connection counters: `teleproxy_ext_connections_created_total`, `teleproxy_connections_failed_lru_total`, `teleproxy_connections_failed_flood_total`, `teleproxy_ip_acl_rejected_total`
+- Bridge/SOCKS5 upstream counters: `teleproxy_socks5_connects_attempted_total`, `teleproxy_socks5_connects_succeeded_total`, `teleproxy_socks5_connects_failed_total`
+- probe visibility: `teleproxy_ja4_seen{hash=...}`
+
+Legacy `mtproto_secret_traffic_bytes_in`, `mtproto_secret_traffic_bytes_out`, and `mtproto_secret_connections_total` names are still accepted for traffic sampling compatibility.
+
+### Operational notes
+
+- Teleproxy metrics are cumulative counters. The dashboard stores traffic deltas for history and quotas, while the live Connection quality card displays the latest raw counters from the current Teleproxy process.
+- JA4 hashes are useful for diagnosing active probing and DPI signature changes. Treat them as operational telemetry; they are not MTProto secrets, but they should stay behind the authenticated panel.
+- The SOCKS5 upstream counters are most useful in Bridge mode. In Single mode they may remain empty or show `n/a`.
+
 ## User Traffic Quotas
 
 The panel can enforce per-user traffic quotas. Quotas are optional; a `quota_bytes` value of zero means unlimited.

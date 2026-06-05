@@ -7,7 +7,7 @@ MTProto Proxy Orchestrator manages a Teleproxy-based Telegram MTProto proxy on U
 - Installs a Single-mode Teleproxy deployment with nginx stub fallback and systemd units
 - Routes invalid FakeTLS probes to a loopback HTTPS stub backend when panel TLS is configured, so browser probes see the deployed domain certificate instead of the external mask host certificate
 - Runs an authenticated admin panel backend on loopback and can wire a public HTTPS nginx proxy when certificate paths are provided
-- Supports user management, Bridge runtime switching, metrics, logs, backups, restore, and verified updates in the codebase
+- Supports user management, Bridge runtime switching, Teleproxy observability, logs, backups, restore, and verified updates in the codebase
 - Enforces optional per-user traffic quotas with daily, weekly, or monthly periods, soft warning, and hard suspension
 - Supports optional TOTP-based 2FA per admin account with single-use bcrypt-hashed recovery codes
 - Exposes DPI-resistance controls in the panel under Settings → Proxy Settings: MSS clamp, JA4 fingerprint logging, Fake-TLS vs random-padding link transport, and optional TLS backend / wildcard masquerade domain
@@ -94,6 +94,7 @@ Key paths used by the current implementation:
 - Health endpoint: `http://127.0.0.1:18080/<generated-panel-path>/health`
 - Authenticated UI: mounted under the generated random path only
 - Dashboard navigation and subpage back links preserve the generated panel path.
+- Dashboard observability reads Teleproxy `/metrics` from loopback and shows traffic, active connections, per-secret limits/rejections, accepted/rejected connection counters, SOCKS5 upstream health, and top JA4 fingerprints when Teleproxy exposes them.
 
 ## Local Development (Dev Mode)
 

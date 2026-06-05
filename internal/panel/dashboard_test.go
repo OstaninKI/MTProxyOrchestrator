@@ -87,10 +87,12 @@ func TestDashboardIncludesSSEFragmentRefreshMarkup(t *testing.T) {
 		`hx-get="/p-example/dashboard/fragments/connections?period=24h"`,
 		`hx-get="/p-example/dashboard/fragments/traffic?period=24h"`,
 		`hx-get="/p-example/dashboard/fragments/components?period=24h"`,
+		`hx-get="/p-example/dashboard/fragments/ops?period=24h"`,
 		`hx-trigger="sse:dashboard-health"`,
 		`hx-trigger="sse:dashboard-connections"`,
 		`hx-trigger="sse:dashboard-traffic"`,
 		`hx-trigger="sse:dashboard-components"`,
+		`hx-trigger="sse:dashboard-ops"`,
 		`sse-swap="dashboard-heartbeat"`,
 	} {
 		if !strings.Contains(html, want) {
@@ -581,7 +583,7 @@ func TestDashboardSystemOmitsTotalWhenUnknown(t *testing.T) {
 func TestDashboardLiveConnectionsSection(t *testing.T) {
 	data := DashboardData{
 		LiveConnections: []metrics.Sample{
-			{UserLabel: "alice", Connections: 3},
+			{UserLabel: "alice", BytesIn: 1024, BytesOut: 2048, Connections: 3},
 			{UserLabel: "bob", Connections: 1},
 		},
 		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
@@ -597,8 +599,68 @@ func TestDashboardLiveConnectionsSection(t *testing.T) {
 	if !strings.Contains(html, "alice") {
 		t.Error("dashboard should list user 'alice' in Active Connections")
 	}
+	if !strings.Contains(html, "1.0 KB") || !strings.Contains(html, "2.0 KB") {
+		t.Fatalf("dashboard should show live upload and download bytes:\n%s", html)
+	}
 	if !strings.Contains(html, "bob") {
 		t.Error("dashboard should list user 'bob' in Active Connections")
+	}
+}
+
+func TestDashboardRendersTeleproxyOperationalMetrics(t *testing.T) {
+	data := DashboardData{
+		PanelPath: "/p-example/",
+		Period:    metrics.Period24h,
+		Teleproxy: metrics.Snapshot{
+			AcceptedConnectionsTotal: 120,
+			RejectedConnectionsTotal: 7,
+			SOCKS5: metrics.UpstreamCounters{
+				Attempted: 20,
+				Succeeded: 18,
+				Failed:    2,
+			},
+			JA4: []metrics.JA4Counter{
+				{Hash: "t13d1615h2_46e7e9700bed_45f260be83e2", Count: 8},
+			},
+		},
+		LiveConnections: []metrics.Sample{
+			{
+				UserLabel:           "alice",
+				Connections:         4,
+				ConnectionLimit:     10,
+				UniqueIPs:           2,
+				MaxIPs:              5,
+				RejectedConnections: 3,
+				RejectedQuota:       1,
+				RejectedIPs:         1,
+				RejectedExpired:     1,
+			},
+		},
+		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	for _, want := range []string{
+		"Connection quality",
+		"Accepted",
+		"Rejected",
+		"120",
+		"7",
+		"SOCKS5 upstream",
+		"90%",
+		"Security signals",
+		"t13d1615h2_46e7e9700bed_45f260be83e2",
+		"Limits",
+		"4 / 10",
+		"2 / 5 IPs",
+		"quota 1",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard operational metrics missing %q:\n%s", want, html)
+		}
 	}
 }
 
@@ -671,8 +733,8 @@ func TestDashboardTrafficFragmentRendersSeriesOverview(t *testing.T) {
 		PanelPath: "/p-example/",
 		Period:    "24h",
 		TrafficSeries: []metrics.TrafficBucket{
-			{TS: 1, BytesIn: 1024, BytesOut: 512},
-			{TS: 2, BytesIn: 2048, BytesOut: 1024},
+			{TS: 1, BytesIn: 1024, BytesOut: 512, Connections: 2},
+			{TS: 2, BytesIn: 2048, BytesOut: 1024, Connections: 5},
 		},
 	})
 
@@ -841,8 +903,10 @@ func TestDashboardTrafficFragmentRendersDualSeriesChartAndLegend(t *testing.T) {
 		`traffic-chart-line traffic-chart-line-out`,
 		`traffic-chart-area traffic-chart-area-in`,
 		`traffic-chart-line traffic-chart-line-in`,
+		`traffic-chart-line traffic-chart-line-connections`,
 		`Download`,
 		`Upload`,
+		`Connections`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("traffic fragment missing %q:\n%s", want, html)

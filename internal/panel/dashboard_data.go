@@ -47,6 +47,8 @@ func (s *Server) collectDashboardData(period metrics.Period) DashboardData {
 		slog.Warn("dashboard bridge node load failed", "err", err)
 	}
 
+	teleproxySnapshot := s.scrapeTeleproxySnapshot()
+
 	return DashboardData{
 		Services:        services,
 		BridgeSteps:     bridgeSteps,
@@ -57,7 +59,8 @@ func (s *Server) collectDashboardData(period metrics.Period) DashboardData {
 		Period:          period,
 		TopUsers:        topUsers,
 		TrafficSeries:   trafficSeries,
-		LiveConnections: s.scrapeLiveConnections(),
+		LiveConnections: teleproxySnapshot.Samples,
+		Teleproxy:       teleproxySnapshot,
 		Components:      collectComponentVersions(),
 		Users:           users,
 		BridgeNodes:     nodeList.Nodes,

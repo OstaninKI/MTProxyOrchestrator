@@ -124,7 +124,8 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
     <div class="col-8">
       {{template "components" .}}
     </div>
-    <div class="col-4">
+    <div class="col-4 col col-panel">
+      {{template "ops" .}}
       <section class="card">
         <div class="card-head"><h3>Quick actions</h3></div>
         <div class="card-body">
