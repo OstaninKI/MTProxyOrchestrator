@@ -643,6 +643,28 @@ func TestDashboardTopUsersFormatsTrafficBytes(t *testing.T) {
 	}
 }
 
+func TestDashboardTopUsersPeriodSelectorReflectsSelectedPeriod(t *testing.T) {
+	data := DashboardData{
+		PanelPath: "/p-example/",
+		Period:    "7d",
+		TopUsers: []metrics.UserTraffic{
+			{UserLabel: "alice", BytesIn: 1024, BytesOut: 2048, Connections: 1},
+		},
+		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
+	}
+
+	var buf bytes.Buffer
+	dashboardPage(&buf, data)
+	html := buf.String()
+
+	if !strings.Contains(html, `class="seg-item active" href="?period=7d"`) {
+		t.Errorf("selected period 7d should be marked active:\n%s", html)
+	}
+	if strings.Contains(html, `class="seg-item active" href="?period=24h"`) {
+		t.Errorf("24h must not be active when 7d is selected:\n%s", html)
+	}
+}
+
 func TestDashboardTrafficFragmentRendersSeriesOverview(t *testing.T) {
 	var buf bytes.Buffer
 	dashboardTrafficFragment(&buf, DashboardData{

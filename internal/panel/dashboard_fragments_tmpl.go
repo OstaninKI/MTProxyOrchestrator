@@ -375,7 +375,7 @@ const dashboardFragments = `
 
 {{define "top_users"}}
 <section class="card">
-  <div class="card-head"><div class="col card-title-stack"><h3>Top users by traffic</h3><span class="sub">Live · selected period</span></div><div class="spacer"></div><div class="seg"><a class="seg-item" href="?period=1h">1h</a><a class="seg-item active" href="?period=24h">24h</a><a class="seg-item" href="?period=7d">7d</a><a class="seg-item" href="?period=30d">30d</a></div></div>
+  <div class="card-head"><div class="col card-title-stack"><h3>Top users by traffic</h3><span class="sub">Live · selected period</span></div><div class="spacer"></div><div class="seg"><a class="seg-item{{if eq .Period "1h"}} active{{end}}" href="?period=1h">1h</a><a class="seg-item{{if eq .Period "24h"}} active{{end}}" href="?period=24h">24h</a><a class="seg-item{{if eq .Period "7d"}} active{{end}}" href="?period=7d">7d</a><a class="seg-item{{if eq .Period "30d"}} active{{end}}" href="?period=30d">30d</a></div></div>
   <div class="card-body card-body--flush">
   {{if .TopUsers}}
     <table class="tbl tbl--compact">
