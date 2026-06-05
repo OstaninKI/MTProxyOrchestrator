@@ -1,7 +1,9 @@
 package panel
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -75,9 +77,12 @@ func (s *Server) handleLogsStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ch := make(chan logstream.LogEntry, 64)
 
-	// Start streaming in a goroutine; errors are ignored (client disconnect).
+	// Start streaming in a goroutine. The error is captured so the loop below
+	// can report it to the browser; close(ch) happens-after the assignment, so
+	// reading streamErr after the channel closes is safe.
+	var streamErr error
 	go func() {
-		_ = logstream.Stream(ctx, component, filter, ch)
+		streamErr = logstream.Stream(ctx, component, filter, ch)
 		close(ch)
 	}()
 
@@ -86,6 +91,11 @@ func (s *Server) handleLogsStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case entry, ok := <-ch:
 			if !ok {
+				// Stream ended. If it failed for a reason other than the client
+				// disconnecting, tell the browser why with a close frame rather
+				// than dropping the TCP connection — a bare drop surfaces as an
+				// opaque 1006 and an endless reconnect loop in the UI.
+				closeLogStream(conn, streamErr)
 				return
 			}
 			data, err := json.Marshal(entry)
@@ -99,6 +109,29 @@ func (s *Server) handleLogsStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// closeLogStream sends a WebSocket close frame describing why the log stream
+// ended. A nil error or a context cancellation (client navigated away, server
+// shutting down) is reported as a normal closure; any other error is reported
+// as an internal error with a human-readable reason. The reason carries no
+// secrets — logstream errors are journalctl process/exec failures.
+func closeLogStream(conn *websocket.Conn, err error) {
+	code := websocket.CloseNormalClosure
+	reason := ""
+	if err != nil && !errors.Is(err, context.Canceled) {
+		code = websocket.CloseInternalServerErr
+		reason = "log stream unavailable: " + err.Error()
+	}
+	// Close reason payloads are capped at 123 bytes by the protocol.
+	if len(reason) > 123 {
+		reason = reason[:123]
+	}
+	_ = conn.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(code, reason),
+		time.Now().Add(5*time.Second),
+	)
 }
 
 // handleLogsDownload returns the last N log lines as plain text.

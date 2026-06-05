@@ -195,7 +195,8 @@
       };
       ws.onclose = (event) => {
         ws = null;
-        statusEl.textContent = `Disconnected (code ${event.code}). Reconnecting in 5s…`;
+        const reason = event.reason ? ` — ${event.reason}` : "";
+        statusEl.textContent = `Disconnected (code ${event.code})${reason}. Reconnecting in 5s…`;
         scheduleReconnect();
       };
     }
