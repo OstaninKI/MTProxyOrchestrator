@@ -3,6 +3,7 @@ stats_port = 9091
 http_stats = true
 direct = true
 mss_clamp = true
+dc_probe_interval = 60
 domain = "www.microsoft.com"
 
 [stats]

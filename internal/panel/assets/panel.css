@@ -1724,6 +1724,40 @@ body.login-page {
   font-weight: 500;
 }
 
+.ops-trend {
+  display: grid;
+  gap: 6px;
+}
+
+.ops-spark {
+  display: block;
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.02);
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
+.dc-latency-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.dc-latency-row .dc-label {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.dc-latency-row .dc-fail {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
 .action-list,
 .summary-list {
   display: grid;
@@ -2580,6 +2614,7 @@ body.login-page {
 .badge[data-tone="warn"],
 .badge.warn { color: var(--warn); background: var(--warn-soft, rgba(210,153,34,.14)); border-color: rgba(210,153,34,.3); }
 .badge[data-tone="accent"] { color: var(--accent-strong); background: var(--accent-soft); border-color: rgba(85,189,242,.3); }
+.badge[data-tone="neutral"] { color: var(--text-faint); background: rgba(255,255,255,.04); border-color: var(--border); }
 .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
 .seg {

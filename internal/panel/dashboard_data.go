@@ -42,6 +42,10 @@ func (s *Server) collectDashboardData(period metrics.Period) DashboardData {
 	if err != nil {
 		slog.Warn("dashboard traffic series query failed", "err", err)
 	}
+	opsSeries, err := metrics.QueryOpsSeries(s.DB, period, 60, nil)
+	if err != nil {
+		slog.Warn("dashboard ops series query failed", "err", err)
+	}
 	nodeList, err := bridge.Load(s.nodePath())
 	if err != nil {
 		slog.Warn("dashboard bridge node load failed", "err", err)
@@ -59,6 +63,7 @@ func (s *Server) collectDashboardData(period metrics.Period) DashboardData {
 		Period:          period,
 		TopUsers:        topUsers,
 		TrafficSeries:   trafficSeries,
+		OpsSeries:       opsSeries,
 		LiveConnections: teleproxySnapshot.Samples,
 		Teleproxy:       teleproxySnapshot,
 		Components:      collectComponentVersions(),

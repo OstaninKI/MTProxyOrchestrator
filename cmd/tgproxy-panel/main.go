@@ -163,9 +163,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	statsAddr := fmt.Sprintf("http://127.0.0.1:%d", statsPort)
 	scraper := metrics.DefaultScraper(statsAddr)
 	sampler := metrics.Sampler{
-		Source: scraper.Scrape,
-		Store:  metrics.DBStoreFn(d),
-		Now:    func() int64 { return time.Now().Unix() },
+		SnapshotSource: scraper.ScrapeSnapshot,
+		Store:          metrics.DBStoreFn(d),
+		OpsStore:       metrics.DBOpsStoreFn(d),
+		Now:            func() int64 { return time.Now().Unix() },
 	}
 	retainer := metrics.Retainer{DB: d}
 	applyDBSettings(d, &retainer, &mtprotoPort, &maskHost, &tlsBackend, &wildcardMask, &mssClamp, &randomPadding, &ja4Log)

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
@@ -34,9 +35,14 @@ const (
 	metricSOCKS5Succeeded   = "teleproxy_socks5_connects_succeeded_total"
 	metricSOCKS5Failed      = "teleproxy_socks5_connects_failed_total"
 	metricJA4Seen           = "teleproxy_ja4_seen"
+	metricDCLatencyLast     = "teleproxy_dc_latency_last_seconds"
+	metricDCProbeFailures   = "teleproxy_dc_probe_failures_total"
+	metricProxyProtoConns   = "teleproxy_proxy_protocol_connections_total"
+	metricProxyProtoErrors  = "teleproxy_proxy_protocol_errors_total"
 	labelKeyLegacy          = "label"
 	labelKeySecret          = "secret"
 	labelKeyJA4Hash         = "hash"
+	labelKeyDC              = "dc"
 	defaultHTTPTimeout      = 10 * time.Second
 )
 
@@ -71,6 +77,21 @@ type JA4Counter struct {
 	Count int64
 }
 
+// DCStat holds Telegram datacenter upstream-probe metrics for one DC.
+// LastLatencyMs is the most recent probe round-trip in milliseconds, or -1
+// when no latency was reported (e.g. only the failures counter was present).
+type DCStat struct {
+	DC            string
+	LastLatencyMs float64
+	ProbeFailures int64
+}
+
+// ProxyProtocolCounters holds PROXY-protocol acceptance counters from one scrape.
+type ProxyProtocolCounters struct {
+	Connections int64
+	Errors      int64
+}
+
 // Snapshot holds all Teleproxy metrics parsed from one scrape.
 type Snapshot struct {
 	Samples                  []Sample
@@ -78,6 +99,8 @@ type Snapshot struct {
 	RejectedConnectionsTotal int64
 	SOCKS5                   UpstreamCounters
 	JA4                      []JA4Counter
+	DCStats                  []DCStat
+	ProxyProtocol            ProxyProtocolCounters
 }
 
 // HTTPClient lets tests inject a fake HTTP client.
@@ -150,6 +173,7 @@ func parseMetricSnapshot(r io.Reader) (Snapshot, error) {
 	dec := expfmt.NewDecoder(r, expfmt.NewFormat(expfmt.TypeTextPlain))
 
 	byUser := make(map[string]*Sample)
+	byDC := make(map[string]*DCStat)
 	var snapshot Snapshot
 
 	getOrCreate := func(lbl string) *Sample {
@@ -159,6 +183,16 @@ func parseMetricSnapshot(r io.Reader) (Snapshot, error) {
 		s := &Sample{UserLabel: lbl}
 		byUser[lbl] = s
 		return s
+	}
+
+	getOrCreateDC := func(dc string) *DCStat {
+		if d, ok := byDC[dc]; ok {
+			return d
+		}
+		// LastLatencyMs defaults to -1 ("unknown") until a gauge sample is seen.
+		d := &DCStat{DC: dc, LastLatencyMs: -1}
+		byDC[dc] = d
+		return d
 	}
 
 	for {
@@ -194,6 +228,23 @@ func parseMetricSnapshot(r io.Reader) (Snapshot, error) {
 			case metricJA4Seen:
 				if hash := metricLabel(m, labelKeyJA4Hash); hash != "" {
 					snapshot.JA4 = append(snapshot.JA4, JA4Counter{Hash: hash, Count: metricValue(m)})
+				}
+				continue
+			case metricProxyProtoConns:
+				snapshot.ProxyProtocol.Connections = metricValue(m)
+				continue
+			case metricProxyProtoErrors:
+				snapshot.ProxyProtocol.Errors = metricValue(m)
+				continue
+			case metricDCLatencyLast:
+				if dc := metricLabel(m, labelKeyDC); dc != "" {
+					// Gauge is reported in seconds; surface milliseconds.
+					getOrCreateDC(dc).LastLatencyMs = metricValueFloat(m) * 1000
+				}
+				continue
+			case metricDCProbeFailures:
+				if dc := metricLabel(m, labelKeyDC); dc != "" {
+					getOrCreateDC(dc).ProbeFailures = metricValue(m)
 				}
 				continue
 			}
@@ -250,6 +301,21 @@ func parseMetricSnapshot(r io.Reader) (Snapshot, error) {
 		}
 		return snapshot.JA4[i].Count > snapshot.JA4[j].Count
 	})
+
+	dcs := make([]DCStat, 0, len(byDC))
+	for _, d := range byDC {
+		dcs = append(dcs, *d)
+	}
+	// Sort by DC number when both parse as ints, falling back to string order.
+	sort.Slice(dcs, func(i, j int) bool {
+		ai, aerr := strconv.Atoi(dcs[i].DC)
+		bi, berr := strconv.Atoi(dcs[j].DC)
+		if aerr == nil && berr == nil {
+			return ai < bi
+		}
+		return dcs[i].DC < dcs[j].DC
+	})
+	snapshot.DCStats = dcs
 	return snapshot, nil
 }
 
@@ -262,6 +328,19 @@ func metricValue(m *dto.Metric) int64 {
 	}
 	if m.Untyped != nil {
 		return int64(m.Untyped.GetValue())
+	}
+	return 0
+}
+
+func metricValueFloat(m *dto.Metric) float64 {
+	if m.Gauge != nil {
+		return m.Gauge.GetValue()
+	}
+	if m.Counter != nil {
+		return m.Counter.GetValue()
+	}
+	if m.Untyped != nil {
+		return m.Untyped.GetValue()
 	}
 	return 0
 }

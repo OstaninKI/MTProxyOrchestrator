@@ -88,6 +88,7 @@ stats_port = {{.StatsPort}}
 http_stats = true
 direct = true
 mss_clamp = {{.MSSClamp}}
+dc_probe_interval = 60
 {{- if .TLSBackend}}
 domain = [{ name = "{{.DomainName}}", backend = "{{.TLSBackend}}" }]
 {{- else}}

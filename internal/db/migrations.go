@@ -16,7 +16,33 @@ var migrations = []migration{
 	{"006_user_quotas", sqlUserQuotas},
 	{"007_admin_totp", sqlAdminTOTP},
 	{"008_traffic_counters", sqlTrafficCounters},
+	{"009_ops_samples", sqlOpsSamples},
 }
+
+// sqlOpsSamples stores per-interval deltas of Teleproxy global operational
+// counters so the dashboard can chart reject-rate and SOCKS5 success-rate
+// trends over time. ops_counters holds the last cumulative values, mirroring
+// traffic_counters, so each scrape records a non-negative delta.
+const sqlOpsSamples = `
+CREATE TABLE IF NOT EXISTS ops_samples (
+    id               INTEGER PRIMARY KEY,
+    ts               INTEGER NOT NULL,
+    accepted         INTEGER NOT NULL,
+    rejected         INTEGER NOT NULL,
+    socks5_attempted INTEGER NOT NULL,
+    socks5_succeeded INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ops_ts ON ops_samples(ts);
+
+CREATE TABLE IF NOT EXISTS ops_counters (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    accepted         INTEGER NOT NULL,
+    rejected         INTEGER NOT NULL,
+    socks5_attempted INTEGER NOT NULL,
+    socks5_succeeded INTEGER NOT NULL,
+    updated_ts       INTEGER NOT NULL
+);
+`
 
 const sqlTrafficCounters = `
 CREATE TABLE IF NOT EXISTS traffic_counters (

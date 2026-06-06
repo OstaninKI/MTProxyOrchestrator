@@ -62,7 +62,25 @@ func (r Retainer) Run() error {
 	if err := r.DeleteOldHourly(hourlyCutoff); err != nil {
 		return fmt.Errorf("delete old hourly: %w", err)
 	}
+	if err := r.DeleteOldOps(minuteCutoff); err != nil {
+		return fmt.Errorf("delete old ops samples: %w", err)
+	}
 	return nil
+}
+
+// DeleteOldOps deletes rows from ops_samples where ts < cutoff. ops_samples is
+// kept at minute granularity for the same horizon as traffic_samples.
+func (r Retainer) DeleteOldOps(cutoff int64) error {
+	tx, err := r.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(`DELETE FROM ops_samples WHERE ts < ?`, cutoff); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // AggregateOldSamples aggregates traffic_samples rows with ts < cutoff

@@ -106,6 +106,33 @@ var dashboardFragmentFuncs = template.FuncMap{
 		}
 		return fmt.Sprintf("%.0f%%", (float64(c.Succeeded)/float64(c.Attempted))*100)
 	},
+	"rejectionRatePercent": func(snapshot metrics.Snapshot) string {
+		total := snapshot.AcceptedConnectionsTotal + snapshot.RejectedConnectionsTotal
+		if total <= 0 {
+			return "n/a"
+		}
+		return fmt.Sprintf("%.1f%%", (float64(snapshot.RejectedConnectionsTotal)/float64(total))*100)
+	},
+	"dcLatencyLabel": func(d metrics.DCStat) string {
+		if d.LastLatencyMs < 0 {
+			return "n/a"
+		}
+		return fmt.Sprintf("%.0f ms", d.LastLatencyMs)
+	},
+	"dcTone": func(d metrics.DCStat) string {
+		switch {
+		case d.ProbeFailures > 0:
+			return "danger"
+		case d.LastLatencyMs < 0:
+			return "neutral"
+		case d.LastLatencyMs >= 500:
+			return "danger"
+		case d.LastLatencyMs >= 200:
+			return "warn"
+		default:
+			return "success"
+		}
+	},
 	"hasSecretLimits": func(sample metrics.Sample) bool {
 		return sample.ConnectionLimit > 0 || sample.UniqueIPs > 0 || sample.MaxIPs > 0
 	},
@@ -122,7 +149,10 @@ var dashboardFragmentFuncs = template.FuncMap{
 		return snapshot.AcceptedConnectionsTotal > 0 ||
 			snapshot.RejectedConnectionsTotal > 0 ||
 			snapshot.SOCKS5.Attempted > 0 ||
-			len(snapshot.JA4) > 0
+			len(snapshot.JA4) > 0 ||
+			len(snapshot.DCStats) > 0 ||
+			snapshot.ProxyProtocol.Connections > 0 ||
+			snapshot.ProxyProtocol.Errors > 0
 	},
 	"countActiveServices": func(services []health.ServiceState) int {
 		count := 0
@@ -201,6 +231,10 @@ var dashboardFragmentFuncs = template.FuncMap{
 	},
 	"kpiSparkSVG": func(series []metrics.TrafficBucket) template.HTML {
 		return kpiSparkSVG(series)
+	},
+	"opsHasTrend": opsHasTrend,
+	"opsRateSparkSVG": func(series []metrics.OpsBucket, kind string) template.HTML {
+		return opsRateSparkSVG(series, kind)
 	},
 	"componentStateLabel": func(name, version string, isBridge bool) string {
 		if version == "" || version == "unknown" {
@@ -342,18 +376,33 @@ const dashboardFragments = `
   hx-get="{{.PanelPath}}dashboard/fragments/ops?period={{.Period}}"
   hx-trigger="sse:dashboard-ops"
   hx-swap="outerHTML">
-<div class="card-head"><div class="col card-title-stack"><h3>Connection quality</h3><span class="sub">Accepted traffic, rejected probes, upstream and JA4 signals</span></div></div>
+<div class="card-head"><div class="col card-title-stack"><h3>Connection quality</h3><span class="sub">Accepted / rejected probes, SOCKS5 upstream and JA4 signals</span></div></div>
 <div class="card-body">
   {{if hasOperationalMetrics .Teleproxy}}
   <div class="ops-inline-metrics">
     <div class="ops-inline-metric"><span class="k">Accepted</span><span class="v mono">{{.Teleproxy.AcceptedConnectionsTotal}}</span></div>
     <div class="ops-inline-metric"><span class="k">Rejected</span><span class="v mono">{{.Teleproxy.RejectedConnectionsTotal}}</span></div>
+    <div class="ops-inline-metric"><span class="k">Reject rate</span><span class="v mono">{{rejectionRatePercent .Teleproxy}}</span></div>
     <div class="ops-inline-metric"><span class="k">SOCKS5 upstream</span><span class="v mono">{{socks5SuccessPercent .Teleproxy.SOCKS5}}</span></div>
   </div>
+  {{if opsHasTrend .OpsSeries}}
+  <div class="divider"></div>
+  <div class="ops-trend">
+    <div class="resource-meta"><span>Reject rate trend</span><span class="mono muted">{{.Period}} window</span></div>
+    {{opsRateSparkSVG .OpsSeries "reject"}}
+    <div class="resource-meta"><span>SOCKS5 success trend</span><span class="mono muted">{{.Period}} window</span></div>
+    {{opsRateSparkSVG .OpsSeries "socks5"}}
+  </div>
+  {{end}}
   <div class="divider"></div>
   <div class="resource-meta"><span>SOCKS5 attempts</span><span class="mono">{{.Teleproxy.SOCKS5.Attempted}}</span></div>
   <div class="resource-meta"><span>SOCKS5 succeeded</span><span class="mono">{{.Teleproxy.SOCKS5.Succeeded}}</span></div>
   <div class="resource-meta"><span>SOCKS5 failed</span><span class="mono">{{.Teleproxy.SOCKS5.Failed}}</span></div>
+  {{if or .Teleproxy.ProxyProtocol.Connections .Teleproxy.ProxyProtocol.Errors}}
+  <div class="divider"></div>
+  <div class="resource-meta"><span>PROXY-protocol conns</span><span class="mono">{{.Teleproxy.ProxyProtocol.Connections}}</span></div>
+  <div class="resource-meta"><span>PROXY-protocol errors</span><span class="mono">{{.Teleproxy.ProxyProtocol.Errors}}</span></div>
+  {{end}}
   <div class="divider"></div>
   <div class="resource-meta"><span>Security signals</span><span class="mono">{{len .Teleproxy.JA4}} JA4</span></div>
   {{if .Teleproxy.JA4}}
@@ -370,6 +419,29 @@ const dashboardFragments = `
   {{end}}
   {{else}}
   <div class="empty">No Teleproxy operational metrics yet.</div>
+  {{end}}
+</div>
+</section>
+{{end}}
+
+{{define "upstream"}}
+<section
+  id="dashboard-upstream"
+  class="card"
+  hx-get="{{.PanelPath}}dashboard/fragments/upstream?period={{.Period}}"
+  hx-trigger="sse:dashboard-upstream"
+  hx-swap="outerHTML">
+<div class="card-head"><div class="col card-title-stack"><h3>Telegram upstream health</h3><span class="sub">DC latency probes and probe failures</span></div></div>
+<div class="card-body">
+  {{if .Teleproxy.DCStats}}
+  {{range .Teleproxy.DCStats}}
+  <div class="dc-latency-row">
+    <span class="dc-label">DC {{.DC}}{{if .ProbeFailures}} <span class="dc-fail">· {{.ProbeFailures}} fail</span>{{end}}</span>
+    <span class="mono"><span class="badge" data-tone="{{dcTone .}}">{{dcLatencyLabel .}}</span></span>
+  </div>
+  {{end}}
+  {{else}}
+  <div class="empty">No DC probe data yet.</div>
   {{end}}
 </div>
 </section>
@@ -504,6 +576,10 @@ func dashboardComponentsFragment(w io.Writer, data DashboardData) {
 
 func dashboardOpsFragment(w io.Writer, data DashboardData) {
 	dashboardFragmentsTmpl.ExecuteTemplate(w, "ops", data) //nolint:errcheck
+}
+
+func dashboardUpstreamFragment(w io.Writer, data DashboardData) {
+	dashboardFragmentsTmpl.ExecuteTemplate(w, "upstream", data) //nolint:errcheck
 }
 
 func trafficLinePath(series []metrics.TrafficBucket) string {
@@ -648,6 +724,88 @@ func kpiSparkSVG(series []metrics.TrafficBucket) template.HTML {
 	b.WriteString(`<defs><linearGradient id="kpi-spark-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="oklch(0.78 0.16 240)" stop-opacity="0.35"></stop><stop offset="100%" stop-color="oklch(0.78 0.16 240)" stop-opacity="0"></stop></linearGradient></defs>`)
 	fmt.Fprintf(&b, `<path d="%s" fill="url(#kpi-spark-fill)"></path>`, trafficAreaPathFromPoints(points, baselineY))
 	fmt.Fprintf(&b, `<path d="%s" fill="none" stroke="oklch(0.78 0.16 240)" stroke-width="1.5"></path>`, trafficLinePathFromPoints(points))
+	b.WriteString(`</svg>`)
+	return template.HTML(b.String())
+}
+
+// opsRateValues maps an operational series to a 0–100 percentage trend.
+// kind is "reject" (rejected / accepted+rejected) or "socks5" (succeeded / attempted).
+func opsRateValues(series []metrics.OpsBucket, kind string) []float64 {
+	out := make([]float64, 0, len(series))
+	for _, b := range series {
+		switch kind {
+		case "reject":
+			total := b.Accepted + b.Rejected
+			if total <= 0 {
+				out = append(out, 0)
+				continue
+			}
+			out = append(out, float64(b.Rejected)/float64(total)*100)
+		case "socks5":
+			if b.SOCKS5Attempted <= 0 {
+				out = append(out, 0)
+				continue
+			}
+			out = append(out, float64(b.SOCKS5Succeeded)/float64(b.SOCKS5Attempted)*100)
+		}
+	}
+	return out
+}
+
+// opsHasTrend reports whether the series carries enough activity to chart.
+func opsHasTrend(series []metrics.OpsBucket) bool {
+	if len(series) < 2 {
+		return false
+	}
+	for _, b := range series {
+		if b.Accepted > 0 || b.Rejected > 0 || b.SOCKS5Attempted > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// opsRateSparkSVG renders a compact 0–100% trend sparkline for an operational
+// rate, reusing the traffic sparkline path builders for visual consistency with
+// the rest of the dashboard. hue selects the accent (warm for rejects, green
+// for SOCKS5 success), matching the oklch palette used elsewhere.
+func opsRateSparkSVG(series []metrics.OpsBucket, kind string) template.HTML {
+	values := opsRateValues(series, kind)
+	if len(values) < 2 {
+		return ""
+	}
+	hue := 25.0
+	if kind == "socks5" {
+		hue = 150.0
+	}
+
+	const width, height = 260.0, 36.0
+	const top, bot = 3.0, 3.0
+	chartH := height - top - bot
+	baselineY := top + chartH
+	n := len(values)
+	pts := make([]svgPoint, n)
+	for i, v := range values {
+		if v < 0 {
+			v = 0
+		}
+		if v > 100 {
+			v = 100
+		}
+		x := 0.0
+		if n > 1 {
+			x = (float64(i) / float64(n-1)) * width
+		}
+		pts[i] = svgPoint{x: x, y: top + (1-v/100)*chartH}
+	}
+
+	stroke := fmt.Sprintf("oklch(0.78 0.16 %.0f)", hue)
+	gradID := fmt.Sprintf("ops-spark-fill-%s", kind)
+	var b strings.Builder
+	fmt.Fprintf(&b, `<svg class="ops-spark" viewBox="0 0 %.0f %.0f" preserveAspectRatio="none" aria-hidden="true">`, width, height)
+	fmt.Fprintf(&b, `<defs><linearGradient id="%s" x1="0" x2="0" y1="0" y2="1"><stop offset="0%%" stop-color="%s" stop-opacity="0.30"></stop><stop offset="100%%" stop-color="%s" stop-opacity="0"></stop></linearGradient></defs>`, gradID, stroke, stroke)
+	fmt.Fprintf(&b, `<path d="%s" fill="url(#%s)"></path>`, trafficAreaPathFromPoints(pts, baselineY), gradID)
+	fmt.Fprintf(&b, `<path d="%s" fill="none" stroke="%s" stroke-width="1.5"></path>`, trafficLinePathFromPoints(pts), stroke)
 	b.WriteString(`</svg>`)
 	return template.HTML(b.String())
 }

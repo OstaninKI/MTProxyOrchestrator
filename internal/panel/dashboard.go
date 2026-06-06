@@ -42,7 +42,8 @@ type DashboardData struct {
 	Period          metrics.Period
 	TopUsers        []metrics.UserTraffic
 	TrafficSeries   []metrics.TrafficBucket
-	LiveConnections []metrics.Sample // latest per-user active connection counts
+	OpsSeries       []metrics.OpsBucket // reject-rate / SOCKS5 trend buckets
+	LiveConnections []metrics.Sample    // latest per-user active connection counts
 	Teleproxy       metrics.Snapshot
 	Components      []ComponentVersion
 	Users           []UserRow
@@ -319,6 +320,8 @@ func (s *Server) handleDashboardFragment(w http.ResponseWriter, r *http.Request)
 		dashboardComponentsFragment(w, data)
 	case "ops":
 		dashboardOpsFragment(w, data)
+	case "upstream":
+		dashboardUpstreamFragment(w, data)
 	default:
 		http.NotFound(w, r)
 	}

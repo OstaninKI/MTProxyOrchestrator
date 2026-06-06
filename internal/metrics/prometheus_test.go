@@ -90,6 +90,65 @@ teleproxy_ja4_seen{hash="t13d1615h2_46e7e9700bed_45f260be83e2"} 8
 teleproxy_ja4_seen{hash="t13d1516h2_8daaf6152771_b0da82dd1658"} 5
 `
 
+const teleproxyUpstreamFixtureMetrics = `# HELP teleproxy_dc_latency_last_seconds Most recent probe latency per Telegram DC.
+# TYPE teleproxy_dc_latency_last_seconds gauge
+teleproxy_dc_latency_last_seconds{dc="1"} 0.042
+teleproxy_dc_latency_last_seconds{dc="2"} 0.118
+teleproxy_dc_latency_last_seconds{dc="5"} 0.500
+# HELP teleproxy_dc_probe_failures_total Probe failures per Telegram DC.
+# TYPE teleproxy_dc_probe_failures_total counter
+teleproxy_dc_probe_failures_total{dc="1"} 0
+teleproxy_dc_probe_failures_total{dc="5"} 3
+# HELP teleproxy_proxy_protocol_connections_total PROXY-protocol connections.
+# TYPE teleproxy_proxy_protocol_connections_total counter
+teleproxy_proxy_protocol_connections_total 17
+# HELP teleproxy_proxy_protocol_errors_total PROXY-protocol parse errors.
+# TYPE teleproxy_proxy_protocol_errors_total counter
+teleproxy_proxy_protocol_errors_total 2
+`
+
+func TestScrapeSnapshotParsesUpstreamMetrics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(teleproxyOpsFixtureMetrics + teleproxyUpstreamFixtureMetrics)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	snapshot, err := newScraper(srv).ScrapeSnapshot()
+	if err != nil {
+		t.Fatalf("ScrapeSnapshot() error: %v", err)
+	}
+
+	if len(snapshot.DCStats) != 3 {
+		t.Fatalf("DCStats count = %d, want 3", len(snapshot.DCStats))
+	}
+	// DCStats must be sorted by DC.
+	dc1 := snapshot.DCStats[0]
+	if dc1.DC != "1" {
+		t.Fatalf("first DC = %q, want 1", dc1.DC)
+	}
+	if dc1.LastLatencyMs != 42 {
+		t.Errorf("dc1 latency = %v ms, want 42", dc1.LastLatencyMs)
+	}
+	if dc1.ProbeFailures != 0 {
+		t.Errorf("dc1 failures = %d, want 0", dc1.ProbeFailures)
+	}
+	dc5 := snapshot.DCStats[2]
+	if dc5.DC != "5" || dc5.LastLatencyMs != 500 || dc5.ProbeFailures != 3 {
+		t.Errorf("dc5 = %+v, want DC 5 / 500ms / 3 failures", dc5)
+	}
+	// DC 2 has latency but no failures metric: failures default 0.
+	dc2 := snapshot.DCStats[1]
+	if dc2.DC != "2" || dc2.LastLatencyMs != 118 || dc2.ProbeFailures != 0 {
+		t.Errorf("dc2 = %+v, want DC 2 / 118ms / 0 failures", dc2)
+	}
+
+	if snapshot.ProxyProtocol.Connections != 17 || snapshot.ProxyProtocol.Errors != 2 {
+		t.Errorf("ProxyProtocol = %+v, want 17 conns / 2 errors", snapshot.ProxyProtocol)
+	}
+}
+
 func newScraper(srv *httptest.Server) metrics.Scraper {
 	return metrics.Scraper{
 		Client:    srv.Client(),

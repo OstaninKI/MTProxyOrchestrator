@@ -622,6 +622,15 @@ func TestDashboardRendersTeleproxyOperationalMetrics(t *testing.T) {
 			JA4: []metrics.JA4Counter{
 				{Hash: "t13d1615h2_46e7e9700bed_45f260be83e2", Count: 8},
 			},
+			DCStats: []metrics.DCStat{
+				{DC: "1", LastLatencyMs: 42, ProbeFailures: 0},
+				{DC: "5", LastLatencyMs: 500, ProbeFailures: 3},
+			},
+			ProxyProtocol: metrics.ProxyProtocolCounters{Connections: 17, Errors: 2},
+		},
+		OpsSeries: []metrics.OpsBucket{
+			{TS: 1, Accepted: 50, Rejected: 5, SOCKS5Attempted: 10, SOCKS5Succeeded: 9},
+			{TS: 2, Accepted: 70, Rejected: 2, SOCKS5Attempted: 12, SOCKS5Succeeded: 12},
 		},
 		LiveConnections: []metrics.Sample{
 			{
@@ -651,6 +660,18 @@ func TestDashboardRendersTeleproxyOperationalMetrics(t *testing.T) {
 		"7",
 		"SOCKS5 upstream",
 		"90%",
+		"Reject rate",
+		"Reject rate trend",
+		"SOCKS5 success trend",
+		"ops-spark",
+		"Telegram upstream health",
+		"DC 1",
+		"42 ms",
+		"DC 5",
+		"500 ms",
+		"3 fail",
+		"PROXY-protocol conns",
+		"PROXY-protocol errors",
 		"Security signals",
 		"t13d1615h2_46e7e9700bed_45f260be83e2",
 		"Limits",

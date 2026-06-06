@@ -20,11 +20,17 @@ type StoreFn func(samples []Sample, ts int64) error
 type NowFn func() int64
 
 // Sampler runs periodic metric collection.
+//
+// When SnapshotSource is set it is preferred over Source: it yields the full
+// snapshot, so per-user samples and global operational counters come from a
+// single scrape. OpsStore, when set, persists the operational counters.
 type Sampler struct {
-	Source   ScrapeSource
-	Store    StoreFn
-	Now      NowFn
-	Interval time.Duration // default 60s when zero
+	Source         ScrapeSource
+	SnapshotSource SnapshotSource
+	Store          StoreFn
+	OpsStore       OpsStoreFn
+	Now            NowFn
+	Interval       time.Duration // default 60s when zero
 }
 
 // Run collects metrics on every Interval tick until ctx is cancelled.
@@ -37,17 +43,32 @@ func (s Sampler) Run(ctx context.Context) error {
 	}
 
 	tick := func() {
-		samples, err := s.Source()
+		var (
+			snapshot Snapshot
+			samples  []Sample
+			err      error
+		)
+		if s.SnapshotSource != nil {
+			snapshot, err = s.SnapshotSource()
+			samples = snapshot.Samples
+		} else {
+			samples, err = s.Source()
+		}
 		if err != nil {
 			slog.Error("metrics scrape failed", "err", err)
 			return
 		}
-		if len(samples) == 0 {
-			return
-		}
+
 		ts := s.Now()
-		if err := s.Store(samples, ts); err != nil {
-			slog.Error("metrics store failed", "err", err)
+		if len(samples) > 0 && s.Store != nil {
+			if err := s.Store(samples, ts); err != nil {
+				slog.Error("metrics store failed", "err", err)
+			}
+		}
+		if s.OpsStore != nil {
+			if err := s.OpsStore(snapshot, ts); err != nil {
+				slog.Error("ops metrics store failed", "err", err)
+			}
 		}
 	}
 
