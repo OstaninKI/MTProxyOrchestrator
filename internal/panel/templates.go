@@ -112,26 +112,24 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
   </article>
 </section>
 <section class="page-stack fade-in">
-  <div class="grid-12">
-    <div class="col-8">
+  <div class="dash-cols">
+    <div class="dash-main">
       {{template "traffic" .}}
-    </div>
-    <div class="col-4">
-      {{template "health" .}}
-    </div>
-  </div>
-  <div class="grid-12">
-    <div class="col-8">
       {{template "components" .}}
+      {{template "top_users" .}}
     </div>
-    <div class="col-4 col col-panel">
+    <div class="dash-rail">
+      {{template "health" .}}
       {{template "upstream" .}}
       {{template "ops" .}}
-      <section class="card">
-        <div class="card-head"><h3>Quick actions</h3></div>
-        <div class="card-body">
-          <div class="col col-panel">
-            <a class="action-row" data-action="users" href="{{.PanelPath}}users#create-user">
+      {{template "bridge_nodes" .}}
+    </div>
+  </div>
+  <section class="card quick-actions">
+    <div class="card-head"><h3>Quick actions</h3></div>
+    <div class="card-body">
+      <div class="quick-actions-bar">
+        <a class="action-row" data-action="users" href="{{.PanelPath}}users#create-user">
               <span class="action-icon">{{icon "Plus" 14}}</span>
               <span class="summary-copy"><strong>Add user</strong><span>Create a new MTProto user and copy the link</span></span>
               {{icon "Right" 14}}
@@ -159,16 +157,10 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
               <span class="summary-copy"><strong>Change camouflage</strong><span>Pick a stub template</span></span>
               {{icon "Right" 14}}
             </a>
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
-  </div>
-  <div class="grid-12">
-    <div class="col-8">{{template "top_users" .}}</div>
-    <div class="col-4">{{template "bridge_nodes" .}}</div>
-    <div class="col-12">{{template "connections" .}}</div>
-  </div>
+  </section>
+  {{template "connections" .}}
 </section>
 </main>
 </div>

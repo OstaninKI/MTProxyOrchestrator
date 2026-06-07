@@ -1476,6 +1476,39 @@ body.login-page {
 
 .span2 { grid-column: 1 / -1; }
 
+/* Dashboard primary layout: two independent columns that stack their panels
+   at natural height (align-items: start) so there is no forced per-row
+   stretching and no ragged empty space under shorter panels. */
+.dash-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.dash-main,
+.dash-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Quick actions as a full-width responsive band of action tiles. */
+.quick-actions-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.quick-actions-bar .action-row,
+.quick-actions-bar .action-row-form { height: 100%; }
+.quick-actions-bar .action-row-form { display: block; }
+
+@media (max-width: 1024px) {
+  .dash-cols { grid-template-columns: 1fr; }
+}
+
 .dashboard-page .card {
   padding: 18px;
   box-shadow: var(--shadow);
