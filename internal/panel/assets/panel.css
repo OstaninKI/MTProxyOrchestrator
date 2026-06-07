@@ -1476,13 +1476,14 @@ body.login-page {
 
 .span2 { grid-column: 1 / -1; }
 
-/* Dashboard primary layout: two independent columns that stack their panels
-   at natural height (align-items: start) so there is no forced per-row
-   stretching and no ragged empty space under shorter panels. */
+/* Dashboard primary layout: two columns stretched to equal height. Each column
+   is a vertical stack of panels; the last panel grows to absorb any slack so
+   the shorter column's bottom edge lines up with the taller one instead of
+   leaving a ragged void between the last card and the next full-width band. */
 .dash-cols {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
   gap: 16px;
 }
 
@@ -1492,6 +1493,11 @@ body.login-page {
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+}
+
+.dash-main > :last-child,
+.dash-rail > :last-child {
+  flex: 1 0 auto;
 }
 
 /* Quick actions as a full-width responsive band of action tiles. */

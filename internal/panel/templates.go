@@ -117,6 +117,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
       {{template "traffic" .}}
       {{template "components" .}}
       {{template "top_users" .}}
+      {{template "connections" .}}
     </div>
     <div class="dash-rail">
       {{template "health" .}}
@@ -160,7 +161,6 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
       </div>
     </div>
   </section>
-  {{template "connections" .}}
 </section>
 </main>
 </div>
