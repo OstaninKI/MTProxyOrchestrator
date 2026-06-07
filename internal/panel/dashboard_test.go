@@ -365,6 +365,59 @@ func TestCollectDashboardDataLoadsBridgeNodes(t *testing.T) {
 	}
 }
 
+func TestCollectDashboardDataBridgeIncludesSystemdServices(t *testing.T) {
+	s := newDashboardTestServer(t)
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	writeNodeList(t, nodePath, bridge.NodeList{
+		Nodes: []bridge.Node{
+			{ID: 1, Type: bridge.NodeTypeTrojan, Tag: "de-1", Host: "de.example", Port: 443, Enabled: true, LastLatency: 42},
+		},
+		Strategy: "roundrobin",
+	})
+	s.BridgeCfg = &BridgeConfig{
+		Paths: config.InstallPaths{OutboundsJSON: nodePath},
+	}
+
+	prev := dashboardHealthChecker
+	dashboardHealthChecker = func() health.Checker {
+		return health.Checker{
+			Systemd: func(string) (bool, error) { return true, nil },
+			HTTP:    func(string) error { return nil },
+			SOCKS5:  func(string, string) (time.Duration, error) { return 0, nil },
+		}
+	}
+	t.Cleanup(func() { dashboardHealthChecker = prev })
+
+	data := s.collectDashboardData(metrics.Period1h)
+
+	if !data.IsBridge {
+		t.Fatal("expected bridge mode")
+	}
+
+	// In Bridge mode the "Services & Components" table must still list the
+	// systemd units (teleproxy.service, sing-box.service) that the bridge
+	// checker probes — not just the installed binaries.
+	got := map[string]bool{}
+	for _, svc := range data.Services {
+		got[svc.Name] = svc.Active
+	}
+	for _, name := range []string{"teleproxy.service", "sing-box.service"} {
+		active, ok := got[name]
+		if !ok {
+			t.Errorf("data.Services missing %q in bridge mode; got %+v", name, data.Services)
+			continue
+		}
+		if !active {
+			t.Errorf("data.Services[%q].Active = false, want true", name)
+		}
+	}
+	// Connectivity probes are not systemd units and must not leak into the table.
+	if _, ok := got["telegram-chain"]; ok {
+		t.Errorf("data.Services should not contain non-systemd probe rows; got %+v", data.Services)
+	}
+}
+
 func TestParseTeleproxyVersion(t *testing.T) {
 	tests := []struct {
 		name string
