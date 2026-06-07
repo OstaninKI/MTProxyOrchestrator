@@ -738,6 +738,63 @@ func TestDashboardRendersTeleproxyOperationalMetrics(t *testing.T) {
 	}
 }
 
+// TestDashboardUpstreamBridgeModeExplainsDirectProbes verifies that in Bridge
+// mode the Telegram upstream section keeps the DC probe data visible but adds an
+// explanatory note and does not flag DC probe failures as danger, since DC
+// probes run direct (bypassing the bridge) and are expected to fail there.
+func TestDashboardUpstreamBridgeModeExplainsDirectProbes(t *testing.T) {
+	data := DashboardData{
+		IsBridge:  true,
+		PanelPath: "/p-example/",
+		Period:    metrics.Period24h,
+		Teleproxy: metrics.Snapshot{
+			DCStats: []metrics.DCStat{
+				{DC: "1", LastLatencyMs: 0, ProbeFailures: 5},
+				{DC: "2", LastLatencyMs: 0, ProbeFailures: 5},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	dashboardUpstreamFragment(&buf, data)
+	html := buf.String()
+
+	if !strings.Contains(html, "DC 1") {
+		t.Fatalf("bridge upstream should still list DC rows:\n%s", html)
+	}
+	if !strings.Contains(html, "Bridge mode") {
+		t.Fatalf("bridge upstream should explain that DC probes run direct:\n%s", html)
+	}
+	if strings.Contains(html, `data-tone="danger"`) {
+		t.Fatalf("bridge upstream should not flag DC probe failures as danger:\n%s", html)
+	}
+}
+
+// TestDashboardUpstreamSingleModeFlagsFailures verifies that outside Bridge mode
+// the explanatory note is absent and probe failures are still flagged as danger.
+func TestDashboardUpstreamSingleModeFlagsFailures(t *testing.T) {
+	data := DashboardData{
+		PanelPath: "/p-example/",
+		Period:    metrics.Period24h,
+		Teleproxy: metrics.Snapshot{
+			DCStats: []metrics.DCStat{
+				{DC: "5", LastLatencyMs: 500, ProbeFailures: 3},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	dashboardUpstreamFragment(&buf, data)
+	html := buf.String()
+
+	if strings.Contains(html, "Bridge mode") {
+		t.Fatalf("single-mode upstream should not show the bridge note:\n%s", html)
+	}
+	if !strings.Contains(html, `data-tone="danger"`) {
+		t.Fatalf("single-mode upstream should flag probe failures as danger:\n%s", html)
+	}
+}
+
 // TestDashboardNoLiveConnectionsShowsEmptyState verifies that the Active
 // Connections section remains visible and renders the empty state when no live
 // data is available.

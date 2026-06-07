@@ -434,10 +434,13 @@ const dashboardFragments = `
 <div class="card-head"><div class="col card-title-stack"><h3>Telegram upstream health</h3><span class="sub">DC latency probes and probe failures</span></div></div>
 <div class="card-body">
   {{if .Teleproxy.DCStats}}
+  {{if .IsBridge}}
+  <div class="note">DC probes run direct, bypassing the bridge — failures are expected in Bridge mode and do not reflect proxy health.</div>
+  {{end}}
   {{range .Teleproxy.DCStats}}
   <div class="dc-latency-row">
     <span class="dc-label">DC {{.DC}}{{if .ProbeFailures}} <span class="dc-fail">· {{.ProbeFailures}} fail</span>{{end}}</span>
-    <span class="mono"><span class="badge" data-tone="{{dcTone .}}">{{dcLatencyLabel .}}</span></span>
+    <span class="mono"><span class="badge" data-tone="{{if $.IsBridge}}neutral{{else}}{{dcTone .}}{{end}}">{{dcLatencyLabel .}}</span></span>
   </div>
   {{end}}
   {{else}}

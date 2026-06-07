@@ -1567,6 +1567,17 @@ body.login-page {
   background: rgba(255,255,255,.025);
 }
 
+.note {
+  color: var(--muted);
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+}
+
 .empty-row {
   text-align: center;
   padding: 2rem;
