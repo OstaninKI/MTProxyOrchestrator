@@ -42,6 +42,9 @@ type settingsCertData struct {
 	NeedsRenewal bool
 	Renewals     []RenewalAttempt
 	RenewDays    int
+	Provider     string // "production" or "staging"
+	AutoRenew    bool
+	ManualActive bool
 	Notice       string
 	CurrentNav   string
 	PanelPath    string
@@ -291,29 +294,40 @@ const settingsCertContent = `{{define "page_title"}}Certificates{{end}}
     <section class="card">
       <div class="card-head"><h3>Renewal settings</h3></div>
       <div class="card-body col col-panel">
-        <div class="field"><span class="label">Provider</span><select class="select" disabled><option>Let's Encrypt (production)</option></select></div>
-        <form method="post" action="{{.PanelPath}}settings/certificates/config" class="field">
+        <form method="post" action="{{.PanelPath}}settings/certificates/config" class="col col-panel">
           <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
-          <span class="label">Auto-renew threshold (days)</span>
-          <div class="row row-tight">
-            <input class="input input--mono" type="number" name="renew_days" value="{{.RenewDays}}" min="1" max="89" required>
-            <button class="btn" data-variant="primary" data-size="sm" type="submit">{{icon "Check" 12}} Save</button>
+          <div class="field"><span class="label">Provider</span>
+            <select class="select" name="acme_provider">
+              <option value="production"{{if eq .Provider "production"}} selected{{end}}>Let's Encrypt (production)</option>
+              <option value="staging"{{if eq .Provider "staging"}} selected{{end}}>Let's Encrypt (staging)</option>
+            </select>
           </div>
+          <div class="field">
+            <span class="label">Auto-renew threshold (days)</span>
+            <input class="input input--mono" type="number" name="renew_days" value="{{.RenewDays}}" min="1" max="89" required>
+          </div>
+          <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Auto-renew enabled</span><span class="help">{{if .ManualActive}}Disabled while a manual certificate is active.{{else}}Renews via cron when threshold reached.{{end}}</span></div><span class="toggle"><input type="checkbox" name="auto_renew"{{if and .AutoRenew (not .ManualActive)}} checked{{end}}{{if .ManualActive}} disabled{{end}}><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
+          <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Notify on renewal</span><span class="help">Email and Telegram notifications are not implemented yet.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
+          <button class="btn" data-variant="primary" type="submit">{{icon "Check" 12}} Save settings</button>
         </form>
-        <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Auto-renew enabled</span><span class="help">Renews via cron when threshold reached.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
-        <div class="setting-toggle-row"><div class="col setting-toggle-copy"><span class="setting-title">Notify on renewal</span><span class="help">Email and Telegram notifications are not implemented yet.</span></div><span class="toggle"><input type="checkbox" checked disabled><span class="toggle-track"><span class="toggle-thumb"></span></span></span></div>
-        <button class="btn" data-variant="primary" disabled>{{icon "Check" 12}} Save settings</button>
       </div>
     </section>
     <section class="card">
       <div class="card-head"><h3>Manual certificate</h3></div>
       <div class="card-body">
-        <p class="help">Upload your own fullchain.pem + privkey.pem to override ACME.</p>
-        <div class="row row-tight row-wrap">
-          <button class="btn" data-size="sm" data-variant="ghost" disabled>{{icon "Upload" 12}} Upload chain</button>
-          <button class="btn" data-size="sm" data-variant="ghost" disabled>{{icon "Upload" 12}} Upload key</button>
-        </div>
-        <div class="cert-pair"><span class="cert-label">Override state</span><span class="cert-value">Not configured</span></div>
+        {{if .HasDomain}}
+        <p class="help">Upload your own fullchain.pem + privkey.pem to override ACME. Auto-renew will be disabled.</p>
+        <form method="post" action="{{.PanelPath}}settings/certificates/upload" enctype="multipart/form-data" class="col col-panel">
+          <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}">
+          <div class="field"><span class="label">Certificate chain (PEM)</span><input class="input" type="file" name="cert" accept=".pem,.crt" required></div>
+          <div class="field"><span class="label">Private key (PEM)</span><input class="input" type="file" name="key" accept=".pem,.key" required></div>
+          <button class="btn" data-size="sm" data-variant="primary" type="submit">{{icon "Upload" 12}} Install certificate</button>
+        </form>
+        <div class="cert-pair"><span class="cert-label">Override state</span><span class="cert-value">{{if .ManualActive}}Active{{else}}Not configured{{end}}</span></div>
+        {{if .ManualActive}}<form method="post" action="{{.PanelPath}}settings/certificates/manual/clear" class="inline"><input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}"><button class="btn" data-size="sm" data-variant="ghost" type="submit">{{icon "Refresh" 12}} Revert to ACME</button></form>{{end}}
+        {{else}}
+        <p class="help">Manual certificate upload requires a domain install. This server uses an IP-only self-signed certificate.</p>
+        {{end}}
       </div>
     </section>
   </div>

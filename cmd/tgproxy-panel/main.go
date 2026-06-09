@@ -208,8 +208,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 				mgr.RenewBeforeDays = n
 			}
 		}
+		mgr.CADirURL = acme.CADirURL(d.GetSetting("cert_acme_provider", "production"))
 		webRootDir := filepath.Join(certDir, ".well-known-webroot")
 		runner := acme.DefaultRunner(mgr, webRootDir)
+		runner.RenewEnabled = func() bool { return d.GetSetting("cert_auto_renew", "1") != "0" }
 		certPath := filepath.Join(certDir, domain, "cert.pem")
 		runner.StartRenewalLoop(ctx, domain, acmeEmail, certPath, 12*time.Hour)
 	}

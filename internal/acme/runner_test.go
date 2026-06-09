@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/acme"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 )
 
 // stubRenewer lets tests control what ObtainACME returns without a real ACME server.
@@ -136,5 +137,51 @@ func TestDefaultRunnerUsesSystemReloader(t *testing.T) {
 	// Verify Runner is non-zero and Reloader is set.
 	if runner.Reloader == nil {
 		t.Error("DefaultRunner must set Reloader")
+	}
+}
+
+func TestRenewIfNeededGateDisabled(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	r := &acme.Runner{
+		Manager:      acme.Manager{DB: d, CertDir: t.TempDir()},
+		RenewEnabled: func() bool { return false },
+	}
+	// certPath does not exist; the gate must return before any read or ACME call.
+	renewed, err := r.RenewIfNeeded(context.Background(), "proxy.example.com", "a@b.c", t.TempDir()+"/missing.pem")
+	if err != nil {
+		t.Fatalf("gate should swallow work, got err: %v", err)
+	}
+	if renewed {
+		t.Fatal("renewed should be false when auto-renew disabled")
+	}
+	var count int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM cert_renewals`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no renewal rows, got %d", count)
+	}
+}
+
+func TestRenewIfNeededGateEnabledProceeds(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	r := &acme.Runner{
+		Manager:      acme.Manager{DB: d, CertDir: t.TempDir()},
+		RenewEnabled: func() bool { return true },
+	}
+	// With the gate open the call proceeds past it and fails reading the missing
+	// cert — proving an enabled gate does not short-circuit.
+	if _, err := r.RenewIfNeeded(context.Background(), "proxy.example.com", "a@b.c", t.TempDir()+"/missing.pem"); err == nil {
+		t.Fatal("expected error reading missing cert when gate is enabled")
 	}
 }

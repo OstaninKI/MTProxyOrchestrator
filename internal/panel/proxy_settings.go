@@ -26,6 +26,9 @@ const (
 	settingRetentionMinuteDays = "retention_minutes_days"
 	settingRetentionHourlyDays = "retention_hourly_days"
 	settingCertRenewDays       = "cert_renew_days"
+	settingCertAutoRenew       = "cert_auto_renew"
+	settingCertACMEProvider    = "cert_acme_provider"
+	settingCertManual          = "cert_manual"
 	settingBridgeMode          = "bridge_mode"
 )
 

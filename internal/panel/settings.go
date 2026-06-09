@@ -513,12 +513,15 @@ func (s *Server) handleSettingsCertificates(w http.ResponseWriter, r *http.Reque
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 
 	data := settingsCertData{
-		CSRFField: CSRFField(),
-		CSRFToken: tok,
-		HasDomain: cfg.Domain != "",
-		Domain:    cfg.Domain,
-		ServerIP:  cfg.ServerIP,
-		PanelPath: s.PanelPath,
+		CSRFField:    CSRFField(),
+		CSRFToken:    tok,
+		HasDomain:    cfg.Domain != "",
+		Domain:       cfg.Domain,
+		ServerIP:     cfg.ServerIP,
+		PanelPath:    s.PanelPath,
+		Provider:     s.DB.GetSetting(settingCertACMEProvider, "production"),
+		AutoRenew:    s.DB.GetSetting(settingCertAutoRenew, "1") != "0",
+		ManualActive: s.DB.GetSetting(settingCertManual, "0") == "1",
 	}
 
 	// Load cert info if we have a cert directory.
@@ -608,23 +611,141 @@ func loadRecentRenewals(s *Server, domain string) []RenewalAttempt {
 	return out
 }
 
-// handleSettingsCertRenewalConfig updates the certificate renewal threshold.
+// handleSettingsCertRenewalConfig updates the renewal threshold, ACME provider,
+// and auto-renew toggle in one form submission.
 func (s *Server) handleSettingsCertRenewalConfig(w http.ResponseWriter, r *http.Request) {
 	if !ValidateCSRF(r) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
+	redirect := func(msg string) {
+		http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape(msg), http.StatusSeeOther)
+	}
+
 	n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("renew_days")))
 	if err != nil || n < 1 || n > 89 {
-		http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Threshold must be 1–89 days."), http.StatusSeeOther)
+		redirect("Threshold must be 1–89 days.")
 		return
 	}
+	provider := strings.TrimSpace(r.FormValue("acme_provider"))
+	if provider != "production" && provider != "staging" {
+		redirect("Unknown ACME provider.")
+		return
+	}
+	autoRenew := "0"
+	if r.FormValue("auto_renew") != "" {
+		autoRenew = "1"
+	}
+
 	if err := s.DB.SetSetting(settingCertRenewDays, strconv.Itoa(n)); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_renew_days", "", strconv.Itoa(n), clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Renewal threshold saved."), http.StatusSeeOther)
+	if err := s.DB.SetSetting(settingCertACMEProvider, provider); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := s.DB.SetSetting(settingCertAutoRenew, autoRenew); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_renewal_config", "", provider+"/"+autoRenew+"/"+strconv.Itoa(n), clientIP(r)) //nolint:errcheck
+	redirect("Renewal settings saved.")
+}
+
+// maxCertUploadBytes caps an uploaded PEM file (cert or key) at 256 KB.
+const maxCertUploadBytes = 256 * 1024
+
+// handleSettingsCertUpload installs an admin-supplied cert/key pair, overwriting
+// the files nginx serves for the configured domain. Manual upload is only
+// available for domain installs; it disables auto-renew so ACME does not later
+// overwrite the manual certificate.
+func (s *Server) handleSettingsCertUpload(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	cfg := s.settingsConfig()
+	redirect := func(msg string) {
+		http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape(msg), http.StatusSeeOther)
+	}
+	if cfg.Domain == "" {
+		redirect("Manual upload requires a domain install.")
+		return
+	}
+	if err := r.ParseMultipartForm(2 * maxCertUploadBytes); err != nil {
+		redirect("Could not read upload.")
+		return
+	}
+	certPEM, err := readUploadField(r, "cert")
+	if err != nil {
+		redirect("Certificate file missing or too large.")
+		return
+	}
+	keyPEM, err := readUploadField(r, "key")
+	if err != nil {
+		redirect("Key file missing or too large.")
+		return
+	}
+	if _, err := acme.ValidateManualCert(certPEM, keyPEM, cfg.Domain, time.Now()); err != nil {
+		redirect("Invalid certificate: " + err.Error())
+		return
+	}
+
+	domainDir := filepath.Join(cfg.CertDir, cfg.Domain)
+	if err := os.MkdirAll(domainDir, 0o700); err != nil {
+		redirect("Could not write certificate.")
+		return
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "cert.pem"), certPEM, 0o600); err != nil {
+		redirect("Could not write certificate.")
+		return
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "key.pem"), keyPEM, 0o600); err != nil {
+		redirect("Could not write key.")
+		return
+	}
+	_ = s.DB.SetSetting(settingCertManual, "1")
+	_ = s.DB.SetSetting(settingCertAutoRenew, "0")
+	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_manual_upload", "", cfg.Domain, clientIP(r)) //nolint:errcheck
+
+	if err := reloadNginx(); err != nil {
+		redirect("Certificate installed but nginx reload failed: " + err.Error())
+		return
+	}
+	redirect("Manual certificate installed. Auto-renew disabled.")
+}
+
+// readUploadField reads a single multipart file field, rejecting empty or
+// oversized content.
+func readUploadField(r *http.Request, field string) ([]byte, error) {
+	f, _, err := r.FormFile(field)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxCertUploadBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 || len(data) > maxCertUploadBytes {
+		return nil, fmt.Errorf("field %s empty or too large", field)
+	}
+	return data, nil
+}
+
+// handleSettingsCertManualClear reverts a manual override: it clears the manual
+// flag and re-enables auto-renew. The next renewal tick (or a manual "Renew
+// now") obtains a fresh ACME certificate.
+func (s *Server) handleSettingsCertManualClear(w http.ResponseWriter, r *http.Request) {
+	if !ValidateCSRF(r) {
+		http.Error(w, "invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	_ = s.DB.SetSetting(settingCertManual, "0")
+	_ = s.DB.SetSetting(settingCertAutoRenew, "1")
+	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_manual_clear", "", "", clientIP(r)) //nolint:errcheck
+	http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Reverted to ACME. Auto-renew enabled."), http.StatusSeeOther)
 }
 
 // handleSettingsCertRenew forces a Let's Encrypt renewal regardless of expiry.
@@ -641,6 +762,7 @@ func (s *Server) handleSettingsCertRenew(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	mgr := acme.DefaultManager(s.DB, cfg.CertDir, "")
+	mgr.CADirURL = acme.CADirURL(s.DB.GetSetting(settingCertACMEProvider, "production"))
 	webRootDir := filepath.Join(cfg.CertDir, ".well-known-webroot")
 	runner := acme.DefaultRunner(mgr, webRootDir)
 	if err := runner.Renew(r.Context(), cfg.Domain, cfg.ACMEEmail); err != nil {

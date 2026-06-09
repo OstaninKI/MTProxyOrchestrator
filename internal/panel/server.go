@@ -162,6 +162,8 @@ func (s *Server) panelRouter() http.Handler {
 		r.Get("/settings/certificates", s.handleSettingsCertificates)
 		r.Post("/settings/certificates/config", withLegacyPanelCSP(s.handleSettingsCertRenewalConfig))
 		r.Post("/settings/certificates/renew", withLegacyPanelCSP(s.handleSettingsCertRenew))
+		r.Post("/settings/certificates/upload", withLegacyPanelCSP(s.handleSettingsCertUpload))
+		r.Post("/settings/certificates/manual/clear", withLegacyPanelCSP(s.handleSettingsCertManualClear))
 		r.Get("/settings/proxy", withLegacyPanelCSP(s.handleSettingsProxyGet))
 		r.Post("/settings/proxy", withLegacyPanelCSP(s.handleSettingsProxyPost))
 		r.Post("/settings/sessions/{id}/revoke", withLegacyPanelCSP(s.handleSettingsSessionRevoke))
