@@ -2130,6 +2130,97 @@ body.login-page {
   stroke-dasharray: 7 6;
 }
 
+.traffic-chart-wrap {
+  position: relative;
+}
+
+.traffic-chart-wrap .area-chart {
+  cursor: crosshair;
+}
+
+.traffic-hover-line {
+  stroke: rgba(255, 255, 255, .35);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.traffic-hover-dot {
+  pointer-events: none;
+  stroke: var(--surface-1, #0f1115);
+  stroke-width: 1.5;
+}
+
+.traffic-hover-dot-out {
+  fill: oklch(0.78 0.16 240);
+}
+
+.traffic-hover-dot-in {
+  fill: oklch(0.78 0.16 300);
+}
+
+.traffic-hover-dot-connections {
+  fill: oklch(0.78 0.16 145);
+}
+
+.traffic-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  min-width: 132px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, .14));
+  border-radius: 10px;
+  background: rgba(18, 20, 26, .96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+  font-size: .72rem;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.traffic-tooltip[hidden] {
+  display: none;
+}
+
+.traffic-tooltip .tt-time {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-faint, rgba(255, 255, 255, .55));
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .68rem;
+}
+
+.traffic-tooltip .tt-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+}
+
+.traffic-tooltip .tt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.traffic-tooltip .tt-dot-out { background: oklch(0.78 0.16 240); }
+.traffic-tooltip .tt-dot-in { background: oklch(0.78 0.16 300); }
+.traffic-tooltip .tt-dot-connections { background: oklch(0.78 0.16 145); }
+
+.traffic-tooltip .tt-label {
+  color: var(--text-faint, rgba(255, 255, 255, .55));
+}
+
+.traffic-tooltip .tt-value {
+  margin-left: auto;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+}
+
 .traffic-table-head {
   display: flex;
   align-items: flex-end;

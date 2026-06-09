@@ -894,6 +894,154 @@
     });
   }
 
+  function initTrafficChart() {
+    document.querySelectorAll("[data-traffic-chart]").forEach((wrap) => {
+      if (wrap.dataset.chartReady === "1") {
+        return;
+      }
+      const svg = wrap.querySelector(".area-chart");
+      const tooltip = wrap.querySelector(".traffic-tooltip");
+      const hover = wrap.querySelector(".traffic-hover");
+      if (!svg || !tooltip || !hover) {
+        return;
+      }
+
+      let points;
+      try {
+        points = JSON.parse(wrap.dataset.points || "[]");
+      } catch (err) {
+        points = [];
+      }
+      if (!points.length) {
+        return;
+      }
+
+      const viewBox = svg.viewBox.baseVal;
+      const vbWidth = viewBox && viewBox.width ? viewBox.width : 760;
+      const vbHeight = viewBox && viewBox.height ? viewBox.height : 220;
+      const line = hover.querySelector(".traffic-hover-line");
+      const dotOut = hover.querySelector(".traffic-hover-dot-out");
+      const dotIn = hover.querySelector(".traffic-hover-dot-in");
+      const dotConn = hover.querySelector(".traffic-hover-dot-connections");
+
+      // Build the tooltip skeleton once with DOM nodes (no innerHTML), keeping
+      // references to the value cells so pointer moves only update text.
+      function makeRow(dotClass, label) {
+        const row = document.createElement("div");
+        row.className = "tt-row";
+        const dot = document.createElement("span");
+        dot.className = "tt-dot " + dotClass;
+        const name = document.createElement("span");
+        name.className = "tt-label";
+        name.textContent = label;
+        const value = document.createElement("span");
+        value.className = "tt-value";
+        row.append(dot, name, value);
+        return { row, value };
+      }
+      tooltip.textContent = "";
+      const ttTime = document.createElement("span");
+      ttTime.className = "tt-time";
+      const rowOut = makeRow("tt-dot-out", "Download");
+      const rowIn = makeRow("tt-dot-in", "Upload");
+      const rowConn = makeRow("tt-dot-connections", "Connections");
+      tooltip.append(ttTime, rowOut.row, rowIn.row, rowConn.row);
+
+      function nearest(vbX) {
+        let best = points[0];
+        let bestDist = Math.abs(points[0].x - vbX);
+        for (let i = 1; i < points.length; i += 1) {
+          const dist = Math.abs(points[i].x - vbX);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = points[i];
+          }
+        }
+        return best;
+      }
+
+      function show(point) {
+        line.setAttribute("x1", point.x);
+        line.setAttribute("x2", point.x);
+        dotOut.setAttribute("cx", point.x);
+        dotOut.setAttribute("cy", point.yo);
+        dotIn.setAttribute("cx", point.x);
+        dotIn.setAttribute("cy", point.yi);
+        dotConn.setAttribute("cx", point.x);
+        dotConn.setAttribute("cy", point.yc);
+        hover.style.display = "";
+
+        ttTime.textContent = point.t;
+        rowOut.value.textContent = point.o;
+        rowIn.value.textContent = point.i;
+        rowConn.value.textContent = point.c;
+
+        // Reveal before measuring so getBoundingClientRect reports real size.
+        tooltip.hidden = false;
+
+        const svgRect = svg.getBoundingClientRect();
+        const wrapRect = wrap.getBoundingClientRect();
+        const ttRect = tooltip.getBoundingClientRect();
+        // Ancestor .card clips with overflow:hidden, so keep the tooltip inside
+        // its bounds rather than the (smaller) chart wrap.
+        const clip = (wrap.closest(".card") || wrap).getBoundingClientRect();
+        const margin = 6;
+        const gap = 12;
+
+        const pointX = svgRect.left + (point.x / vbWidth) * svgRect.width;
+        const topY = Math.min(point.yo, point.yi, point.yc);
+        const botY = Math.max(point.yo, point.yi, point.yc);
+        const pointTopY = svgRect.top + (topY / vbHeight) * svgRect.height;
+        const pointBotY = svgRect.top + (botY / vbHeight) * svgRect.height;
+
+        // Horizontal: center on the point, clamped to the clip bounds.
+        let left = pointX - ttRect.width / 2;
+        const maxLeft = clip.right - margin - ttRect.width;
+        const minLeft = clip.left + margin;
+        if (left > maxLeft) left = maxLeft;
+        if (left < minLeft) left = minLeft;
+
+        // Vertical: prefer above the topmost marker; flip below the bottom marker
+        // if there is no room above. Either edge of the clipping .card can cut the
+        // tooltip, so pick the side that fits and clamp into bounds as a safety net.
+        const aboveTop = pointTopY - gap - ttRect.height;
+        const belowTop = pointBotY + gap;
+        let top;
+        if (aboveTop >= clip.top + margin) {
+          top = aboveTop;
+        } else if (belowTop + ttRect.height <= clip.bottom - margin) {
+          top = belowTop;
+        } else {
+          top = aboveTop;
+        }
+        const maxTop = clip.bottom - margin - ttRect.height;
+        const minTop = clip.top + margin;
+        if (top > maxTop) top = maxTop;
+        if (top < minTop) top = minTop;
+
+        tooltip.style.left = left - wrapRect.left + "px";
+        tooltip.style.top = top - wrapRect.top + "px";
+      }
+
+      function hide() {
+        hover.style.display = "none";
+        tooltip.hidden = true;
+      }
+
+      svg.addEventListener("pointermove", (event) => {
+        const rect = svg.getBoundingClientRect();
+        if (!rect.width) {
+          return;
+        }
+        const vbX = ((event.clientX - rect.left) / rect.width) * vbWidth;
+        show(nearest(vbX));
+      });
+      svg.addEventListener("pointerleave", hide);
+
+      wrap.dataset.chartReady = "1";
+    });
+  }
+
   function initPanelPage() {
     fillCSRF();
     initLogsPage();
@@ -903,6 +1051,7 @@
     initStubUpload();
     initStubRemoteSearch();
     initCopyButtons();
+    initTrafficChart();
   }
 
   if (document.readyState === "loading") {
@@ -920,5 +1069,6 @@
     initStubUpload();
     initStubRemoteSearch();
     initCopyButtons();
+    initTrafficChart();
   });
 })();

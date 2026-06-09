@@ -1035,6 +1035,11 @@ func TestDashboardTrafficFragmentRendersDualSeriesChartAndLegend(t *testing.T) {
 		`traffic-chart-area traffic-chart-area-in`,
 		`traffic-chart-line traffic-chart-line-in`,
 		`traffic-chart-line traffic-chart-line-connections`,
+		`data-traffic-chart`,
+		`data-points=`,
+		`class="traffic-hover"`,
+		`traffic-hover-dot-out`,
+		`class="traffic-tooltip"`,
 		`Download`,
 		`Upload`,
 		`Connections`,
@@ -1042,6 +1047,10 @@ func TestDashboardTrafficFragmentRendersDualSeriesChartAndLegend(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Fatalf("traffic fragment missing %q:\n%s", want, html)
 		}
+	}
+	// The hover payload should carry per-bucket values for the tooltip.
+	if !strings.Contains(html, `&#34;t&#34;:`) || !strings.Contains(html, `&#34;c&#34;:`) {
+		t.Fatalf("traffic fragment missing escaped data-points payload:\n%s", html)
 	}
 }
 

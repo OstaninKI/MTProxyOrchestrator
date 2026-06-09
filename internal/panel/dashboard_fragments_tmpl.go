@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -698,9 +699,80 @@ func trafficChartSVG(series []metrics.TrafficBucket) template.HTML {
 	fmt.Fprintf(&b, `<path class="traffic-chart-area traffic-chart-area-in" d="%s"></path>`, trafficAreaPathFromPoints(inPoints, baselineY))
 	fmt.Fprintf(&b, `<path class="traffic-chart-line traffic-chart-line-in" d="%s"></path>`, trafficLinePathFromPoints(inPoints))
 	fmt.Fprintf(&b, `<path class="traffic-chart-line traffic-chart-line-connections" d="%s"></path>`, trafficLinePathFromPoints(connPoints))
+
+	// Hover overlay: a vertical crosshair plus a marker per series. Hidden until
+	// the client JS positions it on pointer move. preserveAspectRatio="none" means
+	// the viewBox X axis maps linearly to client pixels, so JS can convert a cursor
+	// position to the nearest bucket without measuring the rendered geometry.
+	fmt.Fprintf(&b, `<g class="traffic-hover" style="display:none">`+
+		`<line class="traffic-hover-line" y1="%.2f" y2="%.2f"></line>`+
+		`<circle class="traffic-hover-dot traffic-hover-dot-out" r="3.5"></circle>`+
+		`<circle class="traffic-hover-dot traffic-hover-dot-in" r="3.5"></circle>`+
+		`<circle class="traffic-hover-dot traffic-hover-dot-connections" r="3"></circle>`+
+		`</g>`, dims.topPad, baselineY)
 	b.WriteString(`</svg>`)
 
-	return template.HTML(b.String())
+	// Per-bucket data the client uses to render the tooltip. Keys are kept short to
+	// keep the attribute compact; coordinates are in viewBox units.
+	points := make([]trafficHoverPoint, 0, len(series))
+	for i, bucket := range series {
+		points = append(points, trafficHoverPoint{
+			X:    outPoints[i].x,
+			YOut: outPoints[i].y,
+			YIn:  inPoints[i].y,
+			YCon: connPoints[i].y,
+			Time: formatTrafficPointTime(bucket.TS, series[0].TS, series[len(series)-1].TS),
+			Out:  formatBytes(uint64(maxNonNeg(bucket.BytesOut))),
+			In:   formatBytes(uint64(maxNonNeg(bucket.BytesIn))),
+			Con:  bucket.Connections,
+		})
+	}
+	data, err := json.Marshal(points)
+	if err != nil {
+		data = []byte("[]")
+	}
+
+	var wrap strings.Builder
+	fmt.Fprintf(&wrap, `<div class="traffic-chart-wrap" data-traffic-chart data-points="%s">`, template.HTMLEscapeString(string(data)))
+	wrap.WriteString(b.String())
+	wrap.WriteString(`<div class="traffic-tooltip" role="status" aria-live="polite" hidden></div>`)
+	wrap.WriteString(`</div>`)
+
+	return template.HTML(wrap.String())
+}
+
+// trafficHoverPoint is the per-bucket payload embedded in the chart's
+// data-points attribute and consumed by the client tooltip code.
+type trafficHoverPoint struct {
+	X    float64 `json:"x"`
+	YOut float64 `json:"yo"`
+	YIn  float64 `json:"yi"`
+	YCon float64 `json:"yc"`
+	Time string  `json:"t"`
+	Out  string  `json:"o"`
+	In   string  `json:"i"`
+	Con  int64   `json:"c"`
+}
+
+func maxNonNeg(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+// formatTrafficPointTime renders a per-bucket timestamp for the hover tooltip.
+// It includes the date when the window spans more than a day so multi-day
+// windows stay unambiguous.
+func formatTrafficPointTime(ts, first, last int64) string {
+	if ts <= 0 {
+		return "—"
+	}
+	t := time.Unix(ts, 0).UTC()
+	if last-first >= int64(24*time.Hour/time.Second) {
+		return t.Format("Jan 2 15:04")
+	}
+	return t.Format("15:04")
 }
 
 // kpiSparkSVG renders a compact background sparkline for a KPI tile from the
