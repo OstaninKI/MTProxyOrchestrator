@@ -608,23 +608,46 @@ func loadRecentRenewals(s *Server, domain string) []RenewalAttempt {
 	return out
 }
 
-// handleSettingsCertRenewalConfig updates the certificate renewal threshold.
+// handleSettingsCertRenewalConfig updates the renewal threshold, ACME provider,
+// and auto-renew toggle in one form submission.
 func (s *Server) handleSettingsCertRenewalConfig(w http.ResponseWriter, r *http.Request) {
 	if !ValidateCSRF(r) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
+	redirect := func(msg string) {
+		http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape(msg), http.StatusSeeOther)
+	}
+
 	n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("renew_days")))
 	if err != nil || n < 1 || n > 89 {
-		http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Threshold must be 1–89 days."), http.StatusSeeOther)
+		redirect("Threshold must be 1–89 days.")
 		return
 	}
+	provider := strings.TrimSpace(r.FormValue("acme_provider"))
+	if provider != "production" && provider != "staging" {
+		redirect("Unknown ACME provider.")
+		return
+	}
+	autoRenew := "0"
+	if r.FormValue("auto_renew") != "" {
+		autoRenew = "1"
+	}
+
 	if err := s.DB.SetSetting(settingCertRenewDays, strconv.Itoa(n)); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_renew_days", "", strconv.Itoa(n), clientIP(r)) //nolint:errcheck
-	http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Renewal threshold saved."), http.StatusSeeOther)
+	if err := s.DB.SetSetting(settingCertACMEProvider, provider); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := s.DB.SetSetting(settingCertAutoRenew, autoRenew); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_renewal_config", "", provider+"/"+autoRenew+"/"+strconv.Itoa(n), clientIP(r)) //nolint:errcheck
+	redirect("Renewal settings saved.")
 }
 
 // handleSettingsCertRenew forces a Let's Encrypt renewal regardless of expiry.
