@@ -208,3 +208,28 @@ func TestCertManualClearResetsFlags(t *testing.T) {
 		t.Errorf("cert_auto_renew = %q, want 1", got)
 	}
 }
+
+func TestCertPageRendersProviderAndUpload(t *testing.T) {
+	var buf bytes.Buffer
+	settingsCertPage(&buf, settingsCertData{
+		PanelPath: "/p-example/",
+		HasDomain: true,
+		Domain:    "proxy.example.com",
+		Provider:  "staging",
+		AutoRenew: true,
+		RenewDays: 30,
+	})
+	body := buf.String()
+	if !strings.Contains(body, `name="acme_provider"`) {
+		t.Error("provider select missing")
+	}
+	if !strings.Contains(body, `value="staging" selected`) {
+		t.Error("staging not pre-selected")
+	}
+	if !strings.Contains(body, `enctype="multipart/form-data"`) {
+		t.Error("upload form missing")
+	}
+	if !strings.Contains(body, `name="auto_renew" checked`) {
+		t.Error("auto-renew toggle not checked")
+	}
+}
