@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"mime/multipart"
 	"net/http"
@@ -206,6 +207,103 @@ func TestCertManualClearResetsFlags(t *testing.T) {
 	}
 	if got := srv.DB.GetSetting(settingCertAutoRenew, ""); got != "1" {
 		t.Errorf("cert_auto_renew = %q, want 1", got)
+	}
+}
+
+func TestCertUploadRejectsExpired(t *testing.T) {
+	dir := t.TempDir()
+	srv := newCertTestServer(t, &SettingsConfig{CertDir: dir, Domain: "proxy.example.com"})
+	cert, key := makeCertPair(t, "proxy.example.com", time.Now().Add(-time.Hour)) // already expired
+	rec := httptest.NewRecorder()
+	srv.handleSettingsCertUpload(rec, uploadReq(t, cert, key))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("want 303 with error notice, got %d", rec.Code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "proxy.example.com", "cert.pem")); err == nil {
+		t.Fatal("expired cert should not be written")
+	}
+	if got := srv.DB.GetSetting(settingCertManual, "unset"); got != "unset" {
+		t.Errorf("cert_manual should be unchanged, got %q", got)
+	}
+}
+
+func TestCertUploadMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	srv := newCertTestServer(t, &SettingsConfig{CertDir: dir, Domain: "proxy.example.com"})
+	_, key := makeCertPair(t, "proxy.example.com", time.Now().Add(90*24*time.Hour))
+	rec := httptest.NewRecorder()
+	srv.handleSettingsCertUpload(rec, uploadReq(t, nil, key)) // cert field omitted
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("want 303 with error notice, got %d", rec.Code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "proxy.example.com", "cert.pem")); err == nil {
+		t.Fatal("cert should not be written when cert field is missing")
+	}
+}
+
+func TestCertUploadReloadFailureStillInstalls(t *testing.T) {
+	dir := t.TempDir()
+	srv := newCertTestServer(t, &SettingsConfig{CertDir: dir, Domain: "proxy.example.com"})
+	prev := reloadNginx
+	reloadNginx = func() error { return fmt.Errorf("boom") }
+	t.Cleanup(func() { reloadNginx = prev })
+	cert, key := makeCertPair(t, "proxy.example.com", time.Now().Add(90*24*time.Hour))
+	rec := httptest.NewRecorder()
+	srv.handleSettingsCertUpload(rec, uploadReq(t, cert, key))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("want 303, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "reload") {
+		t.Errorf("expected reload-failure notice in redirect, got %q", loc)
+	}
+	// The cert is written before the reload attempt and the manual flag is set.
+	if _, err := os.Stat(filepath.Join(dir, "proxy.example.com", "cert.pem")); err != nil {
+		t.Fatalf("cert should be written even when reload fails: %v", err)
+	}
+	if got := srv.DB.GetSetting(settingCertManual, ""); got != "1" {
+		t.Errorf("cert_manual = %q, want 1", got)
+	}
+	if got := srv.DB.GetSetting(settingCertAutoRenew, ""); got != "0" {
+		t.Errorf("cert_auto_renew = %q, want 0", got)
+	}
+}
+
+func TestCertPageRendersManualActive(t *testing.T) {
+	var buf bytes.Buffer
+	settingsCertPage(&buf, settingsCertData{
+		PanelPath:    "/p-example/",
+		HasDomain:    true,
+		Domain:       "proxy.example.com",
+		Provider:     "production",
+		ManualActive: true,
+		RenewDays:    30,
+	})
+	body := buf.String()
+	if !strings.Contains(body, "settings/certificates/manual/clear") {
+		t.Error("revert-to-ACME form missing when manual override active")
+	}
+	if !strings.Contains(body, `name="auto_renew" disabled`) {
+		t.Error("auto-renew toggle should be disabled while manual override active")
+	}
+	if strings.Contains(body, `name="auto_renew" checked`) {
+		t.Error("auto-renew toggle should not be checked while manual override active")
+	}
+}
+
+func TestCertPageIPOnlyHidesUpload(t *testing.T) {
+	var buf bytes.Buffer
+	settingsCertPage(&buf, settingsCertData{
+		PanelPath: "/p-example/",
+		HasDomain: false,
+		Provider:  "production",
+		RenewDays: 30,
+	})
+	body := buf.String()
+	if strings.Contains(body, `enctype="multipart/form-data"`) {
+		t.Error("upload form should be hidden for IP-only installs")
+	}
+	if !strings.Contains(body, "requires a domain install") {
+		t.Error("expected IP-only explanatory note")
 	}
 }
 

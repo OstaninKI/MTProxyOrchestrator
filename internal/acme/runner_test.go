@@ -167,3 +167,21 @@ func TestRenewIfNeededGateDisabled(t *testing.T) {
 		t.Fatalf("expected no renewal rows, got %d", count)
 	}
 }
+
+func TestRenewIfNeededGateEnabledProceeds(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	r := &acme.Runner{
+		Manager:      acme.Manager{DB: d, CertDir: t.TempDir()},
+		RenewEnabled: func() bool { return true },
+	}
+	// With the gate open the call proceeds past it and fails reading the missing
+	// cert — proving an enabled gate does not short-circuit.
+	if _, err := r.RenewIfNeeded(context.Background(), "proxy.example.com", "a@b.c", t.TempDir()+"/missing.pem"); err == nil {
+		t.Fatal("expected error reading missing cert when gate is enabled")
+	}
+}
