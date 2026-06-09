@@ -513,12 +513,15 @@ func (s *Server) handleSettingsCertificates(w http.ResponseWriter, r *http.Reque
 	SetCSRFCookie(w, tok, s.Secure, s.PanelPath)
 
 	data := settingsCertData{
-		CSRFField: CSRFField(),
-		CSRFToken: tok,
-		HasDomain: cfg.Domain != "",
-		Domain:    cfg.Domain,
-		ServerIP:  cfg.ServerIP,
-		PanelPath: s.PanelPath,
+		CSRFField:    CSRFField(),
+		CSRFToken:    tok,
+		HasDomain:    cfg.Domain != "",
+		Domain:       cfg.Domain,
+		ServerIP:     cfg.ServerIP,
+		PanelPath:    s.PanelPath,
+		Provider:     s.DB.GetSetting(settingCertACMEProvider, "production"),
+		AutoRenew:    s.DB.GetSetting(settingCertAutoRenew, "1") != "0",
+		ManualActive: s.DB.GetSetting(settingCertManual, "0") == "1",
 	}
 
 	// Load cert info if we have a cert directory.
@@ -759,6 +762,7 @@ func (s *Server) handleSettingsCertRenew(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	mgr := acme.DefaultManager(s.DB, cfg.CertDir, "")
+	mgr.CADirURL = acme.CADirURL(s.DB.GetSetting(settingCertACMEProvider, "production"))
 	webRootDir := filepath.Join(cfg.CertDir, ".well-known-webroot")
 	runner := acme.DefaultRunner(mgr, webRootDir)
 	if err := runner.Renew(r.Context(), cfg.Domain, cfg.ACMEEmail); err != nil {
