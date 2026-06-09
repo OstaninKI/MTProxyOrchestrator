@@ -34,6 +34,10 @@ type Runner struct {
 	WebRootDir string        // dir nginx serves for webroot challenge; only used during renewals
 	Reloader   NginxReloader // called after renewal; nil = skip reload
 
+	// RenewEnabled, when non-nil, gates RenewIfNeeded: if it returns false the
+	// background loop performs no work. The manual Renew path is never gated.
+	RenewEnabled func() bool
+
 	mu             sync.Mutex
 	pendingReloads map[string]bool
 }
@@ -86,6 +90,9 @@ func (r *Runner) Renew(ctx context.Context, domain, email string) error {
 // Returns true if a renewal was performed (ACME order completed) or if a
 // pending reload was successfully retried.
 func (r *Runner) RenewIfNeeded(ctx context.Context, domain, email, certPath string) (bool, error) {
+	if r.RenewEnabled != nil && !r.RenewEnabled() {
+		return false, nil
+	}
 	info, err := r.Manager.ReadCertInfo(certPath, CertModeACME)
 	if err != nil {
 		return false, fmt.Errorf("read cert info for %s: %w", domain, err)
