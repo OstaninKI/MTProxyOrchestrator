@@ -42,6 +42,9 @@ type settingsCertData struct {
 	NeedsRenewal bool
 	Renewals     []RenewalAttempt
 	RenewDays    int
+	Provider     string // "production" or "staging"
+	AutoRenew    bool
+	ManualActive bool
 	Notice       string
 	CurrentNav   string
 	PanelPath    string
