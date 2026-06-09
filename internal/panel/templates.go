@@ -112,20 +112,6 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
   </article>
 </section>
 <section class="page-stack fade-in">
-  <div class="dash-cols">
-    <div class="dash-main">
-      {{template "traffic" .}}
-      {{template "components" .}}
-      {{template "top_users" .}}
-      {{template "connections" .}}
-    </div>
-    <div class="dash-rail">
-      {{template "health" .}}
-      {{template "upstream" .}}
-      {{template "ops" .}}
-      {{template "bridge_nodes" .}}
-    </div>
-  </div>
   <section class="card quick-actions">
     <div class="card-head"><h3>Quick actions</h3></div>
     <div class="card-body">
@@ -161,6 +147,20 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
       </div>
     </div>
   </section>
+  <div class="dash-cols">
+    <div class="dash-main">
+      {{template "traffic" .}}
+      {{template "components" .}}
+      {{template "top_users" .}}
+      {{template "connections" .}}
+    </div>
+    <div class="dash-rail">
+      {{template "health" .}}
+      {{template "upstream" .}}
+      {{template "ops" .}}
+      {{template "bridge_nodes" .}}
+    </div>
+  </div>
 </section>
 </main>
 </div>
