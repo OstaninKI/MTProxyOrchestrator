@@ -134,7 +134,9 @@ func (r UserRepo) List() ([]UserRow, error) {
 	rows, err := r.DB.Query(
 		`SELECT id, label, secret_hex, enabled,
 		        strftime('%Y-%m-%d %H:%M:%S', created_at),
-		        strftime('%Y-%m-%d %H:%M:%S', rotated_at),
+		        CASE WHEN rotated_at IS NULL THEN NULL
+		             ELSE COALESCE(strftime('%Y-%m-%d %H:%M:%S', rotated_at), 'invalid: ' || rotated_at)
+		        END,
 		        quota_bytes, quota_period, quota_warn_pct, quota_suspended,
 		        quota_period_start,
 		        COALESCE((
@@ -188,9 +190,15 @@ func (r UserRepo) List() ([]UserRow, error) {
 			return nil, err
 		}
 		u.ConnectionStatus = UserConnectionStatus(status)
-		u.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", created)
+		u.CreatedAt, err = time.Parse("2006-01-02 15:04:05", created)
+		if err != nil {
+			return nil, fmt.Errorf("user %q: malformed created_at %q: %w", u.Label, created, err)
+		}
 		if rotated.Valid {
-			t, _ := time.Parse("2006-01-02 15:04:05", rotated.String)
+			t, err := time.Parse("2006-01-02 15:04:05", rotated.String)
+			if err != nil {
+				return nil, fmt.Errorf("user %q: malformed rotated_at %q: %w", u.Label, rotated.String, err)
+			}
 			u.RotatedAt = &t
 		}
 		out = append(out, u)

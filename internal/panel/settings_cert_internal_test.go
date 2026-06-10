@@ -331,3 +331,62 @@ func TestCertPageRendersProviderAndUpload(t *testing.T) {
 		t.Error("auto-renew toggle not checked")
 	}
 }
+
+// certNotice extracts the decoded ?notice= parameter from a redirect Location.
+func certNotice(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("bad Location header: %v", err)
+	}
+	return loc.Query().Get("notice")
+}
+
+// TestCertUploadReportsSetSettingFailure verifies that a DB failure while
+// persisting the manual-cert flags is reported to the admin instead of being
+// swallowed: otherwise the renewal loop would later overwrite the manual cert.
+func TestCertUploadReportsSetSettingFailure(t *testing.T) {
+	dir := t.TempDir()
+	srv := newCertTestServer(t, &SettingsConfig{CertDir: dir, Domain: "proxy.example.com"})
+	reloadCalled := false
+	reloadNginx = func() error { reloadCalled = true; return nil }
+	t.Cleanup(func() { reloadNginx = func() error { return nil } })
+	cert, key := makeCertPair(t, "proxy.example.com", time.Now().Add(90*24*time.Hour))
+
+	srv.DB.Close() // force SetSetting to fail
+
+	rec := httptest.NewRecorder()
+	srv.handleSettingsCertUpload(rec, uploadReq(t, cert, key))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("want 303, got %d", rec.Code)
+	}
+	notice := certNotice(t, rec)
+	if !strings.Contains(notice, "could not persist manual mode") {
+		t.Fatalf("notice = %q, want SetSetting failure to be reported", notice)
+	}
+	if reloadCalled {
+		t.Fatal("nginx must not be reloaded when persisting manual mode failed")
+	}
+}
+
+// TestCertManualClearReportsSetSettingFailure mirrors the upload case for the
+// manual-clear handler: a failed flag write must not be reported as success.
+func TestCertManualClearReportsSetSettingFailure(t *testing.T) {
+	srv := newCertTestServer(t, &SettingsConfig{CertDir: t.TempDir(), Domain: "proxy.example.com"})
+	srv.DB.Close() // force SetSetting to fail
+
+	form := url.Values{CSRFField(): {"tok"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/certificates/manual/clear", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "tok"})
+	rec := httptest.NewRecorder()
+	srv.handleSettingsCertManualClear(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("want 303, got %d", rec.Code)
+	}
+	notice := certNotice(t, rec)
+	if !strings.Contains(notice, "Could not clear manual mode") {
+		t.Fatalf("notice = %q, want SetSetting failure to be reported", notice)
+	}
+}

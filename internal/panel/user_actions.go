@@ -107,12 +107,22 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repo := UserRepo{DB: s.DB}
-	users, _ := repo.List()
+	users, err := repo.List()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	var label string
+	found := false
 	for _, u := range users {
 		if u.ID == id {
 			label = u.Label
+			found = true
 		}
+	}
+	if !found {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
 	}
 	if err := repo.Delete(id); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -144,7 +154,11 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repo := UserRepo{DB: s.DB}
-	users, _ := repo.List()
+	users, err := repo.List()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	var label string
 	var oldSecret string
 	for _, u := range users {
@@ -152,6 +166,10 @@ func (s *Server) handleUserRotate(w http.ResponseWriter, r *http.Request) {
 			label = u.Label
 			oldSecret = u.SecretHex
 		}
+	}
+	if oldSecret == "" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
 	}
 	if err := repo.UpdateSecret(id, secret.Hex()); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)

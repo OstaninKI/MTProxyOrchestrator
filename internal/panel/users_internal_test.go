@@ -250,3 +250,40 @@ func TestUserRepoListReturnsUsageAndStatus(t *testing.T) {
 		t.Fatalf("carol status = %q, want never", carol.ConnectionStatus)
 	}
 }
+
+// TestUserListErrorsOnMalformedCreatedAt verifies that a corrupted created_at
+// timestamp surfaces as an error instead of silently becoming the zero time.
+func TestUserListErrorsOnMalformedCreatedAt(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	if _, err := d.Exec(
+		`INSERT INTO users(label, secret_hex, created_at) VALUES('alice','deadbeef','not-a-timestamp')`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	repo := UserRepo{DB: d}
+	if _, err := repo.List(); err == nil {
+		t.Fatal("List must return an error for a malformed created_at, not a zero time")
+	}
+}
+
+// TestUserListErrorsOnMalformedRotatedAt does the same for rotated_at.
+func TestUserListErrorsOnMalformedRotatedAt(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	if _, err := d.Exec(
+		`INSERT INTO users(label, secret_hex, rotated_at) VALUES('bob','deadbeef','garbage')`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	repo := UserRepo{DB: d}
+	if _, err := repo.List(); err == nil {
+		t.Fatal("List must return an error for a malformed rotated_at")
+	}
+}

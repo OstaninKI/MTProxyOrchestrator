@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
@@ -33,6 +34,32 @@ type Service struct {
 	Now    func() time.Time
 	Reload ReloadFunc
 	Audit  AuditFunc
+
+	// reloadPending is set when a suspension transition committed to the DB
+	// but the subsequent Reload failed. The next recalculation retries the
+	// reload even without a new transition, so the live teleproxy config
+	// cannot stay out of sync with the DB indefinitely.
+	mu            sync.Mutex
+	reloadPending bool
+}
+
+// runReload invokes Reload and tracks failures for retry on the next tick.
+func (s *Service) runReload() error {
+	if s.Reload == nil {
+		return nil
+	}
+	err := s.Reload()
+	s.mu.Lock()
+	s.reloadPending = err != nil
+	s.mu.Unlock()
+	return err
+}
+
+// takeReloadPending reports whether a previously failed reload needs a retry.
+func (s *Service) takeReloadPending() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reloadPending
 }
 
 // NewService constructs a Service with sane defaults. dbAudit is used when
@@ -183,8 +210,8 @@ func (s *Service) RolloverIfDue(ctx context.Context, label string) (bool, error)
 		return false, err
 	}
 	s.Audit("quota_rollover", label, fmt.Sprintf("period=%s", period))
-	if wasSuspended && s.Reload != nil {
-		if err := s.Reload(); err != nil {
+	if wasSuspended {
+		if err := s.runReload(); err != nil {
 			return true, err
 		}
 	}
@@ -260,10 +287,14 @@ func (s *Service) Recalculate(ctx context.Context, label string) (int64, bool, e
 		} else {
 			s.Audit("quota_unsuspend", label, "")
 		}
-		if s.Reload != nil {
-			if err := s.Reload(); err != nil {
-				return used, newSuspended, err
-			}
+		if err := s.runReload(); err != nil {
+			return used, newSuspended, err
+		}
+	} else if s.takeReloadPending() {
+		// A previous suspension transition committed but its reload failed;
+		// retry so the rendered config catches up with the DB state.
+		if err := s.runReload(); err != nil {
+			return used, newSuspended, err
 		}
 	}
 	return used, newSuspended, nil

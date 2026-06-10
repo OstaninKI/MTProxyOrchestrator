@@ -634,3 +634,83 @@ func TestHandleBridgeToggleLastNodeDisablesBridge(t *testing.T) {
 		t.Fatalf("teleproxy config still routes through sing-box after toggling off last node:\n%s", exec.teleproxyWrite)
 	}
 }
+
+// TestHandleBridgeAddNodeURLRollsBackNodeFileOnRerenderFailure verifies that
+// adding a node by share URL while sing-box is active restores the node file
+// when the sing-box config re-render fails.
+func TestHandleBridgeAddNodeURLRollsBackNodeFileOnRerenderFailure(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	writeNodeList(t, nodePath, bridge.NodeList{
+		Nodes: []bridge.Node{{ID: 1, Tag: "old", Host: "old.example", Port: 443, Enabled: true}},
+	})
+	srv := newBridgeTestServer(t, nodePath)
+	sessionCookie := addAuthSession(t, srv)
+	srv.SingboxActive = func() bool { return true }
+	srv.SingboxInstalled = func() bool { return true }
+
+	oldRerender := rerenderSingboxIfActiveFn
+	rerenderSingboxIfActiveFn = func(*Server, bridge.NodeList) error { return assertErr("rerender failed") }
+	t.Cleanup(func() { rerenderSingboxIfActiveFn = oldRerender })
+
+	form := url.Values{CSRFField(): {"token"}, "share_url": {pe4enk0VLESSURL}}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/nodes/add", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeAddNode(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+
+	got := readNodeList(t, nodePath)
+	if len(got.Nodes) != 1 || got.Nodes[0].Tag != "old" {
+		t.Fatalf("node file was not rolled back: %+v", got.Nodes)
+	}
+}
+
+// TestHandleBridgeAddNodeManualRollsBackNodeFileOnRerenderFailure is the
+// manual-fields variant of the rollback test above.
+func TestHandleBridgeAddNodeManualRollsBackNodeFileOnRerenderFailure(t *testing.T) {
+	dir := t.TempDir()
+	nodePath := filepath.Join(dir, "outbounds.json")
+	writeNodeList(t, nodePath, bridge.NodeList{
+		Nodes: []bridge.Node{{ID: 1, Tag: "old", Host: "old.example", Port: 443, Enabled: true}},
+	})
+	srv := newBridgeTestServer(t, nodePath)
+	sessionCookie := addAuthSession(t, srv)
+	srv.SingboxActive = func() bool { return true }
+	srv.SingboxInstalled = func() bool { return true }
+
+	oldRerender := rerenderSingboxIfActiveFn
+	rerenderSingboxIfActiveFn = func(*Server, bridge.NodeList) error { return assertErr("rerender failed") }
+	t.Cleanup(func() { rerenderSingboxIfActiveFn = oldRerender })
+
+	form := url.Values{
+		CSRFField():  {"token"},
+		"protocol":   {"vless-reality"},
+		"tag":        {"new"},
+		"host":       {"new.example"},
+		"port":       {"443"},
+		"uuid":       {"0498a3ad-01c8-4cfe-8317-8793b5e9dfad"},
+		"sni":        {"www.example.com"},
+		"public_key": {"TBuzyFsSS8dSzrL2O7lOyeDvBrcucEpSmipfYY5tMB0"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/p-example/bridge/nodes/add-manual", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "token"})
+	req.AddCookie(sessionCookie)
+	rec := httptest.NewRecorder()
+
+	srv.handleBridgeAddNodeManual(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+
+	got := readNodeList(t, nodePath)
+	if len(got.Nodes) != 1 || got.Nodes[0].Tag != "old" {
+		t.Fatalf("node file was not rolled back: %+v", got.Nodes)
+	}
+}

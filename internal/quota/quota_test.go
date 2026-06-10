@@ -2,6 +2,7 @@ package quota_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -212,5 +213,65 @@ func TestRolloverWeekly(t *testing.T) {
 	end := quota.PeriodEnd(quota.PeriodWeekly, startT.Unix())
 	if end-startT.Unix() != 7*24*3600 {
 		t.Errorf("weekly period not 7 days: delta=%d", end-startT.Unix())
+	}
+}
+
+// TestRecalculateRetriesFailedReloadOnNextTick covers the gap where a
+// suspension transition commits to the DB but the teleproxy reload fails:
+// the next recalculation sees no transition, so without a retry the user's
+// secret would stay in the live config indefinitely.
+func TestRecalculateRetriesFailedReloadOnNextTick(t *testing.T) {
+	d := openDB(t)
+	now := time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC)
+	insertUser(t, d, "dave", now.Add(-24*time.Hour).Unix(), "monthly", 1000, 0)
+	insertDaily(t, d, "dave", now.Unix(), 600, 600)
+
+	reloadCalls := 0
+	s := &quota.Service{DB: d, Now: func() time.Time { return now },
+		Reload: func() error {
+			reloadCalls++
+			if reloadCalls == 1 {
+				return errors.New("teleproxy reload failed")
+			}
+			return nil
+		},
+		Audit: func(action, target, detail string) {}}
+
+	if _, _, err := s.Recalculate(context.Background(), "dave"); err == nil {
+		t.Fatal("expected error when reload fails on suspension transition")
+	}
+	if reloadCalls != 1 {
+		t.Fatalf("reload calls after first recalculate = %d, want 1", reloadCalls)
+	}
+
+	// No state transition this time, but the failed reload must be retried.
+	if _, _, err := s.Recalculate(context.Background(), "dave"); err != nil {
+		t.Fatalf("second recalculate: %v", err)
+	}
+	if reloadCalls != 2 {
+		t.Fatalf("reload calls = %d, want 2 (failed reload must be retried)", reloadCalls)
+	}
+}
+
+// TestRecalculateDoesNotReloadWhenNothingPending verifies the retry flag does
+// not cause spurious reloads on steady-state recalculations.
+func TestRecalculateDoesNotReloadWhenNothingPending(t *testing.T) {
+	d := openDB(t)
+	now := time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC)
+	insertUser(t, d, "erin", now.Add(-24*time.Hour).Unix(), "monthly", 1000, 0)
+	insertDaily(t, d, "erin", now.Unix(), 1, 1)
+
+	reloadCalls := 0
+	s := &quota.Service{DB: d, Now: func() time.Time { return now },
+		Reload: func() error { reloadCalls++; return nil },
+		Audit:  func(action, target, detail string) {}}
+
+	for i := 0; i < 3; i++ {
+		if _, _, err := s.Recalculate(context.Background(), "erin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if reloadCalls != 0 {
+		t.Fatalf("reload calls = %d, want 0 (no transition, no pending retry)", reloadCalls)
 	}
 }

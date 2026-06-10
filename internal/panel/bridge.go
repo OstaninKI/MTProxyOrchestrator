@@ -906,25 +906,17 @@ func (s *Server) handleBridgeAddNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodePath := s.nodePath()
-	nl, err := bridge.Load(nodePath)
+	nl, err := bridge.Load(s.nodePath())
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	current := cloneNodeList(nl)
 	node.ID = nl.NextID()
 	node.Enabled = true
 	nl.Nodes = append(nl.Nodes, node)
-	if err := nl.Save(nodePath); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.rerenderSingboxIfActive(nl); err != nil {
-		// Rollback: remove the just-added node.
-		nl.Nodes = nl.Nodes[:len(nl.Nodes)-1]
-		_ = nl.Save(nodePath)
-		http.Error(w, "node added but sing-box config could not be updated: "+err.Error(), http.StatusInternalServerError)
+	if err := saveNodeListWithRerenderRollback(s, current, nl); err != nil {
+		http.Error(w, "node could not be added: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1043,23 +1035,16 @@ func (s *Server) handleBridgeAddNodeManual(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	nodePath := s.nodePath()
-	nl, err := bridge.Load(nodePath)
+	nl, err := bridge.Load(s.nodePath())
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	current := cloneNodeList(nl)
 	node.ID = nl.NextID()
 	nl.Nodes = append(nl.Nodes, node)
-	if err := nl.Save(nodePath); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.rerenderSingboxIfActive(nl); err != nil {
-		nl.Nodes = nl.Nodes[:len(nl.Nodes)-1]
-		_ = nl.Save(nodePath)
-		http.Error(w, "node added but sing-box config could not be updated: "+err.Error(), http.StatusInternalServerError)
+	if err := saveNodeListWithRerenderRollback(s, current, nl); err != nil {
+		http.Error(w, "node could not be added: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

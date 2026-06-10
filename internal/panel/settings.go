@@ -705,8 +705,14 @@ func (s *Server) handleSettingsCertUpload(w http.ResponseWriter, r *http.Request
 		redirect("Could not write key.")
 		return
 	}
-	_ = s.DB.SetSetting(settingCertManual, "1")
-	_ = s.DB.SetSetting(settingCertAutoRenew, "0")
+	if err := s.DB.SetSetting(settingCertManual, "1"); err != nil {
+		redirect("Certificate written but could not persist manual mode: " + err.Error())
+		return
+	}
+	if err := s.DB.SetSetting(settingCertAutoRenew, "0"); err != nil {
+		redirect("Certificate written but could not disable auto-renew: " + err.Error())
+		return
+	}
 	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_manual_upload", "", cfg.Domain, clientIP(r)) //nolint:errcheck
 
 	if err := reloadNginx(); err != nil {
@@ -742,8 +748,14 @@ func (s *Server) handleSettingsCertManualClear(w http.ResponseWriter, r *http.Re
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
-	_ = s.DB.SetSetting(settingCertManual, "0")
-	_ = s.DB.SetSetting(settingCertAutoRenew, "1")
+	if err := s.DB.SetSetting(settingCertManual, "0"); err != nil {
+		http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Could not clear manual mode: "+err.Error()), http.StatusSeeOther)
+		return
+	}
+	if err := s.DB.SetSetting(settingCertAutoRenew, "1"); err != nil {
+		http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Manual mode cleared but could not enable auto-renew: "+err.Error()), http.StatusSeeOther)
+		return
+	}
 	audit.Log(s.DB, s.sessionAdminID(r), "settings.cert_manual_clear", "", "", clientIP(r)) //nolint:errcheck
 	http.Redirect(w, r, s.PanelPath+"settings/certificates?notice="+url.QueryEscape("Reverted to ACME. Auto-renew enabled."), http.StatusSeeOther)
 }

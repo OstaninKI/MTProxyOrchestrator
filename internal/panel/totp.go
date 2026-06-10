@@ -145,6 +145,7 @@ func (s *Server) clearPendingTOTP(w http.ResponseWriter, id string) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   s.Secure,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 

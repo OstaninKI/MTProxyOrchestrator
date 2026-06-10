@@ -901,3 +901,64 @@ func TestUserQuotaActionsAuditTargetIsLabel(t *testing.T) {
 		}
 	}
 }
+
+// TestUserDeleteNonexistentIDReturns404 verifies the delete handler looks the
+// user up (checking the List error) instead of soft-deleting blindly and
+// writing an audit record with an empty label.
+func TestUserDeleteNonexistentIDReturns404(t *testing.T) {
+	srv := newInternalTestServer(t)
+	withWriteAndReloadHook(t, func(_ []byte) {})
+
+	req := httptest.NewRequest(http.MethodPost, "/users/999/delete", strings.NewReader(url.Values{
+		CSRFField(): {"token"},
+	}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "token"})
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
+		URLParams: chi.RouteParams{Keys: []string{"id"}, Values: []string{"999"}},
+	}))
+	rec := httptest.NewRecorder()
+
+	srv.handleUserDelete(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("delete nonexistent user status = %d, want 404", rec.Code)
+	}
+	var count int
+	if err := srv.DB.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action='user.delete'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("no audit entry expected for nonexistent user, got %d", count)
+	}
+}
+
+// TestUserRotateNonexistentIDReturns404 mirrors the delete case for rotation:
+// rotating a missing user must 404 instead of auditing an empty label.
+func TestUserRotateNonexistentIDReturns404(t *testing.T) {
+	srv := newInternalTestServer(t)
+	withWriteAndReloadHook(t, func(_ []byte) {})
+
+	req := httptest.NewRequest(http.MethodPost, "/users/999/rotate", strings.NewReader(url.Values{
+		CSRFField(): {"token"},
+	}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "token"})
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
+		URLParams: chi.RouteParams{Keys: []string{"id"}, Values: []string{"999"}},
+	}))
+	rec := httptest.NewRecorder()
+
+	srv.handleUserRotate(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("rotate nonexistent user status = %d, want 404", rec.Code)
+	}
+	var count int
+	if err := srv.DB.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action='user.rotate'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("no audit entry expected for nonexistent user, got %d", count)
+	}
+}
