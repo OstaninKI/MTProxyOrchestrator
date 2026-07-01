@@ -83,6 +83,13 @@ func (s *Service) now() time.Time {
 	return time.Now()
 }
 
+// DayFloor snaps ts down to the start of its UTC day (00:00). traffic_daily
+// stores day_ts as ts-(ts%86400); period_start MUST be snapped the same way so
+// the Recalculate SUM's `WHERE day_ts >= period_start` boundary lines up with
+// the day buckets. A raw midday timestamp would exclude the installation day's
+// traffic from the period entirely.
+func DayFloor(ts int64) int64 { return ts - ts%86400 }
+
 // PeriodEnd returns the unix timestamp at which the period that started at
 // startTS ends.
 func PeriodEnd(period string, startTS int64) int64 {
@@ -181,7 +188,7 @@ func (s *Service) RolloverIfDue(ctx context.Context, label string) (bool, error)
 	now := s.now().Unix()
 	if periodStart == 0 {
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE users SET quota_period_start=? WHERE id=?`, now, id); err != nil {
+			`UPDATE users SET quota_period_start=? WHERE id=?`, DayFloor(now), id); err != nil {
 			return false, err
 		}
 		return false, tx.Commit(ctx)
@@ -242,14 +249,23 @@ func (s *Service) Recalculate(ctx context.Context, label string) (int64, bool, e
 		return 0, false, err
 	}
 
-	var totalNull sql.NullInt64
-	if err := tx.QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(bytes_in)+SUM(bytes_out),0)
-		 FROM traffic_daily WHERE user_label=? AND day_ts >= ?`,
-		label, u.QuotaPeriodSt).Scan(&totalNull); err != nil {
-		return 0, u.QuotaSuspended, err
+	// Guard: a zero period_start means the period was never initialized (e.g.
+	// quota_bytes set before any rollover tick ran). SUM ... WHERE day_ts >= 0
+	// would otherwise aggregate ALL historical traffic and suspend the user for
+	// past periods. Treat "no period" as "no measurable usage" rather than
+	// penalizing history; RolloverIfDue will initialize period_start on its next
+	// tick, after which Recalculate begins counting the live period.
+	var used int64
+	if u.QuotaPeriodSt != 0 {
+		var totalNull sql.NullInt64
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COALESCE(SUM(bytes_in)+SUM(bytes_out),0)
+			 FROM traffic_daily WHERE user_label=? AND day_ts >= ?`,
+			label, u.QuotaPeriodSt).Scan(&totalNull); err != nil {
+			return 0, u.QuotaSuspended, err
+		}
+		used = totalNull.Int64
 	}
-	used := totalNull.Int64
 
 	newSuspended := u.QuotaSuspended
 	if u.QuotaBytes > 0 && used >= u.QuotaBytes {
@@ -302,6 +318,13 @@ func (s *Service) Recalculate(ctx context.Context, label string) (int64, bool, e
 
 // RunPeriodic ticks every interval, rolls over and recalculates every user.
 // Returns when ctx is cancelled.
+//
+// ponytail: enforcement ceiling — a user can overshoot the hard limit by up to
+// ~interval+60s (sampler scrape interval) + one teleproxy reload before
+// suspension reaches the live config. For v1 this lag is an accepted
+// trade-off; teleproxy has no per-user rate-limit hook. Upgrade path: emit a
+// sing-box/teleproxy route rule that cuts the user at the proxy layer when
+// hard-realtime enforcement is required.
 func (s *Service) RunPeriodic(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = 5 * time.Minute

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/quota"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/secrets"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/teleproxy"
 )
@@ -530,7 +531,7 @@ func (s *Server) handleUserQuotaSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prev := *target
-	if err := repo.SetQuota(id, bytes, period, warn, time.Now().Unix()); err != nil {
+	if err := repo.SetQuota(id, bytes, period, warn, quota.DayFloor(time.Now().Unix())); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -571,7 +572,7 @@ func (s *Server) handleUserQuotaReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prev := *target
-	if err := repo.ResetQuota(id, time.Now().Unix()); err != nil {
+	if err := repo.ResetQuota(id, quota.DayFloor(time.Now().Unix())); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

@@ -275,3 +275,58 @@ func TestRecalculateDoesNotReloadWhenNothingPending(t *testing.T) {
 		t.Fatalf("reload calls = %d, want 0 (no transition, no pending retry)", reloadCalls)
 	}
 }
+
+// TestRecalculateDayAlignmentCountsInstallationDay guards Fix A: when a quota
+// is set midday, period_start is snapped to UTC midnight via DayFloor, so the
+// SUM boundary `day_ts >= period_start` includes the installation day's
+// traffic. Before the fix a raw 15:00 timestamp excluded that whole day.
+func TestRecalculateDayAlignmentCountsInstallationDay(t *testing.T) {
+	d := openDB(t)
+	// Monday 15:00 UTC — the moment an admin sets the quota.
+	setAt := time.Date(2026, 5, 11, 15, 0, 0, 0, time.UTC)
+	periodStart := quota.DayFloor(setAt.Unix()) // 2026-05-11 00:00 UTC
+	// Recalculate runs an hour later, same day.
+	now := setAt.Add(time.Hour)
+	// Traffic bucketed at Monday's day_ts = 2026-05-11 00:00 UTC (600+600=1200).
+	insertUser(t, d, "frank", periodStart, "monthly", 1000, 80)
+	insertDaily(t, d, "frank", time.Date(2026, 5, 11, 0, 0, 0, 0, time.UTC).Unix(), 600, 600)
+
+	s := &quota.Service{DB: d, Now: func() time.Time { return now },
+		Audit: func(action, target, detail string) {}}
+	used, suspended, err := s.Recalculate(context.Background(), "frank")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if used != 1200 {
+		t.Errorf("installation-day traffic dropped: used=%d want 1200 (period_start must align to day_ts)", used)
+	}
+	if !suspended {
+		t.Error("expected suspension: 1200 >= quota 1000")
+	}
+}
+
+// TestRecalculateZeroPeriodStartDoesNotSuspendOnHistory guards Fix B: a user
+// whose quota_bytes is set but period_start is still 0 must not be suspended
+// for historical traffic. Without the guard, `WHERE day_ts >= 0` aggregates
+// everything and instantly suspends the user for past periods.
+func TestRecalculateZeroPeriodStartDoesNotSuspendOnHistory(t *testing.T) {
+	d := openDB(t)
+	now := time.Date(2026, 5, 11, 12, 0, 0, 0, time.UTC)
+	// quota_period_start left at 0 (period never initialized).
+	insertUser(t, d, "grace", 0, "monthly", 1000, 80)
+	// Plenty of historical traffic that predates any quota concept.
+	insertDaily(t, d, "grace", time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC).Unix(), 9999, 9999)
+
+	s := &quota.Service{DB: d, Now: func() time.Time { return now },
+		Audit: func(action, target, detail string) {}}
+	used, suspended, err := s.Recalculate(context.Background(), "grace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if used != 0 {
+		t.Errorf("zero period_start must read used=0 (no measurable period), got %d", used)
+	}
+	if suspended {
+		t.Error("user must NOT be suspended for history when period_start==0")
+	}
+}
