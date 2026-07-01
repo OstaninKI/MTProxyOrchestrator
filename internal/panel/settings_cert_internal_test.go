@@ -390,3 +390,33 @@ func TestCertManualClearReportsSetSettingFailure(t *testing.T) {
 		t.Fatalf("notice = %q, want SetSetting failure to be reported", notice)
 	}
 }
+
+// TestLoadRecentRenewalsReadsAttemptedAt pins the latent bug fix: the query must
+// SELECT attempted_at (the actual schema column), not created_at — which made
+// the renewal history silently always empty. Records are inserted without a
+// timestamp so they get the DEFAULT attempted_at, mirroring how ObtainACME
+// writes them in production.
+func TestLoadRecentRenewalsReadsAttemptedAt(t *testing.T) {
+	srv := newCertTestServer(t, nil)
+	// Insert as production does: no explicit timestamp column → DEFAULT attempted_at.
+	if _, err := srv.DB.Exec(
+		`INSERT INTO cert_renewals(domain, success, error_msg) VALUES(?,?,?)`,
+		"example.com", 1, "",
+	); err != nil {
+		t.Fatalf("insert renewal: %v", err)
+	}
+	if _, err := srv.DB.Exec(
+		`INSERT INTO cert_renewals(domain, success, error_msg) VALUES(?,?,?)`,
+		"example.com", 0, "acme: rate limited",
+	); err != nil {
+		t.Fatalf("insert renewal: %v", err)
+	}
+
+	rows := loadRecentRenewals(srv, "example.com")
+	if len(rows) != 2 {
+		t.Fatalf("loadRecentRenewals returned %d rows, want 2 (created_at/attempted_at bug?)", len(rows))
+	}
+	if !rows[0].Success {
+		t.Errorf("rows[0].Success = false, want true (newest first)")
+	}
+}

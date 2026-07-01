@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -109,8 +110,10 @@ func fetchRemoteTemplateList(client HTTPDoer) ([]RemoteStubTemplate, error) {
 }
 
 // downloadRemoteTemplate downloads all blob files for the named template into destDir.
-// Returns an error if no files were found (unknown template name).
-func downloadRemoteTemplate(client HTTPDoer, name, destDir string) error {
+// Returns an error if no files were found (unknown template name). The context
+// bounds the whole multi-file download; without it each per-file 30s timeout
+// compounds across all files.
+func downloadRemoteTemplate(ctx context.Context, client HTTPDoer, name, destDir string) error {
 	entries, err := fetchOrGetTree(client)
 	if err != nil {
 		return err
@@ -136,7 +139,7 @@ func downloadRemoteTemplate(client HTTPDoer, name, destDir string) error {
 		}
 
 		rawURL := githubRawBase + e.Path
-		n, err := downloadFileTo(client, rawURL, destPath)
+		n, err := downloadFileTo(ctx, client, rawURL, destPath)
 		if err != nil {
 			return fmt.Errorf("download %s: %w", relPath, err)
 		}
@@ -144,6 +147,9 @@ func downloadRemoteTemplate(client HTTPDoer, name, destDir string) error {
 		count++
 		if total > maxRemoteTotal {
 			return fmt.Errorf("template exceeds maximum download size of %d MB", maxRemoteTotal>>20)
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 	}
 	if count == 0 {
@@ -165,8 +171,15 @@ func cleanRemoteTemplatePath(relPath string) (string, error) {
 }
 
 // downloadFileTo fetches url and writes it to destPath, returning bytes written.
-func downloadFileTo(client HTTPDoer, url, destPath string) (int64, error) {
-	resp, err := client.Get(url)
+func downloadFileTo(ctx context.Context, client HTTPDoer, url, destPath string) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
 	}

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
@@ -254,12 +255,18 @@ func QueryUserTrafficSeries(d *db.DB, label string, buckets int) ([]TrafficBucke
 	if buckets <= 0 {
 		buckets = 30
 	}
+	// Select the most-recent N rows (DESC), then re-sort ascending for rendering.
+	// ponytail: subquery+outer-ORDER keeps the ASC output callers already expect;
+	// the previous `ORDER BY ts ASC LIMIT N` silently returned the OLDEST N rows.
 	const q = `
-SELECT ts, bytes_in, bytes_out, connections
-FROM traffic_samples
-WHERE user_label = ?
-ORDER BY ts ASC
-LIMIT ?`
+SELECT ts, bytes_in, bytes_out, connections FROM (
+	SELECT ts, bytes_in, bytes_out, connections
+	FROM traffic_samples
+	WHERE user_label = ?
+	ORDER BY ts DESC
+	LIMIT ?
+)
+ORDER BY ts ASC`
 
 	rows, err := d.Query(q, label, buckets)
 	if err != nil {
@@ -277,6 +284,61 @@ LIMIT ?`
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate user traffic series: %w", err)
+	}
+	return out, nil
+}
+
+// QueryUsersTrafficSeries returns up to buckets most-recent traffic_samples rows
+// for each of the given user labels in a single query, grouped by label. It
+// replaces the per-user N+1 loop in handleUserList. Each slice is ordered
+// ascending by ts (ready for sparkline rendering).
+func QueryUsersTrafficSeries(d *db.DB, labels []string, buckets int) (map[string][]TrafficBucket, error) {
+	out := make(map[string][]TrafficBucket, len(labels))
+	if len(labels) == 0 {
+		return out, nil
+	}
+	if buckets <= 0 {
+		buckets = 30
+	}
+
+	// ROW_NUMBER() OVER (PARTITION BY user_label ORDER BY ts DESC) keeps only the
+	// newest N samples per user in one round-trip. modernc.org/sqlite ships a
+	// recent SQLite (>=3.25) so window functions are available.
+placeholders := make([]string, len(labels))
+args := make([]any, 0, len(labels)+1)
+for i, label := range labels {
+	placeholders[i] = "?"
+	args = append(args, label)
+}
+args = append(args, buckets)
+query := `
+SELECT user_label, ts, bytes_in, bytes_out, connections FROM (
+	SELECT user_label, ts, bytes_in, bytes_out, connections,
+	       ROW_NUMBER() OVER (PARTITION BY user_label ORDER BY ts DESC) AS rn
+	FROM traffic_samples
+	WHERE user_label IN (` + strings.Join(placeholders, ",") + `)
+)
+WHERE rn <= ?
+ORDER BY user_label, ts ASC`
+
+	rows, err := d.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query users traffic series: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			label string
+			b     TrafficBucket
+		)
+		if err := rows.Scan(&label, &b.TS, &b.BytesIn, &b.BytesOut, &b.Connections); err != nil {
+			return nil, fmt.Errorf("scan users traffic bucket: %w", err)
+		}
+		out[label] = append(out[label], b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate users traffic series: %w", err)
 	}
 	return out, nil
 }

@@ -20,7 +20,16 @@ import (
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/stub"
 )
 
-const nginxReloadTimeout = 10 * time.Second
+const (
+	nginxReloadTimeout = 10 * time.Second
+	// certRenewTimeout bounds a forced ACME renewal. LE orders usually finish
+	// in tens of seconds; this caps worst-case challenge polling/retries.
+	certRenewTimeout = 90 * time.Second
+	// stubDownloadTimeout bounds a remote stub template download across all
+	// files. Templates have dozens of assets; without an overall deadline the
+	// per-file 30s client timeout compounds serially.
+	stubDownloadTimeout = 5 * time.Minute
+)
 
 // reloadNginx executes "systemctl reload nginx" with a bounded timeout.
 // Overridable in tests.
@@ -589,8 +598,8 @@ func loadRecentRenewals(s *Server, domain string) []RenewalAttempt {
 		return nil
 	}
 	rows, err := s.DB.Query(
-		`SELECT domain, success, error_msg, created_at FROM cert_renewals
-		 WHERE domain=? ORDER BY created_at DESC LIMIT 10`,
+		`SELECT domain, success, error_msg, attempted_at FROM cert_renewals
+		 WHERE domain=? ORDER BY attempted_at DESC LIMIT 10`,
 		domain,
 	)
 	if err != nil {
@@ -777,7 +786,13 @@ func (s *Server) handleSettingsCertRenew(w http.ResponseWriter, r *http.Request)
 	mgr.CADirURL = acme.CADirURL(s.DB.GetSetting(settingCertACMEProvider, "production"))
 	webRootDir := filepath.Join(cfg.CertDir, ".well-known-webroot")
 	runner := acme.DefaultRunner(mgr, webRootDir)
-	if err := runner.Renew(r.Context(), cfg.Domain, cfg.ACMEEmail); err != nil {
+	// Detach from r.Context(): a client/browser disconnect must not cancel an
+	// in-flight ACME order mid-way (it can burn LE rate limits and leave a
+	// half-written cert). Bound it with an explicit deadline instead so the
+	// request cannot hang indefinitely on a stuck LE/network path.
+	ctx, cancel := context.WithTimeout(context.Background(), certRenewTimeout)
+	defer cancel()
+	if err := runner.Renew(ctx, cfg.Domain, cfg.ACMEEmail); err != nil {
 		http.Error(w, "renewal failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -844,7 +859,11 @@ func (s *Server) handleSettingsStubRemoteApply(w http.ResponseWriter, r *http.Re
 		})
 	}
 
-	if err := downloadRemoteTemplate(remoteHTTPClient, name, tmpDir); err != nil {
+	// Bound the whole multi-file download: without an overall deadline each
+	// per-file 30s client timeout compounds across all files in the template.
+	dlCtx, dlCancel := context.WithTimeout(r.Context(), stubDownloadTimeout)
+	defer dlCancel()
+	if err := downloadRemoteTemplate(dlCtx, remoteHTTPClient, name, tmpDir); err != nil {
 		renderRemoteErr(fmt.Sprintf("Download failed: %v", err))
 		return
 	}

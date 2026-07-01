@@ -207,3 +207,98 @@ func TestQueryTrafficSeriesUsesHourlyDataFor30d(t *testing.T) {
 		t.Fatal("expected hourly bob bucket in 30d series")
 	}
 }
+
+// TestQueryUserTrafficSeriesReturnsMostRecent pins the latent bug fix: the
+// query must return the most-recent N samples, not the oldest N. The previous
+// `ORDER BY ts ASC LIMIT N` silently returned the oldest rows.
+func TestQueryUserTrafficSeriesReturnsMostRecent(t *testing.T) {
+	d := openTestDB(t)
+	// 5 samples, ask for 3; the newest 3 (ts 30,40,50) must come back.
+	insertTrafficSample(t, d, "alice", 10, 1, 1, 1)
+	insertTrafficSample(t, d, "alice", 20, 2, 2, 2)
+	insertTrafficSample(t, d, "alice", 30, 3, 3, 3)
+	insertTrafficSample(t, d, "alice", 40, 4, 4, 4)
+	insertTrafficSample(t, d, "alice", 50, 5, 5, 5)
+
+	series, err := metrics.QueryUserTrafficSeries(d, "alice", 3)
+	if err != nil {
+		t.Fatalf("QueryUserTrafficSeries: %v", err)
+	}
+	if len(series) != 3 {
+		t.Fatalf("got %d buckets, want 3", len(series))
+	}
+	// Ascending order, newest 3.
+	want := []int64{30, 40, 50}
+	for i, b := range series {
+		if b.TS != want[i] {
+			t.Errorf("series[%d].TS = %d, want %d", i, b.TS, want[i])
+		}
+	}
+	if series[0].BytesIn != 3 {
+		t.Errorf("first bucket BytesIn = %d, want 3 (oldest was wrongly returned)", series[0].BytesIn)
+	}
+}
+
+// TestQueryUsersTrafficSeries verifies the batch query returns the newest N
+// samples per user in a single round-trip, grouped by label.
+func TestQueryUsersTrafficSeries(t *testing.T) {
+	d := openTestDB(t)
+	// alice: 3 samples, ask for 2 → newest two (20,30).
+	insertTrafficSample(t, d, "alice", 10, 1, 1, 1)
+	insertTrafficSample(t, d, "alice", 20, 2, 2, 2)
+	insertTrafficSample(t, d, "alice", 30, 3, 3, 3)
+	// bob: 2 samples, ask for 2 → both (5,6).
+	insertTrafficSample(t, d, "bob", 5, 10, 10, 10)
+	insertTrafficSample(t, d, "bob", 6, 20, 20, 20)
+
+	out, err := metrics.QueryUsersTrafficSeries(d, []string{"alice", "bob"}, 2)
+	if err != nil {
+		t.Fatalf("QueryUsersTrafficSeries: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("got %d users, want 2", len(out))
+	}
+	if len(out["alice"]) != 2 {
+		t.Fatalf("alice: got %d buckets, want 2", len(out["alice"]))
+	}
+	if out["alice"][0].TS != 20 || out["alice"][1].TS != 30 {
+		t.Fatalf("alice series = %v, want [20 30]", []int64{out["alice"][0].TS, out["alice"][1].TS})
+	}
+	if len(out["bob"]) != 2 {
+		t.Fatalf("bob: got %d buckets, want 2", len(out["bob"]))
+	}
+}
+
+// TestQueryUsersTrafficSeriesMostRecent asserts the batch query keeps the
+// newest N per user (not the oldest), mirroring the single-user fix.
+func TestQueryUsersTrafficSeriesMostRecent(t *testing.T) {
+	d := openTestDB(t)
+	for ts := int64(1); ts <= 4; ts++ {
+		insertTrafficSample(t, d, "alice", ts*100, ts, ts, ts)
+	}
+	insertTrafficSample(t, d, "bob", 900, 9, 9, 9)
+
+	out, err := metrics.QueryUsersTrafficSeries(d, []string{"alice", "bob"}, 2)
+	if err != nil {
+		t.Fatalf("QueryUsersTrafficSeries: %v", err)
+	}
+	// alice has 4 samples; only the newest 2 (ts 300,400) must return.
+	if len(out["alice"]) != 2 {
+		t.Fatalf("alice: got %d, want 2", len(out["alice"]))
+	}
+	if out["alice"][0].TS != 300 || out["alice"][1].TS != 400 {
+		t.Fatalf("alice series = %v, want newest [300 400]", []int64{out["alice"][0].TS, out["alice"][1].TS})
+	}
+}
+
+// TestQueryUsersTrafficSeriesEmptyLabels confirms the no-users case is safe.
+func TestQueryUsersTrafficSeriesEmptyLabels(t *testing.T) {
+	d := openTestDB(t)
+	out, err := metrics.QueryUsersTrafficSeries(d, nil, 30)
+	if err != nil {
+		t.Fatalf("QueryUsersTrafficSeries(nil): %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("got %d entries, want 0", len(out))
+	}
+}

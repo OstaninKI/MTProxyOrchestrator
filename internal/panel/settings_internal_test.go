@@ -3,6 +3,7 @@ package panel
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -164,13 +165,26 @@ type fakeRemoteClient struct {
 }
 
 func (c fakeRemoteClient) Do(req *http.Request) (*http.Response, error) {
-	body, err := json.Marshal(githubTreeResponse{Tree: c.tree})
-	if err != nil {
-		return nil, err
+	// Route by URL: the tree API call returns the tree JSON, raw file fetches
+	// return their canned body — mirroring the real client and Get() below.
+	if req.URL.String() == githubTreeURL {
+		body, err := json.Marshal(githubTreeResponse{Tree: c.tree})
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	}
+	body, ok := c.raw[req.URL.String()]
+	if !ok {
+		return nil, fmt.Errorf("unexpected raw URL %s", req.URL.String())
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(bytes.NewReader(body)),
+		Body:       io.NopCloser(strings.NewReader(body)),
 		Header:     make(http.Header),
 	}, nil
 }
@@ -205,7 +219,7 @@ func TestDownloadRemoteTemplateRejectsTraversalPaths(t *testing.T) {
 	}
 	tmp := t.TempDir()
 
-	err := downloadRemoteTemplate(client, "sample", tmp)
+	err := downloadRemoteTemplate(context.Background(), client, "sample", tmp)
 	if err == nil {
 		t.Fatal("expected traversal path to be rejected")
 	}
@@ -257,5 +271,33 @@ func TestRemoteStubApplyRejectsActiveContentBeforeApply(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "active content is not allowed") {
 		t.Fatalf("expected validation error, got status %d body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestDownloadRemoteTemplateRespectsCancelledContext verifies the download path
+// honors the context deadline instead of compounding per-file timeouts across
+// all template files. A cancelled context must abort before writing files.
+func TestDownloadRemoteTemplateRespectsCancelledContext(t *testing.T) {
+	resetRemoteTreeCacheForTest(t)
+	t.Cleanup(func() { resetRemoteTreeCacheForTest(t) })
+	client := fakeRemoteClient{
+		tree: []githubTreeEntry{
+			{Path: "sample/index.html", Type: "blob"},
+		},
+		raw: map[string]string{
+			githubRawBase + "sample/index.html": "<html></html>",
+		},
+	}
+	tmp := t.TempDir()
+	// Pre-cancel the context: the download must fail with ctx.Err().
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := downloadRemoteTemplate(ctx, client, "sample", tmp)
+	if err == nil {
+		t.Fatal("expected cancelled context to abort download, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(tmp, "index.html")); statErr == nil {
+		t.Fatal("file was written despite cancelled context")
 	}
 }

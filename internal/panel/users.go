@@ -399,13 +399,19 @@ func (s *Server) handleUserList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	// Populate activity series for each user
-	for i := range users {
-		series, err := metrics.QueryUserTrafficSeries(s.DB, users[i].Label, 30)
-		if err == nil {
-			users[i].ActivitySeries = series
+	// Populate activity series for every user in a single query (replaces a
+	// per-user N+1 loop). Ignore query errors; leave series nil on failure.
+	if len(users) > 0 {
+		labels := make([]string, len(users))
+		for i := range users {
+			labels[i] = users[i].Label
 		}
-		// Ignore per-user query errors; leave series nil on error
+		series, err := metrics.QueryUsersTrafficSeries(s.DB, labels, 30)
+		if err == nil {
+			for i := range users {
+				users[i].ActivitySeries = series[users[i].Label]
+			}
+		}
 	}
 	tok, err := NewCSRFToken()
 	if err != nil {
