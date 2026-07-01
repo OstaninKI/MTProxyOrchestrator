@@ -60,6 +60,7 @@
     let autoScroll = true;
     let searchTimer = 0;
     let reconnectTimer = 0;
+    let reconnectAttempts = 0;
     let ws = null;
     let counts = { buffered: 0, info: 0, warn: 0, error: 0 };
 
@@ -171,9 +172,20 @@
       current.close();
     }
 
+    // reconnectDelay returns ms for the next reconnect: exponential backoff
+    // (1s, 2s, 4s, ...) capped at 30s, plus up to 500ms jitter to avoid a
+    // thundering herd of retries syncing up after a server restart.
+    function reconnectDelay() {
+      const base = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
+      const jitter = Math.floor(Math.random() * 500);
+      return base + jitter;
+    }
+
     function scheduleReconnect() {
       clearReconnectTimer();
-      reconnectTimer = window.setTimeout(connect, 5000);
+      const delay = reconnectDelay();
+      reconnectTimer = window.setTimeout(connect, delay);
+      return delay;
     }
 
     function connect() {
@@ -183,6 +195,7 @@
 
       ws = new WebSocket(buildWsURL());
       ws.onopen = () => {
+        reconnectAttempts = 0;
         statusEl.textContent = `Connected — ${componentSelect.value} / ${levelSelect.value}`;
       };
       ws.onmessage = (event) => {
@@ -195,15 +208,18 @@
       };
       ws.onclose = (event) => {
         ws = null;
+        reconnectAttempts += 1;
         const reason = event.reason ? ` — ${event.reason}` : "";
-        statusEl.textContent = `Disconnected (code ${event.code})${reason}. Reconnecting in 5s…`;
-        scheduleReconnect();
+        const delay = scheduleReconnect();
+        const secs = Math.round(delay / 1000);
+        statusEl.textContent = `Disconnected (code ${event.code})${reason}. Reconnecting in ${secs}s…`;
       };
     }
 
     function reapply() {
       btnDownload.href = buildDownloadURL();
       resetBuffer();
+      reconnectAttempts = 0; // user-initiated reconnect: start fresh, no backoff.
       connect();
     }
 
@@ -1042,6 +1058,20 @@
     });
   }
 
+  // Generic confirm guard for any form carrying data-confirm. Works under the
+  // dashboard's strict CSP (no inline onsubmit handlers allowed).
+  function initConfirmForms() {
+    document.querySelectorAll("form[data-confirm]").forEach((form) => {
+      if (form.dataset.confirmReady === "1") return;
+      form.addEventListener("submit", (event) => {
+        if (!window.confirm(form.dataset.confirm)) {
+          event.preventDefault();
+        }
+      });
+      form.dataset.confirmReady = "1";
+    });
+  }
+
   function initPanelPage() {
     fillCSRF();
     initLogsPage();
@@ -1052,6 +1082,7 @@
     initStubRemoteSearch();
     initCopyButtons();
     initTrafficChart();
+    initConfirmForms();
   }
 
   if (document.readyState === "loading") {
@@ -1070,5 +1101,6 @@
     initStubRemoteSearch();
     initCopyButtons();
     initTrafficChart();
+    initConfirmForms();
   });
 })();

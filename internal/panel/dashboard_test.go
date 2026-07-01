@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1247,5 +1249,188 @@ func assertNoSensitiveDashboardTokens(t *testing.T, body string) {
 		if strings.Contains(normalized, forbidden) {
 			t.Fatalf("dashboard output contains forbidden token %q:\n%s", forbidden, body)
 		}
+	}
+}
+
+// TestDashboardRotateFormUsesDataConfirmNotInlineHandler verifies the "Rotate
+// all secrets" form uses a data-confirm attribute (consumed by panel.js under
+// the dashboard's strict CSP) instead of an inline onsubmit handler, which the
+// strict CSP would silently drop — leaving a destructive action unconfirmed.
+func TestDashboardRotateFormUsesDataConfirmNotInlineHandler(t *testing.T) {
+	s := newDashboardTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/p-example/dashboard", nil)
+	req.AddCookie(authCookieForTest(t, s))
+	rec := httptest.NewRecorder()
+
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /dashboard status = %d, want 200", rec.Code)
+	}
+	html := rec.Body.String()
+	if strings.Contains(html, "onsubmit=") {
+		t.Fatalf("dashboard contains inline onsubmit= handler, blocked by strict CSP:\n%s", html)
+	}
+	if !strings.Contains(html, `action="/p-example/users/rotate-all"`) {
+		t.Fatalf("dashboard missing rotate-all form action")
+	}
+	if !strings.Contains(html, `data-confirm="Rotate secrets`) {
+		t.Fatalf("rotate-all form must carry a data-confirm message, got:\n%s", html)
+	}
+}
+
+// TestDashboardFragmentRendersTopUsersAndBridgeNodes ensures the two new
+// SSE-refreshable fragments are served by the fragment endpoint and carry the
+// stable ids htmx targets for swapping.
+func TestDashboardFragmentRendersTopUsersAndBridgeNodes(t *testing.T) {
+	s := newDashboardTestServer(t)
+
+	for _, tc := range []struct {
+		path     string
+		wantID   string
+		wantEv   string
+		wantGet  string
+	}{
+		{
+			path:    "/p-example/dashboard/fragments/topusers?period=24h",
+			wantID:  `id="dashboard-topusers"`,
+			wantEv:  `hx-trigger="sse:dashboard-topusers"`,
+			wantGet: `hx-get="/p-example/dashboard/fragments/topusers?period=24h"`,
+		},
+		{
+			path:    "/p-example/dashboard/fragments/bridgenodes?period=24h",
+			wantID:  `id="dashboard-bridgenodes"`,
+			wantEv:  `hx-trigger="sse:dashboard-bridgenodes"`,
+			wantGet: `hx-get="/p-example/dashboard/fragments/bridgenodes?period=24h"`,
+		},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.AddCookie(authCookieForTest(t, s))
+			rec := httptest.NewRecorder()
+
+			s.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			body := rec.Body.String()
+			for _, want := range []string{tc.wantID, tc.wantEv, tc.wantGet} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("fragment missing %q:\n%s", want, body)
+				}
+			}
+		})
+	}
+}
+
+// TestCollectDashboardDataCoalescesConcurrentCalls verifies the singleflight
+// wrapper collapses N concurrent requests for the same period into a single
+// underlying assembly, removing the per-SSE-tick fragment fan-out.
+func TestCollectDashboardDataCoalescesConcurrentCalls(t *testing.T) {
+	// healthyChecker avoids real systemd/HTTP probes in collectDashboardData.
+	prev := dashboardHealthChecker
+	dashboardHealthChecker = func() health.Checker {
+		return health.Checker{
+			Systemd: func(string) (bool, error) { return true, nil },
+			HTTP:    func(string) error { return nil },
+			SOCKS5:  func(string, string) (time.Duration, error) { return 0, nil },
+		}
+	}
+	t.Cleanup(func() { dashboardHealthChecker = prev })
+
+	s := newDashboardTestServer(t)
+
+	var wg sync.WaitGroup
+	const n = 12
+	start := make(chan struct{})
+	results := make([]DashboardData, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			data, err, _ := dashboardDataGroup.Do(string(metrics.Period24h), func() (any, error) {
+				return s.collectDashboardDataUncached(metrics.Period24h), nil
+			})
+			if data != nil {
+				results[i] = data.(DashboardData)
+			}
+			errs[i] = err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d error: %v", i, err)
+		}
+		if len(results[i].TrafficSeries) != 60 {
+			t.Fatalf("goroutine %d: TrafficSeries len = %d, want 60", i, len(results[i].TrafficSeries))
+		}
+	}
+}
+
+// TestCollectComponentVersionsCachesWithinTTL verifies the second call within
+// the TTL is served from cache and does not re-run collectComponentVersionsFresh.
+func TestCollectComponentVersionsCachesWithinTTL(t *testing.T) {
+	resetComponentVersionsCacheForTest()
+	t.Cleanup(resetComponentVersionsCacheForTest)
+
+	first := collectComponentVersions()
+	second := collectComponentVersions()
+
+	if len(first) != 4 {
+		t.Fatalf("got %d components, want 4", len(first))
+	}
+	wantNames := []string{"tgproxy-cli", "tgproxy-panel", "teleproxy", "sing-box"}
+	for i, want := range wantNames {
+		if first[i].Name != want {
+			t.Errorf("first[%d].Name = %q, want %q", i, first[i].Name, want)
+		}
+		if second[i].Name != want {
+			t.Errorf("second[%d].Name = %q, want %q", i, second[i].Name, want)
+		}
+		if first[i].Version != second[i].Version {
+			t.Errorf("component %q version changed between calls: %q -> %q", want, first[i].Version, second[i].Version)
+		}
+	}
+}
+
+// TestCollectComponentVersionsFreshIsCalledOncePerTTL confirms the underlying
+// exec probe runs once per cache window, not on every public call.
+func TestCollectComponentVersionsFreshIsCalledOncePerTTL(t *testing.T) {
+	resetComponentVersionsCacheForTest()
+	t.Cleanup(resetComponentVersionsCacheForTest)
+
+	// Inject a stub that counts calls; restore after.
+	prev := collectComponentVersionsFresh
+	t.Cleanup(func() { collectComponentVersionsFresh = prev })
+	var calls int64
+	collectComponentVersionsFresh = func() []ComponentVersion {
+		atomic.AddInt64(&calls, 1)
+		return []ComponentVersion{
+			{Name: "tgproxy-cli", Version: "test"},
+			{Name: "tgproxy-panel", Version: "test"},
+			{Name: "teleproxy", Version: "test"},
+			{Name: "sing-box", Version: "test"},
+		}
+	}
+
+	collectComponentVersions()
+	collectComponentVersions()
+	collectComponentVersions()
+
+	if got := atomic.LoadInt64(&calls); got != 1 {
+		t.Fatalf("fresh probe called %d times within TTL, want 1", got)
+	}
+
+	// Clearing the cache forces another probe, proving the TTL gate works.
+	resetComponentVersionsCacheForTest()
+	collectComponentVersions()
+	if got := atomic.LoadInt64(&calls); got != 2 {
+		t.Fatalf("fresh probe called %d times after cache reset, want 2", got)
 	}
 }

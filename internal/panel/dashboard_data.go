@@ -4,12 +4,22 @@ import (
 	"log/slog"
 	"strings"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/bridge"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/health"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
 )
 
 var dashboardHealthChecker = health.DefaultChecker
+
+// dashboardDataGroup coalesces concurrent collectDashboardData calls for the
+// same period. One SSE tick triggers up to six fragment requests at once; the
+// singleflight turns them into a single assembly (one Teleproxy scrape, one set
+// of SQL queries) instead of six. Sequential ticks still rebuild fresh data.
+// ponytail: package-level group, key=period — smallest thing that removes the
+// per-tick fan-out. Drop for per-period locks if divergence ever matters.
+var dashboardDataGroup singleflight.Group
 
 // serviceStatesFromBridgeSteps maps the systemd-unit bridge steps (e.g.
 // teleproxy.service, sing-box.service) to ServiceState rows so the
@@ -32,6 +42,16 @@ func serviceStatesFromBridgeSteps(steps []health.BridgeStepStatus) []health.Serv
 }
 
 func (s *Server) collectDashboardData(period metrics.Period) DashboardData {
+	v, err, _ := dashboardDataGroup.Do(string(period), func() (any, error) {
+		return s.collectDashboardDataUncached(period), nil
+	})
+	if err != nil { // unreachable: the worker never returns an error
+		return DashboardData{Period: period, PanelPath: s.PanelPath}
+	}
+	return v.(DashboardData)
+}
+
+func (s *Server) collectDashboardDataUncached(period metrics.Period) DashboardData {
 	checker := dashboardHealthChecker()
 	isBridge := s.isBridgeMode()
 

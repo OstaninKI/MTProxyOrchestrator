@@ -165,6 +165,8 @@ func (s *Server) writeDashboardEventBatch(w http.ResponseWriter, r *http.Request
 	writeSSE(w, "dashboard-components", "refresh")
 	writeSSE(w, "dashboard-ops", "refresh")
 	writeSSE(w, "dashboard-upstream", "refresh")
+	writeSSE(w, "dashboard-topusers", "refresh")
+	writeSSE(w, "dashboard-bridgenodes", "refresh")
 	writeSSE(w, "dashboard-heartbeat", time.Now().UTC().Format(time.RFC3339))
 	return true
 }

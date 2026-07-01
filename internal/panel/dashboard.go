@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -27,6 +28,19 @@ type ComponentVersion struct {
 	Name    string
 	Version string // "unknown" if binary not found or command fails
 }
+
+// Component versions change rarely but require two exec calls (teleproxy
+// --help, sing-box version) to discover. Cache the result so the dashboard's
+// per-tick fragment fan-out does not fork two binaries on every request.
+// ponytail: simple mutex + TTL like treeCache in stub_remote.go; switch to a
+// refresh-on-write cache if staleness ever shows up in practice.
+var (
+	componentVersionsMu       sync.Mutex
+	componentVersionsCache     []ComponentVersion
+	componentVersionsCachedAt  time.Time
+)
+
+const componentVersionsTTL = 5 * time.Minute
 
 // DashboardData holds what the dashboard template receives.
 type DashboardData struct {
@@ -62,8 +76,43 @@ type SystemSnapshot struct {
 	Kernel        string
 }
 
-// collectComponentVersions returns installed versions for all known components.
+// collectComponentVersions returns installed versions for all known components,
+// served from a short TTL cache to avoid re-execing binaries on every dashboard
+// fragment refresh. collectComponentVersionsFresh performs the uncached lookup.
 func collectComponentVersions() []ComponentVersion {
+	componentVersionsMu.Lock()
+	defer componentVersionsMu.Unlock()
+
+	if componentVersionsCache != nil && time.Since(componentVersionsCachedAt) < componentVersionsTTL {
+		// Return a copy so callers cannot mutate the shared cache slice.
+		out := make([]ComponentVersion, len(componentVersionsCache))
+		copy(out, componentVersionsCache)
+		return out
+	}
+
+	fresh := collectComponentVersionsFresh()
+	componentVersionsCache = fresh
+	componentVersionsCachedAt = time.Now()
+	out := make([]ComponentVersion, len(fresh))
+	copy(out, fresh)
+	return out
+}
+
+// collectComponentVersionsFresh performs the uncached binary probe. It is a var
+// so tests can inject a stub and assert the TTL cache calls it at most once
+// per window (mirrors the dashboardHealthChecker override pattern).
+var collectComponentVersionsFresh = defaultCollectComponentVersionsFresh
+
+// resetComponentVersionsCacheForTest clears the cache; tests use it to force a
+// fresh lookup or to isolate themselves from other tests' cached state.
+func resetComponentVersionsCacheForTest() {
+	componentVersionsMu.Lock()
+	defer componentVersionsMu.Unlock()
+	componentVersionsCache = nil
+	componentVersionsCachedAt = time.Time{}
+}
+
+func defaultCollectComponentVersionsFresh() []ComponentVersion {
 	paths := config.DefaultPaths()
 
 	// teleproxy has no --version flag; it is a C fork of Telegram's MTProxy
@@ -322,6 +371,10 @@ func (s *Server) handleDashboardFragment(w http.ResponseWriter, r *http.Request)
 		dashboardOpsFragment(w, data)
 	case "upstream":
 		dashboardUpstreamFragment(w, data)
+	case "topusers":
+		dashboardTopUsersFragment(w, data)
+	case "bridgenodes":
+		dashboardBridgeNodesFragment(w, data)
 	default:
 		http.NotFound(w, r)
 	}

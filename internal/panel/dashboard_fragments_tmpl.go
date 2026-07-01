@@ -522,7 +522,12 @@ const dashboardFragments = `
 {{end}}
 
 {{define "top_users"}}
-<section class="card">
+<section
+  id="dashboard-topusers"
+  class="card"
+  hx-get="{{.PanelPath}}dashboard/fragments/topusers?period={{.Period}}"
+  hx-trigger="sse:dashboard-topusers"
+  hx-swap="outerHTML">
   <div class="card-head"><div class="col card-title-stack"><h3>Top users by traffic</h3><span class="sub">Live · selected period</span></div><div class="spacer"></div><div class="seg"><a class="seg-item{{if eq .Period "1h"}} active{{end}}" href="?period=1h">1h</a><a class="seg-item{{if eq .Period "24h"}} active{{end}}" href="?period=24h">24h</a><a class="seg-item{{if eq .Period "7d"}} active{{end}}" href="?period=7d">7d</a><a class="seg-item{{if eq .Period "30d"}} active{{end}}" href="?period=30d">30d</a></div></div>
   <div class="card-body card-body--flush">
   {{if .TopUsers}}
@@ -538,7 +543,12 @@ const dashboardFragments = `
 {{end}}
 
 {{define "bridge_nodes"}}
-<section class="card">
+<section
+  id="dashboard-bridgenodes"
+  class="card"
+  hx-get="{{.PanelPath}}dashboard/fragments/bridgenodes?period={{.Period}}"
+  hx-trigger="sse:dashboard-bridgenodes"
+  hx-swap="outerHTML">
   <div class="card-head"><div class="col card-title-stack"><h3>Bridge nodes</h3><span class="sub">{{countEnabledNodes .BridgeNodes}} of {{len .BridgeNodes}} online</span></div></div>
   <div class="card-body card-body--flush">
   {{if .BridgeNodes}}
@@ -584,6 +594,14 @@ func dashboardOpsFragment(w io.Writer, data DashboardData) {
 
 func dashboardUpstreamFragment(w io.Writer, data DashboardData) {
 	dashboardFragmentsTmpl.ExecuteTemplate(w, "upstream", data) //nolint:errcheck
+}
+
+func dashboardTopUsersFragment(w io.Writer, data DashboardData) {
+	dashboardFragmentsTmpl.ExecuteTemplate(w, "top_users", data) //nolint:errcheck
+}
+
+func dashboardBridgeNodesFragment(w io.Writer, data DashboardData) {
+	dashboardFragmentsTmpl.ExecuteTemplate(w, "bridge_nodes", data) //nolint:errcheck
 }
 
 func trafficLinePath(series []metrics.TrafficBucket) string {

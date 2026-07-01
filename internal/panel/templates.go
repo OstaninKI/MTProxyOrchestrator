@@ -121,7 +121,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Funcs(dashboardFragm
               <span class="summary-copy"><strong>Add user</strong><span>Create a new MTProto user and copy the link</span></span>
               {{icon "Right" 14}}
             </a>
-            <form method="post" action="{{.PanelPath}}users/rotate-all" class="action-row-form" onsubmit="return confirm('Rotate secrets for all enabled users? Existing share links stop working until you redistribute the new ones.')">
+            <form method="post" action="{{.PanelPath}}users/rotate-all" class="action-row-form" data-confirm="Rotate secrets for all enabled users? Existing share links stop working until you redistribute the new ones.">
               <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
               <button class="action-row" type="submit">
                 <span class="action-icon">{{icon "Key" 14}}</span>
