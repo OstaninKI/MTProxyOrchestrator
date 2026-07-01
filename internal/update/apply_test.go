@@ -4,9 +4,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+// TestMain enables the non-root update sentinel for the whole package: the
+// Apply root-guard is a production safety check, not behaviour under test, and
+// the test runner is not root. Tests that specifically want to exercise the
+// guard unset the env var themselves.
+func TestMain(m *testing.M) {
+	os.Setenv("TGPROXY_UPDATE_ALLOW_NONROOT", "1") //nolint:errcheck
+	os.Exit(m.Run())
+}
 
 // fakeDownloader records calls and optionally fails.
 type fakeDownloader struct {
@@ -223,6 +233,34 @@ func TestApply_SHA256Failure_NoReplacement(t *testing.T) {
 	}
 	if len(svc.restartCalls) != 0 {
 		t.Fatalf("service should not be restarted on download failure")
+	}
+}
+
+// TestApply_NonRootRefusedWithoutSentinel verifies the production root-guard:
+// when TGPROXY_UPDATE_ALLOW_NONROOT is unset and the process is not root, Apply
+// refuses before touching the filesystem. Skipped when actually running as root
+// (e.g. in a root container), since the guard cannot fire there.
+func TestApply_NonRootRefusedWithoutSentinel(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; guard cannot fire")
+	}
+	t.Setenv("TGPROXY_UPDATE_ALLOW_NONROOT", "")
+
+	svc := &fakeSVC{}
+	health := &fakeHealth{}
+	a, dest := setupApplier(t, &fakeDownloader{}, svc, health, &fakeFileOps{})
+
+	info := UpdateInfo{Component: ComponentCLI, DownloadURL: "http://x", SHA256: "abc"}
+	err := a.Apply(info, dest)
+	if err == nil {
+		t.Fatal("expected error when non-root and sentinel unset")
+	}
+	if !strings.Contains(err.Error(), "must run as root") {
+		t.Fatalf("expected root-guard error, got: %v", err)
+	}
+	content, _ := os.ReadFile(dest)
+	if string(content) != "old-binary" {
+		t.Fatalf("binary must be untouched when refused: got %q", content)
 	}
 }
 

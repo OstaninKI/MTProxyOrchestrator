@@ -72,6 +72,26 @@ func TestRedactor_PlainTextUnchanged(t *testing.T) {
 	}
 }
 
+// TestRedactor_BcryptHash guards the case where a bcrypt hash is logged
+// verbatim. The jwt regex alone misses it because "." and "/" fragment the
+// 53-char tail into sub-32 pieces.
+func TestRedactor_BcryptHash(t *testing.T) {
+	r := NewRedactor()
+	// Valid bcrypt format: $2a$<cost>$<22-char salt><31-char hash>, all from
+	// the bcrypt alphabet ./A-Za-z0-0. The tail after "$2a$12$" is exactly 53;
+	// build it with strings.Repeat so the length is correct by construction.
+	tail := strings.Repeat("./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 2)[:53]
+	hash := "$2a$12$" + tail
+	msg := "password hash is " + hash + " for user admin"
+	got := r.Redact(msg)
+	if strings.Contains(got, hash) {
+		t.Errorf("bcrypt hash should be redacted, got: %s", got)
+	}
+	if !strings.Contains(got, "[REDACTED]") {
+		t.Errorf("expected [REDACTED] in output, got: %s", got)
+	}
+}
+
 // ---- Filter tests ----
 
 func TestFilter_LevelFiltering(t *testing.T) {

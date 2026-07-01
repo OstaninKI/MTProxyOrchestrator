@@ -78,6 +78,9 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 LockPersonality=yes
 RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+SystemCallFilter=@system-service
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID
 
@@ -112,6 +115,9 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 LockPersonality=yes
 RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+SystemCallFilter=@system-service
 CapabilityBoundingSet=
 
 [Install]
@@ -156,6 +162,9 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 LockPersonality=yes
 RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+SystemCallFilter=@system-service
 
 [Install]
 WantedBy=multi-user.target

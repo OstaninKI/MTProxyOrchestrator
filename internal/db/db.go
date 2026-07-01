@@ -83,7 +83,14 @@ func (t *ImmediateTx) Rollback(ctx context.Context) error {
 // Open opens or creates a SQLite database at path and runs all pending migrations.
 // Pass ":memory:" for in-memory (tests).
 func Open(path string) (*DB, error) {
-	sqldb, err := sql.Open("sqlite", path)
+	// busy_timeout is set via the DSN, not an Exec: modernc applies DSN
+	// pragmas to every pooled connection, whereas `db.Exec("PRAGMA ...")` only
+	// touches whichever connection the pool happens to hand that call. Without
+	// the DSN form, ordinary writes (settings, metrics, retention) hit
+	// "database is locked" under contention because they never inherit the
+	// busy_timeout that BeginImmediate sets per-connection.
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)"
+	sqldb, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -92,10 +99,6 @@ func Open(path string) (*DB, error) {
 	// pool dance) all see the same schema and rows.
 	if path == ":memory:" {
 		sqldb.SetMaxOpenConns(1)
-	}
-	if _, err := sqldb.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;`); err != nil {
-		sqldb.Close()
-		return nil, err
 	}
 	d := &DB{sqldb}
 	if err := migrate(d); err != nil {

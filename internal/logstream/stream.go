@@ -136,6 +136,7 @@ func (f Filter) matches(e LogEntry) bool {
 type Redactor struct {
 	mtprotoSecret *regexp.Regexp // 32-char hex strings (MTProto secrets)
 	keyValuePairs *regexp.Regexp // password=... or secret=...
+	bcryptHash    *regexp.Regexp // crypt(3) password hashes ($2a$/$2b$/$2y$/$5$/$6$)
 	jwtPattern    *regexp.Regexp // long base64url tokens (40+ chars)
 }
 
@@ -146,6 +147,10 @@ func NewRedactor() *Redactor {
 		mtprotoSecret: regexp.MustCompile(`\b[0-9a-fA-F]{32}\b`),
 		// Key=value pairs where key is a credential field (case-insensitive)
 		keyValuePairs: regexp.MustCompile(`(?i)(password|secret|token|auth|apikey|api_key)=\S+`),
+		// bcrypt / crypt(3) password hashes. Must run before the jwt pattern:
+		// bcrypt's 53-char tail uses "./A-Za-z0-9", and its "." and "/" would
+		// otherwise split the hash into <32-char fragments the jwt regex misses.
+		bcryptHash: regexp.MustCompile(`\$(2[aby]|5|6)\$\d{1,2}\$[./A-Za-z0-9]{53}`),
 		// JWT / session tokens: base64url strings 32+ characters that contain
 		// at least one uppercase letter (distinguishing them from plain hex secrets).
 		jwtPattern: regexp.MustCompile(`[A-Za-z0-9_\-]{32,}`),
@@ -163,6 +168,8 @@ func (r *Redactor) Redact(msg string) string {
 		}
 		return m[:idx+1] + "[REDACTED]"
 	})
+	// Redact bcrypt/crypt hashes before the jwt pattern can fragment them.
+	msg = r.bcryptHash.ReplaceAllString(msg, "[REDACTED]")
 	// Redact MTProto secrets (exact 32-char hex).
 	msg = r.mtprotoSecret.ReplaceAllString(msg, "[REDACTED]")
 	// Redact JWT/session tokens (long base64url strings).

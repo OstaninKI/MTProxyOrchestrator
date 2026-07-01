@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/component"
@@ -46,6 +47,12 @@ type FileOps interface {
 	Rename(src, dst string) error
 	// Chmod changes the file mode bits of path.
 	Chmod(path string, mode os.FileMode) error
+	// Lchown changes the owning uid/gid of path without following symlinks.
+	// A nil error from the no-op implementation is fine when ownership does not
+	// matter (tests, non-Linux, or a process that already runs as the target uid).
+	Lchown(path string, uid, gid int) error
+	// StatOwner returns the uid/gid currently owning path.
+	StatOwner(path string) (uid, gid int, err error)
 	// Remove removes path (best effort; errors are silently ignored).
 	Remove(path string)
 }
@@ -101,6 +108,16 @@ func (a *Applier) Apply(info UpdateInfo, destPath string) error {
 		return fmt.Errorf("update %s: SHA256 must not be empty", info.Component)
 	}
 
+	// In production destPath lives under /usr/local/bin (root-owned). A non-root
+	// invoker would fail the rename below with an opaque EPERM; fail fast with a
+	// clear message instead. TGPROXY_UPDATE_ALLOW_NONROOT=1 lets tests and
+	// non-system install layouts proceed (the root check then reduces to a
+	// best-effort chown that is a no-op when the caller already owns the file).
+	if os.Geteuid() != 0 && os.Getenv("TGPROXY_UPDATE_ALLOW_NONROOT") != "1" {
+		return fmt.Errorf("update %s: must run as root (euid=%d); set TGPROXY_UPDATE_ALLOW_NONROOT=1 only for local test installs",
+			info.Component, os.Geteuid())
+	}
+
 	tmpDir := a.TmpDir
 	if tmpDir == "" {
 		tmpDir = os.TempDir()
@@ -115,9 +132,12 @@ func (a *Applier) Apply(info UpdateInfo, destPath string) error {
 		return fmt.Errorf("update %s: download/verify: %w", info.Component, err)
 	}
 
-	// Step 2: back up the current binary before replacing it.
+	// Step 2: back up the current binary before replacing it, and capture its
+	// ownership so the replaced binary inherits the same uid/gid rather than
+	// the updater process's identity.
 	backupPath := destPath + ".bak"
 	hasBackup := false
+	origUID, origGID := -1, -1
 	if err := a.FileOps.Copy(destPath, backupPath); err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("update %s: backup: %w", info.Component, err)
@@ -125,6 +145,9 @@ func (a *Applier) Apply(info UpdateInfo, destPath string) error {
 		// No existing binary — proceed without a backup.
 	} else {
 		hasBackup = true
+		if uid, gid, err := a.FileOps.StatOwner(destPath); err == nil {
+			origUID, origGID = uid, gid
+		}
 	}
 
 	// Step 3: set permissions on the candidate binary before replacing.
@@ -132,9 +155,17 @@ func (a *Applier) Apply(info UpdateInfo, destPath string) error {
 		return fmt.Errorf("update %s: chmod temp: %w", info.Component, err)
 	}
 
-	// Step 4: atomically replace the binary.
+	// Step 4: atomically replace the binary and restore its ownership. Rename
+	// resets ownership to the invoking user, so chown back to the original
+	// owner (best-effort: a non-root caller that legitimately reaches here via
+	// the sentinel may lack permission, and the file is still usable).
 	if err := a.FileOps.Rename(tmpPath, destPath); err != nil {
 		return fmt.Errorf("update %s: replace binary: %w", info.Component, err)
+	}
+	if origUID >= 0 {
+		if err := a.FileOps.Lchown(destPath, origUID, origGID); err != nil {
+			return fmt.Errorf("update %s: restore ownership: %w", info.Component, err)
+		}
 	}
 
 	svc := componentService(info.Component)
@@ -190,6 +221,10 @@ func (a *Applier) rollback(destPath, backupPath, service string) error {
 	}
 	if err := a.FileOps.Chmod(destPath, 0o755); err != nil {
 		return fmt.Errorf("rollback chmod: %w", err)
+	}
+	if uid, gid, err := a.FileOps.StatOwner(backupPath); err == nil {
+		// best-effort: keep ownership consistent with the backup
+		_ = a.FileOps.Lchown(destPath, uid, gid)
 	}
 	if service != "" {
 		if err := a.ServiceController.Restart(service); err != nil {
@@ -328,6 +363,24 @@ func (OSFileOps) Rename(src, dst string) error {
 
 func (OSFileOps) Chmod(path string, mode os.FileMode) error {
 	return os.Chmod(path, mode)
+}
+
+// Lchown changes ownership without following symlinks. syscall.Stat_t works on
+// both Linux (production) and darwin (dev/test); both expose Uid/Gid as uint32.
+func (OSFileOps) Lchown(path string, uid, gid int) error {
+	return os.Lchown(path, uid, gid)
+}
+
+func (OSFileOps) StatOwner(path string) (int, int, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return -1, -1, err
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return -1, -1, fmt.Errorf("stat: cannot read owner for %s", path)
+	}
+	return int(st.Uid), int(st.Gid), nil
 }
 
 func (OSFileOps) Remove(path string) {

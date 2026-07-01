@@ -84,11 +84,24 @@ func migrate(d *DB) error {
 		if count > 0 {
 			continue
 		}
-		if _, err := d.Exec(m.sql); err != nil {
+		// Apply the schema change and record the migration name in a single
+		// transaction so a crash between the two cannot leave the schema
+		// advanced while the migration stays unrecorded (which would re-run
+		// the ALTERs below on next start and fail with "duplicate column").
+		tx, err := d.Begin()
+		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", m.name, err)
+		}
+		if _, err := tx.Exec(m.sql); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", m.name, err)
 		}
-		if _, err := d.Exec(`INSERT INTO migrations(name) VALUES(?)`, m.name); err != nil {
+		if _, err := tx.Exec(`INSERT INTO migrations(name) VALUES(?)`, m.name); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("record migration %s: %w", m.name, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", m.name, err)
 		}
 	}
 	return nil

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -142,6 +143,27 @@ func boolDBSetting(d *db.DB, key string) (bool, bool) {
 	}
 }
 
+// guardDevModeSafety refuses to start dev mode when the process shape looks
+// production-like: running as root, or bound to a non-loopback address. Dev
+// mode ships insecure (Secure=false) cookies and demo data, so letting it run
+// on a real server would silently weaken security. Returns nil in normal dev
+// runs (non-root, loopback).
+func guardDevModeSafety() error {
+	if os.Geteuid() == 0 {
+		return fmt.Errorf("dev mode refuses to run as root (euid=0); drop --dev for production")
+	}
+	host := listenAddr
+	if h, _, err := net.SplitHostPort(listenAddr); err == nil {
+		host = h
+	}
+	// "localhost" and empty host (e.g. ":8080", all interfaces) are not
+	// loopback IPs — treat the empty/all-interface case as unsafe too.
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return fmt.Errorf("dev mode refuses to bind to non-loopback address %q; use 127.0.0.1 or drop --dev", listenAddr)
+	}
+	return nil
+}
+
 func runServe(cmd *cobra.Command, args []string) error {
 	// Dev mode: override defaults before any resource is opened.
 	if devMode {
@@ -151,6 +173,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 		if !cmd.Flags().Changed("path") {
 			panelPath = "/"
+		}
+		// Guard: dev mode disables the Secure cookie flag and loads demo data.
+		// Refuse to run it in a production-shaped process so a stray --dev on a
+		// real server cannot silently weaken cookies or expose the panel.
+		if err := guardDevModeSafety(); err != nil {
+			return err
 		}
 	}
 

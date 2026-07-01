@@ -31,6 +31,11 @@ func ResolvePinnedAsset(client HTTPClient, comp Component, version string) (down
 	assetName := string(comp)
 	base := fmt.Sprintf("https://github.com/%s/%s/releases/download/v%s/", owner, repoName, version)
 	downloadURL = base + assetName
+	// ponytail: trust ceiling = SHA256 over TLS, checksums.txt from the SAME
+	// release as the binary. A compromised tag or a TLS-valid MITM can supply
+	// both binary and hash. No offline signature (cosign/pkx) yet. Upgrade path:
+	// pin a public key and verify a detached signature when the threat model
+	// demands it.
 	checksumURL := base + "checksums.txt"
 
 	sha256hex, err = fetchChecksumForAsset(client, checksumURL, assetName)

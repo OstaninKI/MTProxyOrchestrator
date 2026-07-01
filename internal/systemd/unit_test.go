@@ -148,6 +148,9 @@ var hardeningDirectives = []string{
 	"ProtectControlGroups=yes",
 	"LockPersonality=yes",
 	"RestrictRealtime=yes",
+	"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+	"RestrictNamespaces=yes",
+	"SystemCallFilter=@system-service",
 }
 
 func TestTeleproxyUnitHardening(t *testing.T) {

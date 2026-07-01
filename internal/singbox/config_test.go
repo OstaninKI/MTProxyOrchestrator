@@ -86,7 +86,7 @@ var testNode = singbox.Outbound{
 func baseCfg() singbox.Config {
 	return singbox.Config{
 		SOCKSListenAddr: "127.0.0.1",
-		SOCKSListenPort: 2080,
+		SOCKSListenPort: 1080,
 		Strategy:        singbox.StrategyURLTest,
 		Outbounds:       []singbox.Outbound{testNode},
 	}
@@ -148,7 +148,7 @@ func TestRenderGolden(t *testing.T) {
 func TestRenderNoFlowWhenEmpty(t *testing.T) {
 	cfg := singbox.Config{
 		SOCKSListenAddr: "127.0.0.1",
-		SOCKSListenPort: 2080,
+		SOCKSListenPort: 1080,
 		Strategy:        singbox.StrategyURLTest,
 		Outbounds: []singbox.Outbound{{
 			Type:      singbox.OutboundVLESSReality,
@@ -180,7 +180,7 @@ func TestRenderNoFlowWhenEmpty(t *testing.T) {
 func TestRenderTrojanOutbound(t *testing.T) {
 	cfg := singbox.Config{
 		SOCKSListenAddr: "127.0.0.1",
-		SOCKSListenPort: 2080,
+		SOCKSListenPort: 1080,
 		Strategy:        singbox.StrategyURLTest,
 		Outbounds: []singbox.Outbound{{
 			Type:      singbox.OutboundTrojan,
@@ -210,7 +210,7 @@ func TestRenderTrojanOutbound(t *testing.T) {
 func TestRenderShadowsocksOutbound(t *testing.T) {
 	cfg := singbox.Config{
 		SOCKSListenAddr: "127.0.0.1",
-		SOCKSListenPort: 2080,
+		SOCKSListenPort: 1080,
 		Strategy:        singbox.StrategyURLTest,
 		Outbounds: []singbox.Outbound{{
 			Type:     singbox.OutboundShadowsocks,
@@ -240,7 +240,7 @@ func TestRenderShadowsocksOutbound(t *testing.T) {
 func TestRenderHysteria2Outbound(t *testing.T) {
 	cfg := singbox.Config{
 		SOCKSListenAddr: "127.0.0.1",
-		SOCKSListenPort: 2080,
+		SOCKSListenPort: 1080,
 		Strategy:        singbox.StrategyURLTest,
 		Outbounds: []singbox.Outbound{{
 			Type:      singbox.OutboundHysteria2,
@@ -267,7 +267,7 @@ func TestRenderHysteria2Outbound(t *testing.T) {
 func TestRenderTUICOutbound(t *testing.T) {
 	cfg := singbox.Config{
 		SOCKSListenAddr: "127.0.0.1",
-		SOCKSListenPort: 2080,
+		SOCKSListenPort: 1080,
 		Strategy:        singbox.StrategyURLTest,
 		Outbounds: []singbox.Outbound{{
 			Type:              singbox.OutboundTUIC,

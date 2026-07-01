@@ -22,6 +22,9 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 LockPersonality=yes
 RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+SystemCallFilter=@system-service
 CapabilityBoundingSet=
 
 [Install]
