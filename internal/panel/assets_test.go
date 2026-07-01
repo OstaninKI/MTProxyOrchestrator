@@ -148,6 +148,37 @@ func TestSecurityHeadersUseLocalOnlyAssets(t *testing.T) {
 	}
 }
 
+// TestPanelJSReconnectUsesExponentialBackoff inspects panel.js for the
+// exponential-backoff reconnect logic (fixing the previous fixed-5s retry with
+// no cap). Go can't unit-test the JS directly, so this guards the formula via
+// source inspection: it fails if the fixed "5000" delay is reintroduced or the
+// exponential/cap math is removed.
+func TestPanelJSReconnectUsesExponentialBackoff(t *testing.T) {
+	s := newDashboardTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/p-example/assets/panel.js", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET panel.js status = %d, want 200", rec.Code)
+	}
+	js := rec.Body.String()
+
+	for _, want := range []string{
+		"reconnectAttempts",                              // failure counter
+		"Math.pow(2, reconnectAttempts)",                 // exponential backoff
+		"Math.min(30000,",                                // cap at 30s
+		"reconnectAttempts = 0",                          // reset on success/manual reconnect
+	} {
+		if !strings.Contains(js, want) {
+			t.Fatalf("panel.js missing backoff token %q", want)
+		}
+	}
+	// The old fixed-5s reconnect must be gone (it had no backoff/jitter/cap).
+	if strings.Contains(js, "setTimeout(connect, 5000)") {
+		t.Fatal("panel.js still uses fixed setTimeout(connect, 5000); must use exponential backoff")
+	}
+}
+
 func TestLegacyUsersPageKeepsCompatCSP(t *testing.T) {
 	s := newDashboardTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/p-example/users", nil)
