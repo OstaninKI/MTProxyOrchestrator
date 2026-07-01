@@ -76,6 +76,14 @@ func TestSettingsPagesUsePanelScopedLinksWithoutInlineStyle(t *testing.T) {
 			if strings.Contains(body, "<style>") {
 				t.Fatalf("%s must not render inline styles:\n%s", path, body)
 			}
+			// No inline event handlers — these break under strict CSP (the
+			// certificates page already uses it) and rely on 'unsafe-inline'.
+			// Destructive actions must use data-confirm + panel.js instead.
+			for _, bad := range []string{`onsubmit=`, `onclick=`, `onchange=`, `oninput=`, `onload=`, `onerror=`} {
+				if strings.Contains(body, bad) {
+					t.Fatalf("%s must not render inline %s handler (breaks strict CSP):\n%s", path, bad, body)
+				}
+			}
 			for _, want := range []string{
 				`href="/p-example/dashboard"`,
 				`class="page-head"`,

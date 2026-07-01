@@ -231,7 +231,7 @@ const systemSettingsContent = `{{define "page_title"}}System Settings{{end}}
     <section class="card">
       <div class="card-head"><h3>Maintenance</h3></div>
       <div class="card-body col col-panel">
-        <form method="post" action="{{.PanelPath}}settings/system/restart" class="action-row-form" onsubmit="return confirm('Restart teleproxy and nginx now? Active connections may briefly drop.')">
+        <form method="post" action="{{.PanelPath}}settings/system/restart" class="action-row-form" data-confirm="Restart teleproxy and nginx now? Active connections may briefly drop.">
           <input type="hidden" name="{{.CSRFField}}" value="{{.CSRFToken}}" class="js-csrf">
           <button class="action-row" type="submit"><span class="action-icon">{{icon "Refresh" 14}}</span><span class="summary-copy"><strong>Restart all services</strong><span>teleproxy, nginx (panel stays up)</span></span>{{icon "Right" 14}}</button>
         </form>

@@ -1,6 +1,9 @@
 package panel_test
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
@@ -76,5 +79,39 @@ func TestUserRepoSoftDelete(t *testing.T) {
 		if u.ID == id {
 			t.Error("deleted user should not appear in list")
 		}
+	}
+}
+
+// TestUsersPageDeleteFormUsesDataConfirm verifies the per-user delete form uses
+// a CSP-safe data-confirm attribute (consumed by panel.js) instead of an inline
+// onclick handler, which would break under strict CSP and is inconsistent with
+// the drawer/bulk delete confirms already wired via addEventListener.
+func TestUsersPageDeleteFormUsesDataConfirm(t *testing.T) {
+	srv := newTestServer(t, "/p-example/")
+	seedAdmin(t, srv.DB)
+	// Seed a user so the row delete form renders.
+	repo := panel.UserRepo{DB: srv.DB}
+	if _, err := repo.Create("alice", "00112233445566778899aabbccddeeff"); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	cookie := doLogin(t, h, "admin", "correcthorsebatterystaple")
+
+	req := httptest.NewRequest(http.MethodGet, "/p-example/users", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /users status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, bad := range []string{`onclick=`, `onsubmit=`} {
+		if strings.Contains(body, bad) {
+			t.Fatalf("users page must not render inline %s handler (breaks strict CSP):\n%s", bad, body)
+		}
+	}
+	if !strings.Contains(body, `data-confirm="Delete alice?"`) {
+		t.Fatalf("delete form must carry data-confirm=\"Delete alice?\":\n%s", body)
 	}
 }

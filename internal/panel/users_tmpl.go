@@ -301,9 +301,9 @@ const userListContent = `{{define "page_title"}}Users{{end}}
           <button class="row-menu-item" type="submit">{{icon "Edit" 13}} Reset quota</button>
         </form>
         <div class="row-menu-divider"></div>
-        <form method="post" action="{{$.PanelPath}}users/{{.ID}}/delete" class="inline">
+        <form method="post" action="{{$.PanelPath}}users/{{.ID}}/delete" class="inline" data-confirm="Delete {{.Label}}?">
           <input type="hidden" name="{{$.CSRFField}}" value="{{$.CSRFToken}}">
-          <button class="row-menu-item row-menu-item--danger" type="submit" onclick="return confirm('Delete {{.Label}}?')">{{icon "Trash" 13}} Delete user</button>
+          <button class="row-menu-item row-menu-item--danger" type="submit">{{icon "Trash" 13}} Delete user</button>
         </form>
       </div>
     </details>
