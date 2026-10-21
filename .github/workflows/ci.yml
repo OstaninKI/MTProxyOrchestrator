@@ -23,3 +23,6 @@ jobs:
 
       - name: Build binaries
         run: make build
+
+      - name: Scan for known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
