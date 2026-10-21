@@ -179,7 +179,7 @@ func (e *bridgeEnableExec) StopService(name string) error {
 	return nil
 }
 func (e *bridgeEnableExec) DisableService(_ string) error { return nil }
-func (e *bridgeEnableExec) ReloadService(name string) error {
+func (e *bridgeEnableExec) RestartService(name string) error {
 	e.services[name] = true
 	return nil
 }
@@ -515,7 +515,7 @@ func (e *bridgeDeleteLastExec) DisableService(name string) error {
 	}
 	return nil
 }
-func (e *bridgeDeleteLastExec) ReloadService(name string) error {
+func (e *bridgeDeleteLastExec) RestartService(name string) error {
 	if name == "teleproxy.service" {
 		e.reloadedTeleproxy = true
 	}

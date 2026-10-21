@@ -72,8 +72,8 @@ func (f *fakeExecutor) DisableService(name string) error {
 	return f.record("DisableService:" + name)
 }
 
-func (f *fakeExecutor) ReloadService(name string) error {
-	if err := f.record("ReloadService:" + name); err != nil {
+func (f *fakeExecutor) RestartService(name string) error {
+	if err := f.record("RestartService:" + name); err != nil {
 		return err
 	}
 	f.services[name] = true
@@ -433,7 +433,7 @@ func TestDisableBridgeRollbackOnReloadFailure(t *testing.T) {
 	if err := os.WriteFile(paths.TeleproxyTOML, prev, 0o600); err != nil {
 		t.Fatalf("seed teleproxy.toml: %v", err)
 	}
-	exec.failOn = "ReloadService:teleproxy.service"
+	exec.failOn = "RestartService:teleproxy.service"
 
 	cfg := bridge.DisableConfig{
 		Paths:          paths,
@@ -449,7 +449,7 @@ func TestDisableBridgeRollbackOnReloadFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when reload fails")
 	}
-	if !contains([]byte(err.Error()), "reload teleproxy") {
+	if !contains([]byte(err.Error()), "restart teleproxy") {
 		t.Errorf("expected original cause in error, got: %v", err)
 	}
 	// Last write to teleproxy.toml should be the restored snapshot (contains socks5).

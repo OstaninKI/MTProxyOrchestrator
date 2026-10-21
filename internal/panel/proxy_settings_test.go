@@ -241,9 +241,12 @@ func TestProxySettingsRejectsMaskHostWithTOMLBreakingCharacters(t *testing.T) {
 
 func TestProxySettingsSavesToDB(t *testing.T) {
 	srv := newTestServer(t, "/p-example/")
-	orig := panel.WriteAndReloadHook
-	panel.WriteAndReloadHook = func(path string, data []byte) error { return nil }
-	defer func() { panel.WriteAndReloadHook = orig }()
+	orig := panel.WriteAndRestartHook
+	panel.WriteAndRestartHook = func(path string, data []byte) error { return nil }
+	defer func() { panel.WriteAndRestartHook = orig }()
+	origSync := panel.SyncUsersJSONHook
+	panel.SyncUsersJSONHook = func(string, []byte) error { return nil }
+	defer func() { panel.SyncUsersJSONHook = origSync }()
 
 	seedAdmin(t, srv.DB)
 	h := srv.Handler()
@@ -271,15 +274,18 @@ func TestProxySettingsSavesToDB(t *testing.T) {
 	}
 }
 
-func TestProxySettingsSavesDPISettingsAndReloadsTeleproxy(t *testing.T) {
+func TestProxySettingsSavesDPISettingsAndRestartsTeleproxy(t *testing.T) {
 	srv := newTestServer(t, "/p-example/")
 	var rendered string
-	orig := panel.WriteAndReloadHook
-	panel.WriteAndReloadHook = func(path string, data []byte) error {
+	orig := panel.WriteAndRestartHook
+	panel.WriteAndRestartHook = func(path string, data []byte) error {
 		rendered = string(data)
 		return nil
 	}
-	defer func() { panel.WriteAndReloadHook = orig }()
+	defer func() { panel.WriteAndRestartHook = orig }()
+	origSync := panel.SyncUsersJSONHook
+	panel.SyncUsersJSONHook = func(string, []byte) error { return nil }
+	defer func() { panel.SyncUsersJSONHook = origSync }()
 
 	seedAdmin(t, srv.DB)
 	h := srv.Handler()

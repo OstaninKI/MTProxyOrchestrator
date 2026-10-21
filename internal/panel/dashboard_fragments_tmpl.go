@@ -349,7 +349,7 @@ const dashboardFragments = `
 <div class="card-body card-body--flush">
 {{if .LiveConnections}}
 <table class="tbl tbl--compact">
-<thead><tr><th>User</th><th>Live</th><th class="text-right">Upload</th><th class="text-right">Download</th><th>Limits</th><th>Rejected</th></tr></thead>
+<thead><tr><th>User</th><th>Live</th><th class="text-right">Upload</th><th class="text-right">Download</th><th>Limits</th><th>Rejected</th><th>JA4</th></tr></thead>
 <tbody>
 {{range .LiveConnections}}
 <tr>
@@ -359,6 +359,7 @@ const dashboardFragments = `
   <td class="mono text-right">{{formatBytes .BytesOut}}</td>
   <td>{{if hasSecretLimits .}}<span class="mono">{{.Connections}} / {{.ConnectionLimit}}</span>{{if or .UniqueIPs .MaxIPs}} <span class="muted">{{.UniqueIPs}} / {{.MaxIPs}} IPs</span>{{end}}{{else}}<span class="muted">unlimited</span>{{end}}</td>
   <td>{{if hasSecretRejections .}}<span class="badge" data-tone="warn">{{.RejectedConnections}}</span> <span class="muted">quota {{.RejectedQuota}} · IP {{.RejectedIPs}} · expired {{.RejectedExpired}}</span>{{else}}<span class="muted">none</span>{{end}}</td>
+  <td>{{if .JA4}}{{range previewJA4 .JA4 2}}<div class="mono muted muted-sm">{{.Hash}} · {{.Count}}</div>{{end}}{{else}}<span class="muted">none</span>{{end}}</td>
 </tr>
 {{end}}
 </tbody>

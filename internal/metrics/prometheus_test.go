@@ -371,3 +371,40 @@ mtproto_secret_traffic_bytes_in{label="charlie"} 42
 		t.Errorf("Connections: want 0, got %d", s.Connections)
 	}
 }
+
+func TestScrapeSnapshotParsesPerSecretJA4(t *testing.T) {
+	const fixture = `# HELP teleproxy_secret_ja4_seen ClientHello JA4 fingerprints matched per secret.
+# TYPE teleproxy_secret_ja4_seen counter
+teleproxy_secret_ja4_seen{secret="alice",hash="t13d1516h2_8daaf6152771_b0da82dd1658"} 3
+teleproxy_secret_ja4_seen{secret="alice",hash="t13d1615h2_46e7e9700bed_45f260be83e2"} 7
+teleproxy_secret_ja4_seen{secret="bob",hash="t13d1615h2_46e7e9700bed_45f260be83e2"} 1
+teleproxy_secret_ja4_seen{secret="",hash="ignored"} 9
+`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		w.Write([]byte(fixture)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	snapshot, err := newScraper(srv).ScrapeSnapshot()
+	if err != nil {
+		t.Fatalf("ScrapeSnapshot() error: %v", err)
+	}
+	if len(snapshot.JA4) != 0 {
+		t.Errorf("global JA4 = %+v, want per-secret rows kept out of the global list", snapshot.JA4)
+	}
+	bySecret := map[string][]metrics.JA4Counter{}
+	for _, s := range snapshot.Samples {
+		bySecret[s.UserLabel] = s.JA4
+	}
+	if len(bySecret) != 2 {
+		t.Fatalf("samples = %+v, want alice and bob only", snapshot.Samples)
+	}
+	alice := bySecret["alice"]
+	if len(alice) != 2 || alice[0].Count != 7 || alice[1].Count != 3 {
+		t.Errorf("alice JA4 = %+v, want sorted by count desc (7, 3)", alice)
+	}
+	if bob := bySecret["bob"]; len(bob) != 1 || bob[0].Count != 1 {
+		t.Errorf("bob JA4 = %+v, want one row with count 1", bob)
+	}
+}

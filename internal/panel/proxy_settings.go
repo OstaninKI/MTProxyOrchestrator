@@ -195,9 +195,9 @@ func (s *Server) handleSettingsProxyPost(w http.ResponseWriter, r *http.Request)
 		s.SettingsCfg.ServerIP = serverAddr
 	}
 
-	// Reload Teleproxy.
-	if err := s.reloadTeleproxy(); err != nil {
-		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, port, serverAddr, "failed to reload teleproxy")
+	// Restart, not reload: port/domain/backend/mss_clamp are not SIGHUP-reloadable.
+	if err := s.restartTeleproxy(); err != nil {
+		s.renderProxySettingsError(w, r, s.Secure, s.PanelPath, maskHost, tlsBackend, wildcardMask, mssClamp, randomPadding, ja4Log, port, serverAddr, "failed to restart teleproxy")
 		return
 	}
 

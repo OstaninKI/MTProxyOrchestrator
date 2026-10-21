@@ -35,6 +35,7 @@ const (
 	metricSOCKS5Succeeded   = "teleproxy_socks5_connects_succeeded_total"
 	metricSOCKS5Failed      = "teleproxy_socks5_connects_failed_total"
 	metricJA4Seen           = "teleproxy_ja4_seen"
+	metricSecretJA4Seen     = "teleproxy_secret_ja4_seen"
 	metricDCLatencyLast     = "teleproxy_dc_latency_last_seconds"
 	metricDCProbeFailures   = "teleproxy_dc_probe_failures_total"
 	metricProxyProtoConns   = "teleproxy_proxy_protocol_connections_total"
@@ -62,6 +63,9 @@ type Sample struct {
 	RejectedQuota       int64
 	RejectedIPs         int64
 	RejectedExpired     int64
+	// JA4 holds the ClientHello fingerprints matched to this secret, most
+	// frequent first. Teleproxy (>= 4.16.1) keeps at most four per secret.
+	JA4 []JA4Counter
 }
 
 // UpstreamCounters holds Teleproxy upstream proxy counters from one scrape.
@@ -230,6 +234,13 @@ func parseMetricSnapshot(r io.Reader) (Snapshot, error) {
 					snapshot.JA4 = append(snapshot.JA4, JA4Counter{Hash: hash, Count: metricValue(m)})
 				}
 				continue
+			case metricSecretJA4Seen:
+				secret, hash := metricLabel(m, labelKeySecret), metricLabel(m, labelKeyJA4Hash)
+				if secret != "" && hash != "" {
+					s := getOrCreate(secret)
+					s.JA4 = append(s.JA4, JA4Counter{Hash: hash, Count: metricValue(m)})
+				}
+				continue
 			case metricProxyProtoConns:
 				snapshot.ProxyProtocol.Connections = metricValue(m)
 				continue
@@ -292,15 +303,11 @@ func parseMetricSnapshot(r io.Reader) (Snapshot, error) {
 
 	out := make([]Sample, 0, len(byUser))
 	for _, s := range byUser {
+		sortJA4(s.JA4)
 		out = append(out, *s)
 	}
 	snapshot.Samples = out
-	sort.Slice(snapshot.JA4, func(i, j int) bool {
-		if snapshot.JA4[i].Count == snapshot.JA4[j].Count {
-			return snapshot.JA4[i].Hash < snapshot.JA4[j].Hash
-		}
-		return snapshot.JA4[i].Count > snapshot.JA4[j].Count
-	})
+	sortJA4(snapshot.JA4)
 
 	dcs := make([]DCStat, 0, len(byDC))
 	for _, d := range byDC {
@@ -352,4 +359,14 @@ func metricLabel(m *dto.Metric, name string) string {
 		}
 	}
 	return ""
+}
+
+// sortJA4 orders fingerprints by count descending, then by hash for determinism.
+func sortJA4(rows []JA4Counter) {
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Count == rows[j].Count {
+			return rows[i].Hash < rows[j].Hash
+		}
+		return rows[i].Count > rows[j].Count
+	})
 }

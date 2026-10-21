@@ -26,7 +26,7 @@ type Executor interface {
 	StartService(name string) error
 	StopService(name string) error
 	DisableService(name string) error
-	ReloadService(name string) error
+	RestartService(name string) error
 	ServiceActive(name string) (bool, error)
 }
 
@@ -155,15 +155,15 @@ func (s *BridgeService) Enable(cfg EnableConfig) error {
 		return s.rollback(cfg, fmt.Errorf("bridge enable: write teleproxy.toml: %w", err), nodeSnapshot)
 	}
 
-	// 6. Enable and start sing-box, then reload-or-restart teleproxy.
+	// 6. Enable and start sing-box, then restart teleproxy (socks5 is not SIGHUP-reloadable).
 	if err := s.Exec.EnableService("sing-box.service"); err != nil {
 		return s.rollback(cfg, fmt.Errorf("bridge enable: enable sing-box: %w", err), nodeSnapshot)
 	}
 	if err := s.Exec.StartService("sing-box.service"); err != nil {
 		return s.rollback(cfg, fmt.Errorf("bridge enable: start sing-box: %w", err), nodeSnapshot)
 	}
-	if err := s.Exec.ReloadService("teleproxy.service"); err != nil {
-		return s.rollback(cfg, fmt.Errorf("bridge enable: reload teleproxy: %w", err), nodeSnapshot)
+	if err := s.Exec.RestartService("teleproxy.service"); err != nil {
+		return s.rollback(cfg, fmt.Errorf("bridge enable: restart teleproxy: %w", err), nodeSnapshot)
 	}
 
 	// 7. Health check: both services must be active.
@@ -183,10 +183,10 @@ func (s *BridgeService) Enable(cfg EnableConfig) error {
 //  1. Snapshots teleproxy.toml and sing-box active state.
 //  2. Stops and disables sing-box.
 //  3. Re-renders teleproxy.toml in direct (no SOCKS5) mode.
-//  4. Reloads teleproxy.
+//  4. Restarts teleproxy.
 //
-// On failure at write/reload, the previous teleproxy.toml is restored,
-// teleproxy is reloaded back, and sing-box is restarted if it was active.
+// On failure at write/restart, the previous teleproxy.toml is restored,
+// teleproxy is restarted back, and sing-box is restarted if it was active.
 // Node list is preserved; nodes remain for future re-enable.
 func (s *BridgeService) Disable(cfg DisableConfig) error {
 	tpSnap, snapErr := snapshotFile(cfg.Paths.TeleproxyTOML)
@@ -216,8 +216,8 @@ func (s *BridgeService) Disable(cfg DisableConfig) error {
 		return s.disableRollback(cfg, tpSnap, sbWasActive, fmt.Errorf("bridge disable: write teleproxy.toml: %w", err))
 	}
 
-	if err := s.Exec.ReloadService("teleproxy.service"); err != nil {
-		return s.disableRollback(cfg, tpSnap, sbWasActive, fmt.Errorf("bridge disable: reload teleproxy: %w", err))
+	if err := s.Exec.RestartService("teleproxy.service"); err != nil {
+		return s.disableRollback(cfg, tpSnap, sbWasActive, fmt.Errorf("bridge disable: restart teleproxy: %w", err))
 	}
 
 	active, err := s.Exec.ServiceActive("teleproxy.service")
@@ -227,7 +227,7 @@ func (s *BridgeService) Disable(cfg DisableConfig) error {
 	return nil
 }
 
-// disableRollback restores teleproxy.toml from snapshot, reloads teleproxy,
+// disableRollback restores teleproxy.toml from snapshot, restarts teleproxy,
 // and restarts sing-box if it was active before. Best-effort: rollback errors
 // are joined to the original cause but do not mask it.
 func (s *BridgeService) disableRollback(cfg DisableConfig, tpSnap fileSnapshot, sbWasActive bool, cause error) error {
@@ -235,8 +235,8 @@ func (s *BridgeService) disableRollback(cfg DisableConfig, tpSnap fileSnapshot, 
 	if tpSnap.existed {
 		if err := s.Exec.WriteFile(cfg.Paths.TeleproxyTOML, tpSnap.data, tpSnap.mode); err != nil {
 			rollbackErrs = append(rollbackErrs, fmt.Errorf("restore teleproxy.toml: %w", err))
-		} else if err := s.Exec.ReloadService("teleproxy.service"); err != nil {
-			rollbackErrs = append(rollbackErrs, fmt.Errorf("reload teleproxy: %w", err))
+		} else if err := s.Exec.RestartService("teleproxy.service"); err != nil {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("restart teleproxy: %w", err))
 		}
 	}
 	if sbWasActive {
@@ -276,8 +276,8 @@ func (s *BridgeService) rollback(cfg EnableConfig, cause error, nodeSnapshot nod
 	if err := s.Exec.DisableService("sing-box.service"); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("disable sing-box: %w", err))
 	}
-	if err := s.Exec.ReloadService("teleproxy.service"); err != nil {
-		rollbackErrs = append(rollbackErrs, fmt.Errorf("reload teleproxy: %w", err))
+	if err := s.Exec.RestartService("teleproxy.service"); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("restart teleproxy: %w", err))
 	}
 	if len(rollbackErrs) > 0 {
 		return fmt.Errorf("bridge enable rolled back with errors: %w: %w", cause, errors.Join(rollbackErrs...))

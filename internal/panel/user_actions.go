@@ -727,9 +727,19 @@ func (s *Server) handleUserShareQR(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(b64))
 }
 
-// reloadTeleproxy rewrites the Teleproxy config and reloads the service.
+// reloadTeleproxy rewrites the Teleproxy config and reloads the service via
+// SIGHUP, so established sessions survive and removed secrets drain gracefully.
+// Teleproxy only re-reads secrets, ACLs, ja4_log and drain_timeout_secs on
+// reload; use restartTeleproxy for listener-level settings.
+func (s *Server) reloadTeleproxy() error { return s.applyTeleproxyConfig(WriteAndReloadHook) }
+
+// restartTeleproxy is reloadTeleproxy for settings Teleproxy reads only at
+// startup (port, domain, TLS backend, mss_clamp).
+func (s *Server) restartTeleproxy() error { return s.applyTeleproxyConfig(WriteAndRestartHook) }
+
+// applyTeleproxyConfig renders the Teleproxy config and hands it to apply.
 // It preserves Bridge mode by including the SOCKS5 upstream when sing-box is active.
-func (s *Server) reloadTeleproxy() error {
+func (s *Server) applyTeleproxyConfig(apply func(path string, data []byte) error) error {
 	users, err := UserRepo{DB: s.DB}.List()
 	if err != nil {
 		return err
@@ -759,7 +769,7 @@ func (s *Server) reloadTeleproxy() error {
 		Users:        entries,
 	}
 	data := cfg.Render()
-	return WriteAndReloadHook(s.bridgePaths().TeleproxyTOML, data)
+	return apply(s.bridgePaths().TeleproxyTOML, data)
 }
 
 // SyncUsersJSONHook is a hook for tests; production writes to the real path.
@@ -769,12 +779,23 @@ var SyncUsersJSONHook = func(path string, data []byte) error {
 
 // WriteAndReloadHook is a hook for tests; production writes to the real path.
 var WriteAndReloadHook = func(path string, data []byte) error {
+	if err := writeTeleproxyTOML(path, data); err != nil {
+		return err
+	}
+	return teleproxy.DefaultController().Reload()
+}
+
+// WriteAndRestartHook is a hook for tests; production writes to the real path.
+var WriteAndRestartHook = func(path string, data []byte) error {
+	if err := writeTeleproxyTOML(path, data); err != nil {
+		return err
+	}
+	return teleproxy.DefaultController().Restart()
+}
+
+func writeTeleproxyTOML(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return err
-	}
-	ctrl := teleproxy.DefaultController()
-	return ctrl.Reload()
+	return os.WriteFile(path, data, 0o600)
 }

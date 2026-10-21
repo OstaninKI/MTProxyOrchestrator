@@ -638,7 +638,11 @@ func TestDashboardSystemOmitsTotalWhenUnknown(t *testing.T) {
 func TestDashboardLiveConnectionsSection(t *testing.T) {
 	data := DashboardData{
 		LiveConnections: []metrics.Sample{
-			{UserLabel: "alice", BytesIn: 1024, BytesOut: 2048, Connections: 3},
+			{UserLabel: "alice", BytesIn: 1024, BytesOut: 2048, Connections: 3, JA4: []metrics.JA4Counter{
+				{Hash: "t13d1615h2_46e7e9700bed_45f260be83e2", Count: 7},
+				{Hash: "t13d1516h2_8daaf6152771_b0da82dd1658", Count: 3},
+				{Hash: "t13d0000h2_hidden_beyond_preview", Count: 1},
+			}},
 			{UserLabel: "bob", Connections: 1},
 		},
 		Components: []ComponentVersion{{Name: "tgproxy-panel", Version: "v0.0.0-test"}},
@@ -659,6 +663,12 @@ func TestDashboardLiveConnectionsSection(t *testing.T) {
 	}
 	if !strings.Contains(html, "bob") {
 		t.Error("dashboard should list user 'bob' in Active Connections")
+	}
+	if !strings.Contains(html, "t13d1615h2_46e7e9700bed_45f260be83e2 · 7") || !strings.Contains(html, "t13d1516h2_8daaf6152771_b0da82dd1658 · 3") {
+		t.Fatalf("dashboard should show per-secret JA4 fingerprints:\n%s", html)
+	}
+	if strings.Contains(html, "hidden_beyond_preview") {
+		t.Error("per-secret JA4 cell should preview only the top two fingerprints")
 	}
 }
 

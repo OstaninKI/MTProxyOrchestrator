@@ -452,8 +452,8 @@ func (realBridgeExecutor) DisableService(name string) error {
 	return systemctlRun("disable", name)
 }
 
-func (realBridgeExecutor) ReloadService(name string) error {
-	return systemctlRun("reload-or-restart", name)
+func (realBridgeExecutor) RestartService(name string) error {
+	return systemctlRun("restart", name)
 }
 
 func (realBridgeExecutor) ServiceActive(name string) (bool, error) {

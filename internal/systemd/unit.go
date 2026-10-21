@@ -63,6 +63,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart={{.BinaryPath}} --config {{.ConfigPath}}
+ExecReload=/bin/kill -HUP $MAINPID
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure

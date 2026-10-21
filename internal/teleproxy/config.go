@@ -83,12 +83,14 @@ func (c Config) Render() []byte {
 // teleproxyTmpl renders teleproxy.toml. Field names match Teleproxy v4.11.0.
 // - direct=true: Direct-to-DC mode (no ME relay); valid with or without socks5.
 // - socks5: optional Bridge-mode upstream added in v4.11.0; absent in Single mode.
+// - drain_timeout_secs: removed secrets' live sessions are force-closed 60 s after reload (default 300).
 var teleproxyTmpl = template.Must(template.New("teleproxy").Parse(`port = {{.Port}}
 stats_port = {{.StatsPort}}
 http_stats = true
 direct = true
 mss_clamp = {{.MSSClamp}}
 dc_probe_interval = 60
+drain_timeout_secs = 60
 {{- if .TLSBackend}}
 domain = [{ name = "{{.DomainName}}", backend = "{{.TLSBackend}}" }]
 {{- else}}

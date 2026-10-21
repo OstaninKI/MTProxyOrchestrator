@@ -41,7 +41,7 @@ func (e *recordingBridgeExec) StopService(name string) error {
 	return nil
 }
 func (e *recordingBridgeExec) DisableService(string) error { return nil }
-func (e *recordingBridgeExec) ReloadService(name string) error {
+func (e *recordingBridgeExec) RestartService(name string) error {
 	e.ensureServices()
 	e.services[name] = true
 	return nil

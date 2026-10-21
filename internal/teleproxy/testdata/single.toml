@@ -4,6 +4,7 @@ http_stats = true
 direct = true
 mss_clamp = true
 dc_probe_interval = 60
+drain_timeout_secs = 60
 domain = "www.microsoft.com"
 
 [stats]

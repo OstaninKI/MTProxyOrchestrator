@@ -20,7 +20,7 @@ func (noopBridgeExecutor) EnableService(_ string) error                      { r
 func (noopBridgeExecutor) StartService(_ string) error                       { return nil }
 func (noopBridgeExecutor) StopService(_ string) error                        { return nil }
 func (noopBridgeExecutor) DisableService(_ string) error                     { return nil }
-func (noopBridgeExecutor) ReloadService(_ string) error                      { return nil }
+func (noopBridgeExecutor) RestartService(_ string) error                     { return nil }
 func (noopBridgeExecutor) ServiceActive(_ string) (bool, error)              { return false, nil }
 
 // SeedDevData populates d with demo admin, users, traffic samples, and settings.
@@ -119,6 +119,7 @@ func ApplyDevMode(srv *Server) {
 
 	// Package-level hook overrides — replace real OS operations with no-ops.
 	WriteAndReloadHook = func(_ string, _ []byte) error { return nil }
+	WriteAndRestartHook = func(_ string, _ []byte) error { return nil }
 	SyncUsersJSONHook = func(_ string, _ []byte) error { return nil }
 	reloadNginx = func() error { return nil }
 	isSingboxActive = func() bool { return false }

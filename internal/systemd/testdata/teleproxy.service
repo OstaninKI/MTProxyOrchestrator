@@ -5,6 +5,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/teleproxy --config /etc/tgproxy/teleproxy.toml
+ExecReload=/bin/kill -HUP $MAINPID
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure

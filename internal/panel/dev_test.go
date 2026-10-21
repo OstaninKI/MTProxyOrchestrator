@@ -126,8 +126,8 @@ func TestNoopBridgeExecutorAllMethodsSucceed(t *testing.T) {
 	if err := e.DisableService("sing-box.service"); err != nil {
 		t.Fatalf("DisableService: %v", err)
 	}
-	if err := e.ReloadService("sing-box.service"); err != nil {
-		t.Fatalf("ReloadService: %v", err)
+	if err := e.RestartService("sing-box.service"); err != nil {
+		t.Fatalf("RestartService: %v", err)
 	}
 	active, err := e.ServiceActive("sing-box.service")
 	if err != nil {
