@@ -36,8 +36,8 @@ type ComponentVersion struct {
 // refresh-on-write cache if staleness ever shows up in practice.
 var (
 	componentVersionsMu       sync.Mutex
-	componentVersionsCache     []ComponentVersion
-	componentVersionsCachedAt  time.Time
+	componentVersionsCache    []ComponentVersion
+	componentVersionsCachedAt time.Time
 )
 
 const componentVersionsTTL = 5 * time.Minute

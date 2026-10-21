@@ -164,10 +164,10 @@ func TestPanelJSReconnectUsesExponentialBackoff(t *testing.T) {
 	js := rec.Body.String()
 
 	for _, want := range []string{
-		"reconnectAttempts",                              // failure counter
-		"Math.pow(2, reconnectAttempts)",                 // exponential backoff
-		"Math.min(30000,",                                // cap at 30s
-		"reconnectAttempts = 0",                          // reset on success/manual reconnect
+		"reconnectAttempts",              // failure counter
+		"Math.pow(2, reconnectAttempts)", // exponential backoff
+		"Math.min(30000,",                // cap at 30s
+		"reconnectAttempts = 0",          // reset on success/manual reconnect
 	} {
 		if !strings.Contains(js, want) {
 			t.Fatalf("panel.js missing backoff token %q", want)

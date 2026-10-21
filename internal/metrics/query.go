@@ -304,14 +304,14 @@ func QueryUsersTrafficSeries(d *db.DB, labels []string, buckets int) (map[string
 	// ROW_NUMBER() OVER (PARTITION BY user_label ORDER BY ts DESC) keeps only the
 	// newest N samples per user in one round-trip. modernc.org/sqlite ships a
 	// recent SQLite (>=3.25) so window functions are available.
-placeholders := make([]string, len(labels))
-args := make([]any, 0, len(labels)+1)
-for i, label := range labels {
-	placeholders[i] = "?"
-	args = append(args, label)
-}
-args = append(args, buckets)
-query := `
+	placeholders := make([]string, len(labels))
+	args := make([]any, 0, len(labels)+1)
+	for i, label := range labels {
+		placeholders[i] = "?"
+		args = append(args, label)
+	}
+	args = append(args, buckets)
+	query := `
 SELECT user_label, ts, bytes_in, bytes_out, connections FROM (
 	SELECT user_label, ts, bytes_in, bytes_out, connections,
 	       ROW_NUMBER() OVER (PARTITION BY user_label ORDER BY ts DESC) AS rn

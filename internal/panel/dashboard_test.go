@@ -1286,10 +1286,10 @@ func TestDashboardFragmentRendersTopUsersAndBridgeNodes(t *testing.T) {
 	s := newDashboardTestServer(t)
 
 	for _, tc := range []struct {
-		path     string
-		wantID   string
-		wantEv   string
-		wantGet  string
+		path    string
+		wantID  string
+		wantEv  string
+		wantGet string
 	}{
 		{
 			path:    "/p-example/dashboard/fragments/topusers?period=24h",
