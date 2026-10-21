@@ -154,7 +154,7 @@ func TestPanelProxyConfig_HasCSP(t *testing.T) {
 // ACMEChallengeConfig tests
 
 var acmeCfg = nginx.ACMEChallengeConfig{
-	WebRootDir: "/etc/tgproxy/certs/.well-known-webroot",
+	WebRootDir: "/var/www/tgproxy-acme",
 }
 
 func TestACMEChallengeConfig_ContainsLocation(t *testing.T) {
@@ -162,7 +162,7 @@ func TestACMEChallengeConfig_ContainsLocation(t *testing.T) {
 	if !bytes.Contains(out, []byte("location /.well-known/acme-challenge/")) {
 		t.Error("snippet must contain ACME challenge location block")
 	}
-	if !bytes.Contains(out, []byte("root /etc/tgproxy/certs/.well-known-webroot")) {
+	if !bytes.Contains(out, []byte("root /var/www/tgproxy-acme")) {
 		t.Error("snippet must set root to the configured webroot dir")
 	}
 }

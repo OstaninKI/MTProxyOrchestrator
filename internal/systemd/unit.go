@@ -35,9 +35,12 @@ type PanelUnitConfig struct {
 	SystemdDir    string // /etc/systemd/system
 	StubDir       string // /var/www/tgproxy-stub
 	// Optional ACME fields — when non-empty the panel starts the renewal loop.
-	CertDir   string // /etc/tgproxy/certs
-	Domain    string // proxy.example.com
-	ACMEEmail string // admin@example.com
+	CertDir string // /etc/tgproxy/certs
+	// ACMEWebRootDir holds HTTP-01 tokens served by nginx; outside ConfigDir so
+	// the www-data worker can read them.
+	ACMEWebRootDir string // /var/www/tgproxy-acme
+	Domain         string // proxy.example.com
+	ACMEEmail      string // admin@example.com
 }
 
 func (c TeleproxyUnitConfig) Render() []byte {
@@ -98,7 +101,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={{.BinaryPath}} serve --db {{.DBPath}} --path {{.PanelPath}} --listen {{.ListenAddr}} --mtproto-port {{.MTProtoPort}} --mask-host {{.MaskHost}}{{if .TLSBackend}} --tls-backend {{.TLSBackend}}{{end}}{{if .WildcardMask}} --wildcard-mask {{.WildcardMask}}{{end}} --mss-clamp={{.MSSClamp}} --random-padding={{.RandomPadding}} --ja4-log={{.JA4Log}} --stats-port {{.StatsPort}}{{if .StubDir}} --stub-dir {{.StubDir}}{{end}}{{if .CertDir}} --cert-dir {{.CertDir}}{{end}}{{if .Domain}} --domain {{.Domain}}{{end}}{{if .ACMEEmail}} --acme-email {{.ACMEEmail}}{{end}}
+ExecStart={{.BinaryPath}} serve --db {{.DBPath}} --path {{.PanelPath}} --listen {{.ListenAddr}} --mtproto-port {{.MTProtoPort}} --mask-host {{.MaskHost}}{{if .TLSBackend}} --tls-backend {{.TLSBackend}}{{end}}{{if .WildcardMask}} --wildcard-mask {{.WildcardMask}}{{end}} --mss-clamp={{.MSSClamp}} --random-padding={{.RandomPadding}} --ja4-log={{.JA4Log}} --stats-port {{.StatsPort}}{{if .StubDir}} --stub-dir {{.StubDir}}{{end}}{{if .CertDir}} --cert-dir {{.CertDir}}{{end}}{{if .Domain}} --domain {{.Domain}}{{end}}{{if .ACMEEmail}} --acme-email {{.ACMEEmail}}{{end}}{{if .ACMEWebRootDir}} --acme-webroot {{.ACMEWebRootDir}}{{end}}
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure
@@ -108,7 +111,7 @@ NoNewPrivileges=yes
 UMask=0077
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths={{.ConfigDir}} {{.LogDir}} {{.BinDir}} {{.SystemdDir}}{{if .StubDir}} {{.StubDir}}{{end}}{{if .CertDir}} {{.CertDir}}{{end}}
+ReadWritePaths={{.ConfigDir}} {{.LogDir}} {{.BinDir}} {{.SystemdDir}}{{if .StubDir}} {{.StubDir}}{{end}}{{if .CertDir}} {{.CertDir}}{{end}}{{if .ACMEWebRootDir}} {{.ACMEWebRootDir}}{{end}}
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes

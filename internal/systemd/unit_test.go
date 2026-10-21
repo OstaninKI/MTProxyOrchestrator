@@ -225,3 +225,17 @@ func checkGolden(t *testing.T, name string, got []byte) {
 		t.Errorf("render mismatch for %s:\n--- want ---\n%s\n--- got ---\n%s", name, want, got)
 	}
 }
+
+func TestPanelUnitACMEWebRoot(t *testing.T) {
+	c := basePanel
+	c.ACMEWebRootDir = "/var/www/tgproxy-acme"
+	got := c.Render()
+	for _, want := range []string{
+		" --acme-webroot /var/www/tgproxy-acme\n",
+		"ReadWritePaths=/etc/tgproxy /var/log/tgproxy /usr/local/bin /etc/systemd/system /var/www/tgproxy-acme\n",
+	} {
+		if !bytes.Contains(got, []byte(want)) {
+			t.Errorf("panel unit missing %q:\n%s", want, got)
+		}
+	}
+}

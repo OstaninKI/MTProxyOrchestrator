@@ -168,7 +168,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	if cfg.PanelDomain != "" && cfg.ACMEEmail != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "Obtaining Let's Encrypt certificate for %s...\n", cfg.PanelDomain)
 		mgr := acme.DefaultManager(nil, paths.CertDir, "")
-		runner := acme.DefaultRunner(mgr, paths.CertDir+"/.well-known-webroot")
+		runner := acme.DefaultRunner(mgr, paths.ACMEWebRootDir)
 		certPath, keyPath, err := obtainACMECert(context.Background(), runner, cfg.PanelDomain, cfg.ACMEEmail)
 		if err != nil {
 			return fmt.Errorf("obtain Let's Encrypt certificate: %w", err)

@@ -9,6 +9,7 @@ type InstallPaths struct {
 	SystemdDir      string
 	StubDir         string
 	CertDir         string // /etc/tgproxy/certs
+	ACMEWebRootDir  string // /var/www/tgproxy-acme (HTTP-01 tokens; must be nginx-readable)
 	NginxSnippetDir string // /etc/nginx/snippets
 	NginxConfFile   string // /etc/nginx/nginx.conf (distro-owned main config)
 
@@ -47,6 +48,7 @@ func DefaultPaths() InstallPaths {
 		SystemdDir:      "/etc/systemd/system",
 		StubDir:         "/var/www/tgproxy-stub",
 		CertDir:         "/etc/tgproxy/certs",
+		ACMEWebRootDir:  "/var/www/tgproxy-acme",
 		NginxSnippetDir: "/etc/nginx/snippets",
 		NginxConfFile:   "/etc/nginx/nginx.conf",
 

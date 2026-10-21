@@ -47,6 +47,7 @@ func TestDefaultPaths(t *testing.T) {
 		SystemdDir:      "/etc/systemd/system",
 		StubDir:         "/var/www/tgproxy-stub",
 		CertDir:         "/etc/tgproxy/certs",
+		ACMEWebRootDir:  "/var/www/tgproxy-acme",
 		NginxSnippetDir: "/etc/nginx/snippets",
 		NginxConfFile:   "/etc/nginx/nginx.conf",
 

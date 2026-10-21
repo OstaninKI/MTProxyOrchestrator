@@ -95,28 +95,29 @@ func Reconcile(opts Options) error {
 	}
 
 	panelUnit := systemd.PanelUnitConfig{
-		BinaryPath:    opts.Paths.PanelBin,
-		ConfigPath:    opts.Paths.ConfigFile,
-		DBPath:        opts.Paths.PanelDB,
-		PanelPath:     cfg.PanelPath,
-		ListenAddr:    fmt.Sprintf("127.0.0.1:%d", panelBackendPort),
-		MTProtoPort:   cfg.MTProtoPort,
-		MaskHost:      effectiveMaskHost,
-		TLSBackend:    tlsBackend,
-		WildcardMask:  cfg.WildcardMask,
-		MSSClamp:      cfg.MSSClamp,
-		RandomPadding: cfg.RandomPadding,
-		JA4Log:        cfg.JA4Log,
-		StatsPort:     9091,
-		LogPath:       opts.Paths.PanelLog,
-		ConfigDir:     opts.Paths.ConfigDir,
-		LogDir:        opts.Paths.LogDir,
-		BinDir:        opts.Paths.BinDir,
-		SystemdDir:    opts.Paths.SystemdDir,
-		StubDir:       opts.Paths.StubDir,
-		CertDir:       opts.Paths.CertDir,
-		Domain:        cfg.PanelDomain,
-		ACMEEmail:     cfg.ACMEEmail,
+		BinaryPath:     opts.Paths.PanelBin,
+		ConfigPath:     opts.Paths.ConfigFile,
+		DBPath:         opts.Paths.PanelDB,
+		PanelPath:      cfg.PanelPath,
+		ListenAddr:     fmt.Sprintf("127.0.0.1:%d", panelBackendPort),
+		MTProtoPort:    cfg.MTProtoPort,
+		MaskHost:       effectiveMaskHost,
+		TLSBackend:     tlsBackend,
+		WildcardMask:   cfg.WildcardMask,
+		MSSClamp:       cfg.MSSClamp,
+		RandomPadding:  cfg.RandomPadding,
+		JA4Log:         cfg.JA4Log,
+		StatsPort:      9091,
+		LogPath:        opts.Paths.PanelLog,
+		ConfigDir:      opts.Paths.ConfigDir,
+		LogDir:         opts.Paths.LogDir,
+		BinDir:         opts.Paths.BinDir,
+		SystemdDir:     opts.Paths.SystemdDir,
+		StubDir:        opts.Paths.StubDir,
+		CertDir:        opts.Paths.CertDir,
+		ACMEWebRootDir: opts.Paths.ACMEWebRootDir,
+		Domain:         cfg.PanelDomain,
+		ACMEEmail:      cfg.ACMEEmail,
 	}
 	newPanelUnit := panelUnit.Render()
 	oldPanelUnit, _ := os.ReadFile(opts.Paths.PanelService)
@@ -154,8 +155,17 @@ func Reconcile(opts Options) error {
 	acmeSnippetPath := ""
 	if cfg.ACMEEmail != "" && cfg.PanelDomain != "" {
 		acmeSnippetPath = opts.Paths.NginxSnippetDir + "/acme-challenge.conf"
+		// The webroot must sit outside the 0700 /etc/tgproxy tree: nginx workers
+		// run as www-data and answered 403 to Let's Encrypt for the old
+		// /etc/tgproxy/certs/.well-known-webroot location, so renewals failed.
+		if err := os.MkdirAll(opts.Paths.ACMEWebRootDir, 0o755); err != nil {
+			return fmt.Errorf("create acme webroot: %w", err)
+		}
+		if err := os.Chmod(opts.Paths.ACMEWebRootDir, 0o755); err != nil {
+			return fmt.Errorf("chmod acme webroot: %w", err)
+		}
 		acmeData := nginx.ACMEChallengeConfig{
-			WebRootDir: opts.Paths.CertDir + "/.well-known-webroot",
+			WebRootDir: opts.Paths.ACMEWebRootDir,
 		}.Render()
 		changed, err := writeFileIfChanged(acmeSnippetPath, acmeData, 0o644)
 		if err != nil {

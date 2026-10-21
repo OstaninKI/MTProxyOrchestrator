@@ -638,8 +638,8 @@ func TestSinglePlanWritesACMESnippetWhenEmailConfigured(t *testing.T) {
 			if !strings.Contains(body, "location /.well-known/acme-challenge/") {
 				t.Fatalf("ACME snippet must contain challenge location block:\n%s", body)
 			}
-			if !strings.Contains(body, paths.CertDir) {
-				t.Fatalf("ACME snippet must reference cert dir webroot:\n%s", body)
+			if !strings.Contains(body, "root "+paths.ACMEWebRootDir+";") || strings.Contains(body, paths.ConfigDir) {
+				t.Fatalf("ACME snippet must serve the nginx-readable webroot outside %s:\n%s", paths.ConfigDir, body)
 			}
 		}
 		if s.Kind == install.StepCreateDir && s.Target == "/etc/nginx/snippets" {

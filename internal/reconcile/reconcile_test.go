@@ -22,6 +22,7 @@ func setupReconcileEnv(t *testing.T, mode string) (string, config.InstallPaths) 
 		SystemdDir:      filepath.Join(tmp, "etc", "systemd", "system"),
 		StubDir:         filepath.Join(tmp, "var", "www", "tgproxy-stub"),
 		CertDir:         filepath.Join(tmp, "etc", "tgproxy", "certs"),
+		ACMEWebRootDir:  filepath.Join(tmp, "var", "www", "tgproxy-acme"),
 		NginxSnippetDir: filepath.Join(tmp, "etc", "nginx", "snippets"),
 		NginxConfFile:   filepath.Join(tmp, "etc", "nginx", "nginx.conf"),
 
@@ -443,5 +444,43 @@ func TestReconcileDBSettingsOverrideConfig(t *testing.T) {
 	content := readFile(t, paths.TeleproxyTOML)
 	if !strings.Contains(content, "port = 2083") {
 		t.Errorf("teleproxy.toml should use DB-overridden port 2083, got:\n%s", content)
+	}
+}
+
+func TestReconcileMovesACMEWebRootOutOfConfigDir(t *testing.T) {
+	_, paths := setupReconcileEnv(t, "single")
+	if err := os.MkdirAll(paths.NginxSnippetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := readFile(t, paths.ConfigFile)
+	cfg = strings.Replace(cfg, `panel_domain = ""`, `panel_domain = "proxy.example.com"`, 1)
+	cfg = strings.Replace(cfg, `acme_email = ""`, `acme_email = "admin@example.com"`, 1)
+	if err := os.WriteFile(paths.ConfigFile, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	callReconcileExpectNginxError(t, reconcile.Options{
+		ConfigFile: paths.ConfigFile,
+		PanelDB:    paths.PanelDB,
+		Paths:      paths,
+	})
+
+	info, err := os.Stat(paths.ACMEWebRootDir)
+	if err != nil {
+		t.Fatalf("acme webroot not created: %v", err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Errorf("acme webroot mode = %o, want 755 so nginx workers can read tokens", info.Mode().Perm())
+	}
+	snippet := readFile(t, filepath.Join(paths.NginxSnippetDir, "acme-challenge.conf"))
+	if !strings.Contains(snippet, "root "+paths.ACMEWebRootDir+";") {
+		t.Errorf("acme snippet must serve from %s, got:\n%s", paths.ACMEWebRootDir, snippet)
+	}
+	unit := readFile(t, paths.PanelService)
+	if !strings.Contains(unit, "--acme-webroot "+paths.ACMEWebRootDir) {
+		t.Errorf("panel unit missing --acme-webroot:\n%s", unit)
+	}
+	if !strings.Contains(unit, " "+paths.ACMEWebRootDir+"\n") {
+		t.Errorf("panel unit ReadWritePaths must include acme webroot:\n%s", unit)
 	}
 }

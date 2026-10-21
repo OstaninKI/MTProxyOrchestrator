@@ -207,7 +207,7 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 	if cfg.ACMEEmail != "" && cfg.PanelDomain != "" {
 		acmeSnippetPath = paths.NginxSnippetDir + "/acme-challenge.conf"
 		acmeSnippetData = nginx.ACMEChallengeConfig{
-			WebRootDir: paths.CertDir + "/.well-known-webroot",
+			WebRootDir: paths.ACMEWebRootDir,
 		}.Render()
 	}
 
@@ -246,28 +246,29 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 	}
 
 	panelUnit := systemd.PanelUnitConfig{
-		BinaryPath:    paths.PanelBin,
-		ConfigPath:    paths.ConfigFile,
-		DBPath:        paths.PanelDB,
-		PanelPath:     creds.PanelPath,
-		ListenAddr:    fmt.Sprintf("127.0.0.1:%d", PanelBackendPort),
-		MTProtoPort:   cfg.MTProtoPort,
-		MaskHost:      effectiveMaskHost,
-		TLSBackend:    tlsBackend,
-		WildcardMask:  cfg.WildcardMask,
-		MSSClamp:      cfg.MSSClamp,
-		RandomPadding: cfg.RandomPadding,
-		JA4Log:        cfg.JA4Log,
-		StatsPort:     9091,
-		LogPath:       paths.PanelLog,
-		ConfigDir:     paths.ConfigDir,
-		LogDir:        paths.LogDir,
-		BinDir:        paths.BinDir,
-		SystemdDir:    paths.SystemdDir,
-		StubDir:       paths.StubDir,
-		CertDir:       paths.CertDir,
-		Domain:        cfg.PanelDomain,
-		ACMEEmail:     cfg.ACMEEmail,
+		BinaryPath:     paths.PanelBin,
+		ConfigPath:     paths.ConfigFile,
+		DBPath:         paths.PanelDB,
+		PanelPath:      creds.PanelPath,
+		ListenAddr:     fmt.Sprintf("127.0.0.1:%d", PanelBackendPort),
+		MTProtoPort:    cfg.MTProtoPort,
+		MaskHost:       effectiveMaskHost,
+		TLSBackend:     tlsBackend,
+		WildcardMask:   cfg.WildcardMask,
+		MSSClamp:       cfg.MSSClamp,
+		RandomPadding:  cfg.RandomPadding,
+		JA4Log:         cfg.JA4Log,
+		StatsPort:      9091,
+		LogPath:        paths.PanelLog,
+		ConfigDir:      paths.ConfigDir,
+		LogDir:         paths.LogDir,
+		BinDir:         paths.BinDir,
+		SystemdDir:     paths.SystemdDir,
+		StubDir:        paths.StubDir,
+		CertDir:        paths.CertDir,
+		ACMEWebRootDir: paths.ACMEWebRootDir,
+		Domain:         cfg.PanelDomain,
+		ACMEEmail:      cfg.ACMEEmail,
 	}
 
 	steps := []Step{
@@ -280,6 +281,7 @@ func buildPlan(cfg config.Config, paths config.InstallPaths, panelPort int, bina
 		{Kind: StepCreateDir, Target: paths.LogDir, Mode: 0o755},
 		{Kind: StepCreateDir, Target: paths.StubDir, Mode: 0o755},
 		{Kind: StepCreateDir, Target: paths.CertDir, Mode: 0o700},
+		{Kind: StepCreateDir, Target: paths.ACMEWebRootDir, Mode: 0o755},
 		{Kind: StepInstallFile, Source: binaries.CLI, Target: paths.CLIBin, Mode: 0o755},
 		{Kind: StepInstallFile, Source: binaries.Panel, Target: paths.PanelBin, Mode: 0o755},
 		{Kind: StepDownloadBinary, Target: paths.TeleproxyBin, URL: teleproxyDownloadURL(), SHA256: teleproxyDownloadSHA256(), Mode: 0o755},

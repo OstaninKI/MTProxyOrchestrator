@@ -115,17 +115,21 @@ func (r *Runner) RenewIfNeeded(ctx context.Context, domain, email, certPath stri
 	return true, nil
 }
 
-// StartRenewalLoop runs a background goroutine that calls RenewIfNeeded on the given interval.
-// The goroutine stops when ctx is cancelled. Errors are logged and the loop continues.
-func (r *Runner) StartRenewalLoop(ctx context.Context, domain, email, certPath string, interval time.Duration) {
+// StartRenewalLoop runs a background goroutine that calls RenewIfNeeded after
+// firstDelay and then on the given interval. A short firstDelay lets an already
+// expired certificate be renewed soon after startup instead of a full interval
+// later. The goroutine stops when ctx is cancelled. Errors are logged and the
+// loop continues.
+func (r *Runner) StartRenewalLoop(ctx context.Context, domain, email, certPath string, firstDelay, interval time.Duration) {
 	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+		timer := time.NewTimer(firstDelay)
+		defer timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
+			case <-timer.C:
+				timer.Reset(interval)
 				renewed, err := r.RenewIfNeeded(ctx, domain, email, certPath)
 				if err != nil {
 					slog.Error("certificate renewal failed", "domain", domain, "err", err)

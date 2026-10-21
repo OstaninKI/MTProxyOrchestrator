@@ -20,7 +20,6 @@ import (
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge/http01"
 	"github.com/go-acme/lego/v4/lego"
-	"github.com/go-acme/lego/v4/providers/http/webroot"
 	"github.com/go-acme/lego/v4/registration"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
@@ -221,16 +220,11 @@ func (m Manager) ObtainACME(ctx context.Context, domain, email string, mode Chal
 			return "", "", fmt.Errorf("set standalone http-01 provider: %w", err)
 		}
 	case ChallengeWebroot:
-		if err := os.MkdirAll(webrootDir, 0o700); err != nil {
+		if err := mkdirReadable(webrootDir, webrootDir); err != nil {
 			recordErr(err)
 			return "", "", fmt.Errorf("create webroot dir: %w", err)
 		}
-		provider, err := webroot.NewHTTPProvider(webrootDir)
-		if err != nil {
-			recordErr(err)
-			return "", "", fmt.Errorf("create webroot provider: %w", err)
-		}
-		if err := client.Challenge.SetHTTP01Provider(provider); err != nil {
+		if err := client.Challenge.SetHTTP01Provider(webrootProvider{dir: webrootDir}); err != nil {
 			recordErr(err)
 			return "", "", fmt.Errorf("set webroot http-01 provider: %w", err)
 		}

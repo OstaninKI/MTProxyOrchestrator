@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/acme"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/db"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/metrics"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/panel"
@@ -49,6 +50,7 @@ var (
 	stubDir       string
 	domain        string
 	acmeEmail     string
+	acmeWebRoot   string
 	devMode       bool
 )
 
@@ -74,6 +76,7 @@ func init() {
 	serveCmd.Flags().StringVar(&stubDir, "stub-dir", "/var/www/tgproxy-stub", "web root directory for stub pages")
 	serveCmd.Flags().StringVar(&domain, "domain", "", "panel domain; enables ACME renewal loop when set with --acme-email")
 	serveCmd.Flags().StringVar(&acmeEmail, "acme-email", "", "email for Let's Encrypt renewal notifications")
+	serveCmd.Flags().StringVar(&acmeWebRoot, "acme-webroot", config.DefaultPaths().ACMEWebRootDir, "nginx-readable directory for ACME HTTP-01 challenge tokens")
 	serveCmd.Flags().BoolVar(&devMode, "dev", false, "run in development mode: in-memory DB, demo data, no system changes")
 	rootCmd.AddCommand(serveCmd)
 }
@@ -237,11 +240,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 			}
 		}
 		mgr.CADirURL = acme.CADirURL(d.GetSetting("cert_acme_provider", "production"))
-		webRootDir := filepath.Join(certDir, ".well-known-webroot")
-		runner := acme.DefaultRunner(mgr, webRootDir)
-		runner.RenewEnabled = func() bool { return d.GetSetting("cert_auto_renew", "1") != "0" }
+		runner := acme.DefaultRunner(mgr, acmeWebRoot)
+		paths := config.DefaultPaths()
+		snippetPath := filepath.Join(paths.NginxSnippetDir, "acme-challenge.conf")
+		runner.RenewEnabled = func() bool {
+			if d.GetSetting("cert_auto_renew", "1") == "0" {
+				return false
+			}
+			return !healACMESetup(ctx, snippetPath, acmeWebRoot, paths.CLIBin)
+		}
 		certPath := filepath.Join(certDir, domain, "cert.pem")
-		runner.StartRenewalLoop(ctx, domain, acmeEmail, certPath, 12*time.Hour)
+		// First check after 2 minutes: lets a running `tgproxy-cli update` finish
+		// replacing binaries before a stale setup triggers reconcile, and renews an
+		// already expired certificate without waiting a full interval.
+		runner.StartRenewalLoop(ctx, domain, acmeEmail, certPath, 2*time.Minute, 12*time.Hour)
 	}
 
 	srv := &panel.Server{
@@ -260,11 +272,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 			StatsPort:     statsPort,
 		},
 		SettingsCfg: &panel.SettingsConfig{
-			CertDir:   certDir,
-			WebRoot:   stubDir,
-			Domain:    domain,
-			ServerIP:  d.GetSetting("server_ip", ""),
-			ACMEEmail: acmeEmail,
+			CertDir:     certDir,
+			WebRoot:     stubDir,
+			Domain:      domain,
+			ServerIP:    d.GetSetting("server_ip", ""),
+			ACMEEmail:   acmeEmail,
+			ACMEWebRoot: acmeWebRoot,
 		},
 	}
 

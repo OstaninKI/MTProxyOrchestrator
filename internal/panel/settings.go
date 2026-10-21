@@ -17,6 +17,7 @@ import (
 
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/acme"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/audit"
+	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/config"
 	"github.com/mtproto-orchestrator/mtproto-orchestrator/internal/stub"
 )
 
@@ -68,6 +69,7 @@ type SettingsConfig struct {
 	ServerIP         string // public IP of the server
 	Domain           string // configured domain (empty for IP installs)
 	ACMEEmail        string // email used for Let's Encrypt; empty if ACME not configured
+	ACMEWebRoot      string // nginx-readable dir for HTTP-01 tokens
 }
 
 // settingsConfig returns SettingsConfig from Server.SettingsCfg if set, or zero values.
@@ -784,7 +786,10 @@ func (s *Server) handleSettingsCertRenew(w http.ResponseWriter, r *http.Request)
 	}
 	mgr := acme.DefaultManager(s.DB, cfg.CertDir, "")
 	mgr.CADirURL = acme.CADirURL(s.DB.GetSetting(settingCertACMEProvider, "production"))
-	webRootDir := filepath.Join(cfg.CertDir, ".well-known-webroot")
+	webRootDir := cfg.ACMEWebRoot
+	if webRootDir == "" {
+		webRootDir = config.DefaultPaths().ACMEWebRootDir
+	}
 	runner := acme.DefaultRunner(mgr, webRootDir)
 	// Detach from r.Context(): a client/browser disconnect must not cancel an
 	// in-flight ACME order mid-way (it can burn LE rate limits and leave a
