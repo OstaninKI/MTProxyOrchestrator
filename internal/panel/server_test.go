@@ -199,7 +199,7 @@ func TestLogsPageUsesPanelAssetScriptAndLegacyCSP(t *testing.T) {
 	}
 
 	csp := w.Header().Get("Content-Security-Policy")
-	for _, want := range []string{"'unsafe-inline'", "connect-src 'self' wss:"} {
+	for _, want := range []string{"script-src 'self';", "style-src 'self' 'unsafe-inline'", "connect-src 'self' wss:"} {
 		if !strings.Contains(csp, want) {
 			t.Fatalf("logs page CSP %q missing legacy token %q", csp, want)
 		}

@@ -192,8 +192,8 @@ func TestLegacyUsersPageKeepsCompatCSP(t *testing.T) {
 	}
 
 	csp := rec.Header().Get("Content-Security-Policy")
-	if !strings.Contains(csp, "'unsafe-inline'") {
-		t.Fatalf("legacy users page CSP = %q, want temporary inline compatibility", csp)
+	if !strings.Contains(csp, "script-src 'self';") || !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
+		t.Fatalf("legacy users page CSP = %q, want inline styles only (no inline scripts)", csp)
 	}
 }
 

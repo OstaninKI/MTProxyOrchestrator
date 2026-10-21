@@ -98,7 +98,7 @@ func setStrictPanelCSP(w http.ResponseWriter) {
 
 func setLegacyPanelCSP(w http.ResponseWriter) {
 	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';")
+		"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';")
 }
 
 func withLegacyPanelCSP(next http.HandlerFunc) http.HandlerFunc {

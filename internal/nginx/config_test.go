@@ -102,8 +102,8 @@ func TestPanelProxyConfig_HasTLS12And13(t *testing.T) {
 
 func TestPanelProxyConfig_HasHSTS(t *testing.T) {
 	out := panelCfg.Render()
-	if !bytes.Contains(out, []byte(`Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"`)) {
-		t.Error("output must contain Strict-Transport-Security header with max-age=63072000; includeSubDomains; preload")
+	if !bytes.Contains(out, []byte(`Strict-Transport-Security "max-age=63072000" always`)) {
+		t.Error("output must contain Strict-Transport-Security header with max-age=63072000 only (no includeSubDomains/preload)")
 	}
 }
 

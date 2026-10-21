@@ -99,10 +99,6 @@ func (c PanelProxyConfig) Render() []byte {
 	return buf.Bytes()
 }
 
-// mozillaIntermediateCiphers is the Mozilla Intermediate compatibility cipher list
-// for nginx 1.18.0 on Ubuntu 22.04 (TLS 1.2 + 1.3).
-const mozillaIntermediateCiphers = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
-
 // ACMEChallengeConfig renders a nginx snippet that serves HTTP-01 challenge tokens
 // from WebRootDir. Include it in the port-80 stub server block for automated renewal.
 type ACMEChallengeConfig struct {
@@ -136,13 +132,13 @@ server {
     ssl_certificate     {{.CertPath}};
     ssl_certificate_key {{.KeyPath}};
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
     ssl_prefer_server_ciphers off;
 
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header Strict-Transport-Security "max-age=63072000" always;
     add_header X-Frame-Options DENY always;
     add_header X-Content-Type-Options nosniff always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none';" always;
 
     gzip on;
     gzip_vary on;
