@@ -116,7 +116,7 @@ The authenticated Dashboard is an operator console for service state, traffic, a
 - **Connection quality** shows Teleproxy accepted and rejected connection counters, SOCKS5 upstream attempt/success/failure counters, and the top JA4 ClientHello fingerprints when available.
 - **Top users by traffic** shows sampled upload, download, total traffic, and peak connections for the selected period.
 - **Bridge nodes** shows the configured Bridge node preview, enabled state, and last latency test result.
-- **Active Connections** shows current per-secret connection count, live upload/download counters, Teleproxy connection/IP limits, and per-secret rejection reasons.
+- **Active Connections** shows current per-secret connection count, live upload/download counters, Teleproxy connection/IP limits, per-secret rejection reasons, and the two most frequent JA4 fingerprints matched to each secret.
 
 ### Teleproxy metrics currently consumed
 
@@ -127,7 +127,7 @@ The panel parses the following current Teleproxy metric names:
 - per-secret rejection reasons: `teleproxy_secret_connections_rejected_total`, `teleproxy_secret_rejected_quota_total`, `teleproxy_secret_rejected_ips_total`, `teleproxy_secret_rejected_expired_total`
 - accepted and rejected connection counters: `teleproxy_ext_connections_created_total`, `teleproxy_connections_failed_lru_total`, `teleproxy_connections_failed_flood_total`, `teleproxy_ip_acl_rejected_total`
 - Bridge/SOCKS5 upstream counters: `teleproxy_socks5_connects_attempted_total`, `teleproxy_socks5_connects_succeeded_total`, `teleproxy_socks5_connects_failed_total`
-- probe visibility: `teleproxy_ja4_seen{hash=...}`
+- probe visibility: `teleproxy_ja4_seen{hash=...}` (global top 32) and `teleproxy_secret_ja4_seen{secret=...,hash=...}` (top four per secret, Teleproxy 4.16.1+)
 
 Legacy `mtproto_secret_traffic_bytes_in`, `mtproto_secret_traffic_bytes_out`, and `mtproto_secret_connections_total` names are still accepted for traffic sampling compatibility.
 
@@ -136,6 +136,21 @@ Legacy `mtproto_secret_traffic_bytes_in`, `mtproto_secret_traffic_bytes_out`, an
 - Teleproxy metrics are cumulative counters. The dashboard stores traffic deltas for history and quotas, while the live Connection quality card displays the latest raw counters from the current Teleproxy process.
 - JA4 hashes are useful for diagnosing active probing and DPI signature changes. Treat them as operational telemetry; they are not MTProto secrets, but they should stay behind the authenticated panel.
 - The SOCKS5 upstream counters are most useful in Bridge mode. In Single mode they may remain empty or show `n/a`.
+
+## Applying Teleproxy Changes
+
+Teleproxy re-reads only secrets, ACL file contents, `ja4_log`, and `drain_timeout_secs` on SIGHUP; listener, domain, and SOCKS5 settings are read at startup. The panel picks the mechanism by what changed:
+
+| Change | Mechanism | Effect on live sessions |
+|---|---|---|
+| User create, delete, enable/disable, secret rotation, quota suspension | `systemctl reload teleproxy` (SIGHUP via `ExecReload`) | Other users stay connected. A removed secret drains and its sessions are force-closed after `drain_timeout_secs` |
+| Settings → Proxy Settings (port, mask host, TLS backend, wildcard mask, MSS clamp, JA4 logging) | `systemctl restart teleproxy` | All clients reconnect |
+| Bridge enable/disable (adds or removes the `socks5` upstream) | `systemctl restart teleproxy` | All clients reconnect |
+| Settings → System → Restart services, `tgproxy-cli restart`, update/reconcile when `teleproxy.toml` changed | restart | All clients reconnect |
+
+`teleproxy.toml` always renders `drain_timeout_secs = 60` (Teleproxy's own default is 300). The value is fixed and not exposed in the panel.
+
+`ExecReload` was added to `teleproxy.service` together with this behavior. On hosts upgraded from an older release, run `sudo tgproxy-cli reconcile` once after the update (see the note under [Config reconciliation](#config-reconciliation)); until the unit is re-rendered, a reload falls back to a full restart.
 
 ## User Traffic Quotas
 
@@ -151,13 +166,13 @@ Behavior:
 
 - A background service recomputes usage every 5 minutes from `traffic_daily` since the current period start.
 - When usage crosses the warning percentage, a single `quota_warning` event is written to the audit log for the period.
-- When usage exceeds the quota, the user is suspended automatically: their secret is excluded from the rendered Teleproxy config and the service is reloaded.
+- When usage exceeds the quota, the user is suspended automatically: their secret is excluded from the rendered Teleproxy config and Teleproxy is reloaded via SIGHUP. Their open sessions are force-closed within 60 seconds; other users are not interrupted (see [Applying Teleproxy Changes](#applying-teleproxy-changes)).
 - Period rollover resets `quota_used_bytes`, clears suspension, and advances `quota_period_start`.
 
 Manual actions on the user record:
 
 - **Reset quota counters**: clears `quota_used_bytes` and `quota_warned`, lifts suspension if it was triggered by the quota.
-- **Toggle suspend**: forces the user into or out of the suspended state. Suspending triggers a Teleproxy reload immediately.
+- **Toggle suspend**: forces the user into or out of the suspended state. Suspending triggers a Teleproxy reload immediately; the user's open sessions are force-closed within 60 seconds.
 
 Audit events: `quota_set`, `quota_reset`, `quota_warning`, `user_suspend_toggle`.
 
@@ -293,7 +308,7 @@ Teleproxy serves both transports simultaneously. Toggling the setting only affec
 
 1. Open the panel: **Settings → Proxy Settings**.
 2. Check or uncheck **Padded (dd) links**.
-3. Click **Save**. The panel re-renders `teleproxy.toml` and reloads Teleproxy.
+3. Click **Save**. The panel re-renders `teleproxy.toml` and restarts Teleproxy.
 4. Re-share each user's link or QR code from the Users section — the old links remain functional, but only the newly generated links reflect the new transport.
 
 ### Config file rendering

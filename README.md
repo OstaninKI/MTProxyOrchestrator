@@ -9,6 +9,7 @@ MTProto Proxy Orchestrator manages a Teleproxy-based Telegram MTProto proxy on U
 - Runs an authenticated admin panel backend on loopback and can wire a public HTTPS nginx proxy when certificate paths are provided
 - Supports user management, Bridge runtime switching, Teleproxy observability, logs, backups, restore, and verified updates in the codebase
 - Enforces optional per-user traffic quotas with daily, weekly, or monthly periods, soft warning, and hard suspension
+- Applies user, suspension, and quota changes through a graceful Teleproxy reload (SIGHUP): other users stay connected, and a removed secret's open sessions are closed within 60 seconds
 - Supports optional TOTP-based 2FA per admin account with single-use bcrypt-hashed recovery codes
 - Exposes DPI-resistance controls in the panel under Settings → Proxy Settings: MSS clamp, JA4 fingerprint logging, Fake-TLS vs random-padding link transport, and optional TLS backend / wildcard masquerade domain
 - Publishes and consumes release assets from `github.com/mtproto-orchestrator/mtproto-orchestrator`
@@ -94,7 +95,7 @@ Key paths used by the current implementation:
 - Health endpoint: `http://127.0.0.1:18080/<generated-panel-path>/health`
 - Authenticated UI: mounted under the generated random path only
 - Dashboard navigation and subpage back links preserve the generated panel path.
-- Dashboard observability reads Teleproxy `/metrics` from loopback and shows traffic, active connections, per-secret limits/rejections, accepted/rejected connection counters, SOCKS5 upstream health, and top JA4 fingerprints when Teleproxy exposes them.
+- Dashboard observability reads Teleproxy `/metrics` from loopback and shows traffic, active connections, per-secret limits/rejections, accepted/rejected connection counters, SOCKS5 upstream health, and top JA4 fingerprints (globally, and per secret with Teleproxy 4.16.1+) when Teleproxy exposes them.
 
 ## Local Development (Dev Mode)
 
@@ -139,6 +140,8 @@ tgproxy-cli uninstall
 - All four components are version-checked against GitHub Releases: tgproxy-cli, tgproxy-panel (OstaninKI/MTProxyOrchestrator), teleproxy (teleproxy/teleproxy), and sing-box (SagerNet/sing-box)
 - Binary downloads are verified by SHA256 before replacement; sing-box ships as a tar.gz asset and its binary is extracted from the verified archive
 - Failed service restart or health check triggers rollback from the backup binary
+- Fresh installs use the component versions pinned in `internal/component/versions` (currently Teleproxy 4.16.1 and sing-box 1.14.3); the project builds with Go 1.27.3
+- CI runs `go vet`, tests, and `govulncheck` on every push; Dependabot opens weekly grouped updates for Go modules and GitHub Actions
 
 ## Docs
 

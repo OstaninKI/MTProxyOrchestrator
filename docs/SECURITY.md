@@ -56,11 +56,17 @@ Out of scope for v1:
 - Disabling TOTP and regenerating recovery codes both require a current TOTP code or an unused recovery code. State changes are logged: `totp_enabled`, `totp_disabled`, `totp_recovery_regenerated`, `totp_recovery_used`, `totp_failed`.
 - Lost 2FA device recovery is documented in `docs/OPERATIONS.md`; if recovery codes are also lost, a host-level SQLite reset is the documented last resort.
 
+## Transport and HTTP Headers
+
+- The public nginx panel proxy accepts TLS 1.2 and 1.3 only, with ECDHE AEAD suites. DHE suites are not offered (no `ssl_dhparam` is configured). `server_tokens` is off.
+- HSTS is sent as `max-age=63072000` without `includeSubDomains` or `preload`: the panel domain is often a subdomain of an operator domain that hosts other services, and HSTS preload is hard to revert.
+- CSP allows scripts only from `'self'` on every page: templates contain no inline scripts or inline event handlers (destructive actions use `data-confirm` handled by `panel.js`). Migrated pages also use `style-src 'self'`; legacy pages still allow inline styles. `frame-ancestors 'none'`, `X-Frame-Options: DENY`, and `X-Content-Type-Options: nosniff` are always set.
+
 ## Quota-Based Abuse Mitigation
 
 - Per-user traffic quotas are optional. When configured, exceeding the limit suspends the user automatically and excludes their secret from the rendered Teleproxy config until the next period rollover or a manual reset.
 - The quota service crosses the warn threshold once per period and writes a single `quota_warning` audit event, avoiding noisy repeats.
-- Suspension transitions trigger a Teleproxy reload only on state changes, so a steady-state quota check does not perturb the running service.
+- Suspension transitions trigger a Teleproxy reload (SIGHUP) only on state changes, so a steady-state quota check does not perturb the running service. The suspended secret's open sessions are force-closed within 60 seconds (`drain_timeout_secs = 60`); other users' sessions are not interrupted.
 - This control is intended as a guard against a leaked user secret consuming the channel, not as a billing mechanism.
 
 ## Backup Handling
@@ -81,6 +87,12 @@ Out of scope for v1:
 5. The new binary replaces the old one only after checksum verification succeeds.
 6. The affected service is restarted and health-checked.
 7. If restart or health check fails, the backup binary is restored.
+
+### Dependency hygiene
+
+- Component versions and their SHA256 checksums for fresh installs are pinned in `internal/component/versions`; checksums are cross-checked against the GitHub release asset digest when the pin is bumped.
+- CI runs `govulncheck` on every push, so known vulnerabilities reachable from project code fail the build.
+- Dependabot opens weekly grouped pull requests for Go modules and GitHub Actions.
 
 ## Logging and Audit Expectations
 
